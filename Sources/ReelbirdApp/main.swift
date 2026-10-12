@@ -1,3 +1,2 @@
-import ReelbirdCore
-
-print("Reelbird \(ReelbirdInfo.version)")
+import AppKit
+print("tmp")
