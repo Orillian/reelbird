@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640">
+<defs><radialGradient id="g" cx="0.5" cy="0.4" r="0.75"><stop offset="0" stop-color="#26201C"/><stop offset="1" stop-color="#1A1512"/></radialGradient></defs>
+<rect width="1280" height="640" fill="url(#g)"/>
+<g transform="translate(221 174.8) scale(1.1256)"><path d="M204 70C196 54 182 45 164 45C144 45 130 55 120 67C96 88 50 128 22 166Q15 177 28 181L72 177C86 201 108 213 132 213C176 213 206 182 210 140C212 120 210 106 205 98L230.5 88.6Q236 86.4 230.6 84.2Z" fill="#FFF4E8"/><circle cx="146" cy="149" r="40" fill="#FF5A36"/><circle cx="177" cy="80" r="8" fill="#1A1512"/><g transform="translate(270 172.5) scale(0.64)"><path d="M12 -88V-12M12 -50A38 38 0 0 1 69 -82.9M99 -50H175A38 38 0 1 0 165.2 -24.6M213 -50H289A38 38 0 1 0 279.2 -24.6M329 -136V-12M373 -136V-12M373 -50A38 38 0 1 1 449 -50A38 38 0 1 1 373 -50M491 -88V-12M533 -88V-12M533 -50A38 38 0 0 1 590 -82.9M695 -136V-12M695 -50A38 38 0 1 0 619 -50A38 38 0 1 0 695 -50" fill="none" stroke="#FFF4E8" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/><circle cx="491" cy="-124" r="15" fill="#FF5A36"/></g></g>
+</svg>
