@@ -111,13 +111,13 @@ final class ProgressLine: @unchecked Sendable {
 }
 
 enum Format {
-    /// "1:02:03", "2:05" or "0:07.5" for short clips.
+    /// "1:02:03", "2:05", or "0:07.5" for fractional times under 10 s.
     static func duration(_ s: Double) -> String {
         guard s.isFinite, s >= 0 else { return "0:00" }
         let total = Int(s.rounded(.down))
         let h = total / 3600, m = (total / 60) % 60, sec = total % 60
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, sec) }
-        if s < 10 { return String(format: "0:%04.1f", s) }
+        if s < 10, (s * 10).rounded() != Double(total) * 10 { return String(format: "0:%04.1f", s) }
         return String(format: "%d:%02d", m, sec)
     }
 
