@@ -59,6 +59,18 @@ public final class RecordingSession: Sendable {
     /// Test hook: replaces the free-disk-space probe.
     func setFreeDiskProbe(_ probe: @escaping @Sendable () -> Int64?) async { await engine.setFreeDiskProbe(probe) }
 
+    /// Test hook: end of the media written so far for a track (timeline seconds) and its audio correction.
+    func written(_ kind: TrackKind) async -> (end: Double, correction: Double)? {
+        guard let p = await engine.pipeline else { return nil }
+        switch kind {
+        case .screen: return (p.screenWriter.lastSampleEnd, 0)
+        case .microphone: return p.microphone.map { ($0.writer.lastSampleEnd, $0.correctionSeconds) }
+        case .systemAudio: return p.systemAudio.map { ($0.writer.lastSampleEnd, $0.correctionSeconds) }
+        case .camera: return p.cameraWriter.map { ($0.lastSampleEnd, 0) }
+        case .share: return p.shareWriter.map { ($0.lastSampleEnd, 0) }
+        }
+    }
+
     /// Test hook: pipeline metrics.
     func metrics() async -> CapturePipeline.Metrics? { await engine.pipeline?.metrics.withLock { $0 } }
 }

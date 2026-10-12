@@ -36,6 +36,11 @@ public final class SyntheticFrameSource: FrameSource, @unchecked Sendable {
         public var mode: Mode = .realTime
         /// Frames per audio buffer (ScreenCaptureKit delivers about 10–20 ms).
         public var audioChunkFrames = 960
+        /// Seconds (from the start) during which no system audio buffers are delivered at all, like
+        /// ScreenCaptureKit while nothing is playing.
+        public var systemAudioGaps: [TimeRange] = []
+        /// Delay before `start` returns and the first frame arrives (a slow ScreenCaptureKit start).
+        public var startDelay: Double = 0
         public init() {}
     }
 
@@ -83,6 +88,7 @@ public final class SyntheticFrameSource: FrameSource, @unchecked Sendable {
     }
 
     public func start(output: any FrameSourceOutput) async throws {
+        if configuration.startDelay > 0 { try await Task.sleep(nanoseconds: UInt64(configuration.startDelay * 1e9)) }
         let start = HostClock.now()
         run.withLock { $0.startHost = start; $0.output = output; $0.running = true }
         switch configuration.mode {
@@ -166,7 +172,9 @@ public final class SyntheticFrameSource: FrameSource, @unchecked Sendable {
                let sb = makeAudio(signal: s, format: f, channels: configuration.microphoneChannels, firstFrame: audioFrames, count: Int(chunk), pts: pts) {
                 out.frameSource(didOutput: sb, of: .microphone)
             }
+            let chunkTime = Double(audioFrames) / sampleRate
             if let s = configuration.systemAudio, let f = systemFormat,
+               !configuration.systemAudioGaps.contains(where: { $0.contains(chunkTime) }),
                let sb = makeAudio(signal: s, format: f, channels: 2, firstFrame: audioFrames, count: Int(chunk), pts: pts) {
                 out.frameSource(didOutput: sb, of: .systemAudio)
             }

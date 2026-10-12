@@ -118,3 +118,42 @@ extension RecordingTests {
     #expect(SegmentedWriter.targetDuration([], interval: 2) == 4)
     #expect(SegmentedWriter.targetDuration([2.0, 6.6], interval: 2) == 7)
 }
+
+extension RecordingTests {
+    /// ScreenCaptureKit sends no system audio while nothing plays. The track must keep growing with
+    /// silence in small steps (no burst when sound returns), stay aligned, and not raise a drift warning.
+    @Test func quietSystemAudioStaysAlignedWithoutDriftWarnings() async throws {
+        let url = tempBundleURL("quiet")
+        defer { try? FileManager.default.removeItem(at: url) }
+        var config = SyntheticFrameSource.Configuration()
+        config.systemAudioGaps = [TimeRange(start: 1, end: 3.4)]
+        let session = RecordingSession(options: options(), bundleURL: url, frameSource: SyntheticFrameSource(configuration: config))
+        let drift = Mutex(false)
+        let watcher = Task {
+            for await s in session.status where s.warnings.contains(where: { $0.kind == .avDrift }) { drift.withLock { $0 = true } }
+        }
+        try await session.start()
+        await sleep(3.0)
+        // Inside the gap: the system track has advanced well past where its audio stopped (1 s).
+        let during = try #require(await session.written(.systemAudio))
+        #expect(during.end > 2.0, "system audio written up to \(during.end) s during the quiet stretch")
+        await sleep(2.0)
+        let after = try #require(await session.written(.systemAudio))
+        #expect(after.correction < 0.05, "correction \(after.correction) s")
+        let bundle = try await session.stop()
+        watcher.cancel()
+        #expect(!drift.withLock { $0 }, "a quiet source is not drift")
+
+        let m = try bundle.readManifest()
+        let file = bundle.resolve(try #require(m.track(.systemAudio)?.file))
+        let (duration, _) = try await loadAsset(file)
+        #expect(abs(duration - m.duration) < 0.15, "system \(duration) vs \(m.duration)")
+        let windows = try await audioWindows(file)
+        #expect(windows.filter { $0.t > 0.2 && $0.t < 0.9 }.allSatisfy { $0.rms > 0.1 }, "tone before the gap")
+        #expect(windows.filter { $0.t > 1.2 && $0.t < 3.2 }.allSatisfy { $0.rms < 0.001 }, "silence in the gap")
+        // Sound comes back at the right time: within one 50 ms window of 3.4 s.
+        let back = try #require(windows.first { $0.t > 3.0 && $0.rms > 0.1 })
+        #expect(abs(back.t - 3.4) < 0.08, "audio came back at \(back.t)")
+        #expect(windows.filter { $0.t > 3.5 && $0.t < m.duration - 0.2 }.allSatisfy { $0.rms > 0.1 }, "tone after the gap")
+    }
+}

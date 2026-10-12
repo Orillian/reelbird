@@ -54,7 +54,7 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
     private let camera = Locked(Camera())
 
     let metrics = Mutex(Metrics())
-    private var filler: (any DispatchSourceTimer)?
+    private let filler = Locked<(any DispatchSourceTimer)?>(nil)
     private let fillerQueue = DispatchQueue(label: "reelbird.capture.filler", qos: .userInitiated)
 
     /// Called once with the host time of the first screen frame (timeline zero).
@@ -315,6 +315,10 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
         composer?.resume(at: t)
     }
 
+    /// Seconds without audio buffers before a source counts as quiet and is padded with silence.
+    /// Comfortably above ScreenCaptureKit's audio latency so real buffers are never trimmed.
+    static let audioIdle = 0.5
+
     /// Re-appends the last picture when the screen has been static for a second, so segments keep
     /// closing every ~2 s (bounded loss on a crash, steady live share) even when nothing changes.
     private func startFiller() {
@@ -327,7 +331,14 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
                 guard let o = s.origin else { return (nil, true, s.closed) }
                 return (o, Self.paused(s, now - o), s.closed)
             }
-            guard let origin, !paused, !closed else { return }
+            guard let origin, !closed else { return }
+            // Audio sources that went quiet still advance (silence), so tracks stay aligned.
+            let audioEnd = now - origin - Self.audioIdle
+            if audioEnd > 0 {
+                self.microphone?.padIfIdle(upTo: audioEnd, idle: Self.audioIdle, now: now)
+                self.systemAudio?.padIfIdle(upTo: audioEnd, idle: Self.audioIdle, now: now)
+            }
+            guard !paused else { return }
             let (last, lastAppend) = self.screen.withLock { ($0.last, $0.lastAppendHost) }
             guard let last, now - lastAppend > 1.0 else { return }
             if self.screenWriter.append(pixelBuffer: last, at: now - origin) == .appended {
@@ -335,14 +346,13 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
             }
         }
         t.resume()
-        filler = t
+        filler.withLock { $0 = t }
     }
 
     /// Stops accepting samples and brings every track to `endTime` (call after the source stopped).
     /// If recording ends while paused, the open pause is closed at `endTime`.
     func close(endTime: Double) {
-        filler?.cancel()
-        filler = nil
+        filler.withLock { f in f?.cancel(); f = nil }
         fillerQueue.sync {}
         let wasPausedAt = timing.withLock { s -> Double? in
             s.closed = true
@@ -365,8 +375,7 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
 
     /// Stops everything without finishing (discard or simulated crash).
     func abandon() {
-        filler?.cancel()
-        filler = nil
+        filler.withLock { f in f?.cancel(); f = nil }
         timing.withLock { $0.closed = true }
         composer?.stop()
         screenWriter.abandon()
