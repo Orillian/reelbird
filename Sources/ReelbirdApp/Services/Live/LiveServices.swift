@@ -87,6 +87,18 @@ struct LiveRender: RenderService {
 
 struct LiveAI: AIService {
     var transcriberAvailable: Bool { Transcriber.isAvailable }
+    func captionsUnavailableReason() async -> String? {
+        switch await Transcriber.availability() {
+        case .available, .needsDownload: return nil
+        case .unsupportedLocale(let id): return "On-device captions don't support your language (\(id)) yet."
+        case .unavailable(let reason): return reason
+        }
+    }
+    var storySupported: Bool { if #available(macOS 26, *) { true } else { false } }
+    var storyUnavailableReason: String? { StorySuggester.unavailableReason }
+    func suggestStory(transcript: Transcript) async throws -> (title: String, chapters: [Chapter]) {
+        try await StorySuggester.suggest(transcript: transcript)
+    }
     func transcribe(audio: URL, locale: Locale?) async throws -> Transcript {
         try await Transcriber.transcribe(audio: audio, locale: locale)
     }

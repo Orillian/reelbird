@@ -80,9 +80,16 @@ protocol ShareServiceProtocol: Sendable {
     func unpublish(_ info: ShareInfo, destination: ShareDestination, secret: String) async throws
 }
 
-/// `ReelbirdAI` (Transcriber, Captions, SilenceDetector).
+/// `ReelbirdAI` (Transcriber, Captions, SilenceDetector, StorySuggester).
 protocol AIService: Sendable {
     var transcriberAvailable: Bool { get }
+    /// Why captions can't be made on this Mac (language, missing model), or `nil` when they can.
+    func captionsUnavailableReason() async -> String?
+    /// Whether title and chapter suggestions exist on this OS at all (macOS 26+). The UI hides them otherwise.
+    var storySupported: Bool { get }
+    /// Why suggestions can't run right now (Apple Intelligence off, model downloading), or `nil`.
+    var storyUnavailableReason: String? { get }
+    func suggestStory(transcript: Transcript) async throws -> (title: String, chapters: [Chapter])
     func transcribe(audio: URL, locale: Locale?) async throws -> Transcript
     func webVTT(_ t: Transcript) -> String
     func silentRanges(audio: URL) throws -> [TimeRange]

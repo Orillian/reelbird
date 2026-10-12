@@ -5,7 +5,7 @@ import ReelbirdCore
 import SwiftUI
 
 @MainActor @Observable final class OnboardingModel {
-    enum Step: Int, CaseIterable { case welcome, screen, microphone, camera, accessibility, done }
+    enum Step: Int, CaseIterable { case welcome, screen, microphone, camera, keystrokes, done }
     var step: Step = .welcome
     private(set) var states: [Permission: PermissionState] = [:]
     /// Screen permission was granted in System Settings but macOS applies it only after a relaunch.
@@ -45,9 +45,12 @@ import SwiftUI
                 // macOS shows its own prompt or sends people to System Settings; keep checking.
                 permissions.openSettings(for: .screen)
                 startPolling()
-            } else if p == .accessibility && result != .granted {
+            } else if p == .inputMonitoring && result != .granted {
+                // Already refused once: macOS only allows it in System Settings now.
+                if result == .denied { permissions.openSettings(for: .inputMonitoring) }
                 startPolling()
             } else if result == .granted {
+                if p == .inputMonitoring { app?.prefs.captureKeystrokes = true }
                 next()
             }
         }
@@ -89,7 +92,7 @@ extension OnboardingModel.Step {
         case .screen: .screen
         case .microphone: .microphone
         case .camera: .camera
-        case .accessibility: .accessibility
+        case .keystrokes: .inputMonitoring
         default: nil
         }
     }
@@ -97,6 +100,7 @@ extension OnboardingModel.Step {
 
 struct OnboardingView: View {
     @Bindable var model: OnboardingModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -117,17 +121,17 @@ struct OnboardingView: View {
                     permissionStep(.camera, title: "Add your face",
                                    body: "A small camera bubble makes walkthroughs feel personal. You can move, resize or hide it after recording.",
                                    allow: "Allow Camera", optional: true)
-                case .accessibility:
-                    permissionStep(.accessibility, title: "Show your shortcuts",
-                                   body: "With Accessibility access, Reelbird can show the keys you press and zoom to the field you're typing in. Turn it on in System Settings.",
-                                   allow: "Open System Settings", optional: true)
+                case .keystrokes:
+                    permissionStep(.inputMonitoring, title: "Show your shortcuts",
+                                   body: "With Input Monitoring, Reelbird can show the keys you press in your videos. It only listens while you record, and you can turn keystrokes off in Settings.",
+                                   allow: "Allow Input Monitoring", optional: true)
                 case .done: done
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 56)
             .id(model.step)
-            .transition(.asymmetric(insertion: .opacity.combined(with: .offset(x: 24)), removal: .opacity))
+            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(x: 24)), removal: .opacity))
         }
         .frame(width: 620, height: 520)
         .background(Theme.panel)
@@ -262,7 +266,7 @@ struct OnboardingView: View {
         case .screen: "rectangle.dashed.badge.record"
         case .microphone: "mic"
         case .camera: "video"
-        case .accessibility, .inputMonitoring: "keyboard"
+        case .inputMonitoring, .accessibility: "keyboard"
         }
     }
 }
