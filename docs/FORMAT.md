@@ -18,7 +18,7 @@ Demo.reelbird/
   exports/          rendered files
 ```
 
-The Swift types in `Sources/ReelbirdCore` are the schema. Readers ignore unknown keys and fill missing keys with defaults, so files written by older or newer versions still open.
+The Swift types in `Sources/ReelbirdCore` are the schema: `ProjectManifest` for `project.json`, `EditDocument` for `edit.json`, `InputEvent` for each line of `events.jsonl`. Readers ignore unknown keys and fill missing keys with defaults, so files written by older or newer versions still open.
 
 ## Time
 
@@ -34,11 +34,19 @@ Positions in events and edits are normalized to the captured area: `(0, 0)` top-
 {"t":1.204,"type":"move","x":0.412,"y":0.233}
 {"t":1.311,"type":"down","x":0.413,"y":0.234,"button":0}
 {"t":1.398,"type":"up","x":0.413,"y":0.234,"button":0}
+{"t":1.650,"type":"scroll","x":0.413,"y":0.234,"dx":0,"dy":-3.5}
 {"t":2.010,"type":"key","chars":"s","mods":["⌘"]}
 {"t":2.500,"type":"cursor","image":"a1b2c3"}
 {"t":3.000,"type":"pause"}
+{"t":5.000,"type":"resume"}
 ```
+
+`button` is 0 for left, 1 for right, 2 for other. `key` events appear only when keystroke recording was on. `cursor` names a file stem in `cursors/`. A `focus` event with a `rect` (normalized) is reserved for focused-element frames; current builds don't write it.
+
+## Status
+
+`project.json → status` is `recording` while a take is being written, `complete` after a clean stop and `recovered` after a crash recovery. If the project was shared, `share` holds its key, link and last update.
 
 ## Recovery
 
-If the app stops while recording, `project.json` still says `"status": "recording"`. On next launch the segments on disk are concatenated, the duration is recomputed from them, and the status becomes `recovered`.
+If the app stops while recording, `project.json` still says `"status": "recording"`. On next launch (or with `reelbird recover PROJECT`) the segments on disk are concatenated, a truncated last segment is dropped, the duration is recomputed, and the status becomes `recovered`.

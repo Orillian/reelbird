@@ -11,13 +11,17 @@ Setup takes about ten minutes, once.
 Each share gets a random short ID and lives under one prefix (default `r/`):
 
 ```
-r/<id>/index.html     the viewer page (the link you send)
-r/<id>/meta.json      title, duration, chapters
-r/<id>/hls/           the stream uploaded while you record (playlist + 2-second segments)
-r/<id>/video.mp4      the polished version, after you edit and choose Update link
-r/<id>/poster.jpg     preview image for link unfurls
-r/<id>/captions.vtt   captions, if you made them
+r/<id>/index.html       the viewer page (the link you send)
+r/<id>/  and  r/<id>    copies of the viewer page, so the link works on hosts that don't serve index.html
+r/<id>/meta.json        title, duration, chapters, which files to play
+r/<id>/card.jpg         title card for link previews
+r/<id>/hls/             the stream uploaded while you record (playlist + 2-second segments)
+r/<id>/video.<n>.mp4    the polished version, after you edit and choose Update link
+r/<id>/poster.<n>.jpg   preview image for link unfurls
+r/<id>/captions.<n>.vtt captions, if you made them
 ```
+
+`<n>` goes up by one with every update, so browsers and caches never show a stale video. Reelbird deletes the previous revision's files after an update.
 
 The link is `https://<your public URL>/r/<id>/`. It never changes, even when you update the video.
 
@@ -69,7 +73,7 @@ The endpoint is `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`. Buckets in a ju
 
 ### 4. Connect Reelbird
 
-Open Reelbird → **Settings** → **Sharing** and fill in:
+Click the Reelbird icon in the menu bar, choose **Settings…**, then **Sharing**, and fill in:
 
 | Field | Value |
 |---|---|
@@ -81,9 +85,9 @@ Open Reelbird → **Settings** → **Sharing** and fill in:
 | Public URL | your custom domain or `https://pub-….r2.dev` |
 | Prefix | `r` (default) |
 
-Select **Test connection**. Reelbird checks that it can write to the bucket with these keys and that the public URL serves what it wrote.
+Choose **Test connection**. Reelbird uploads a small test file, reads it back with your keys and through your public URL, then deletes it. If both work, choose **Save**.
 
-The secret key is stored in your macOS Keychain. The other fields are stored in Reelbird's preferences.
+The secret key is stored in your macOS Keychain. The other fields are saved in `~/Library/Application Support/Reelbird/share.json`. The `reelbird` command line tool uses the same settings.
 
 ### CORS
 
@@ -100,7 +104,34 @@ R2 pricing as of October 2026 ([Cloudflare R2 pricing](https://developers.cloudf
 | Reads (Class B: views) | 10 million | $0.36 per million |
 | Egress (data sent to viewers) | unlimited | free |
 
-In practice storage is the only number that matters. A 1080p share uses roughly 30 to 40 MB per minute, so the free 10 GB holds about 4 to 5 hours of shared video. Past that, 100 GB costs about $1.35 a month. Uploads while recording are one write per 2-second segment (about 30 per minute), so a month would need around 550 hours of recording to use the free million. Delete old shares to keep storage down.
+In practice storage is the only number that matters. The stream uploaded while you record uses roughly 30 MB per minute, and a polished update adds the size of your export (both are kept, so the link still plays if the polished file is ever missing). The free 10 GB holds a few hours of shared video. Past that, 100 GB costs about $1.35 a month. Uploads while recording are one write per 2-second segment (about 30 per minute), so a month would need around 550 hours of recording to use the free million. Delete old shares to keep storage down.
+
+## Command line and CI
+
+The CLI reads the settings you saved in the app. To configure it from a terminal instead:
+
+```sh
+reelbird config share \
+  --endpoint https://<ACCOUNT_ID>.r2.cloudflarestorage.com \
+  --bucket reelbird \
+  --access-key <ACCESS_KEY_ID> \
+  --public-base https://video.example.com \
+  --test
+```
+
+It prompts for the secret access key (or reads it from stdin with `--secret-stdin`) and stores it in the Keychain. `reelbird config show` prints the current settings without the secret.
+
+On a CI machine without a Keychain, set environment variables instead. They take precedence over saved settings:
+
+| Variable | Value |
+|---|---|
+| `REELBIRD_S3_ENDPOINT` | endpoint |
+| `REELBIRD_S3_BUCKET` | bucket name |
+| `REELBIRD_S3_ACCESS_KEY_ID` | access key ID |
+| `REELBIRD_S3_SECRET_ACCESS_KEY` | secret access key |
+| `REELBIRD_S3_PUBLIC_BASE_URL` | public URL |
+| `REELBIRD_S3_REGION` | optional, default `auto` |
+| `REELBIRD_S3_PREFIX` | optional, default `r` |
 
 ## Other S3-compatible services
 
@@ -133,7 +164,8 @@ Reelbird signs requests with AWS Signature Version 4, so anything that speaks th
 
 - **Links are unlisted, not secret.** Anyone who has a link can watch the video and forward the link. The random ID makes links impossible to guess, and R2 public URLs don't list the bucket's contents, but there's no password or login. Don't share anything through a link that you wouldn't be comfortable seeing forwarded.
 - **Sharing while recording uploads as you go.** If "Share while recording" is on, segments leave your Mac during the recording. If you discard the take, Reelbird deletes everything it uploaded for it.
-- **Deleting a share.** In Reelbird, open the recording and choose **Stop sharing**. Reelbird deletes every file under `r/<id>/` and the link stops working. You can also delete the `r/<id>/` folder in the Cloudflare dashboard (**R2 object storage** → your bucket → select the folder → **Delete**).
+- **Deleting a share.** In Reelbird, open the recording, click **Copy Link** in the editor toolbar and choose **Stop sharing** (or run `reelbird unshare PROJECT`). Reelbird deletes every file under `r/<id>/` and the link stops working. You can also delete the `r/<id>/` folder in the Cloudflare dashboard (**R2 object storage** → your bucket → select the folder → **Delete**).
 - **Caches and copies.** With a custom domain, Cloudflare's cache may keep serving a deleted file for a short time. Anyone who already downloaded the video keeps their copy.
 - **Captions and titles** are generated on your Mac. They're uploaded only as part of a share you publish.
+- **What viewers load.** The viewer page, video and captions all come from your bucket. While a share has only the live stream, browsers without built-in HLS (Chrome, Firefox) also load the hls.js player from jsDelivr, pinned to one version and integrity-checked. Once you update the link, viewers get a plain MP4 and nothing else.
 - **Your keys stay on your Mac.** The secret key lives in the macOS Keychain and is only sent to your storage endpoint, as a request signature, never in plain text.
