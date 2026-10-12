@@ -1,0 +1,287 @@
+import AppKit
+import Observation
+import ReelbirdCore
+import SwiftUI
+
+// MARK: Sharing
+
+@MainActor @Observable final class SharingSettingsModel {
+    var endpoint = ""
+    var bucket = ""
+    var region = "auto"
+    var accessKeyID = ""
+    var secret = ""
+    var publicBaseURL = ""
+    var prefix = "r"
+    enum TestState: Equatable { case idle, testing, ok, failed(String) }
+    var test: TestState = .idle
+    var saved = false
+    private(set) var hasSaved = false
+
+    @ObservationIgnored private let app: AppModel?
+
+    init(app: AppModel?) {
+        self.app = app
+        if let d = app?.services.share.loadDestination() {
+            endpoint = d.endpoint; bucket = d.bucket; region = d.region; accessKeyID = d.accessKeyID
+            publicBaseURL = d.publicBaseURL; prefix = d.prefix
+            secret = app?.services.share.secret() ?? ""
+            hasSaved = true
+        }
+    }
+
+    var destination: ShareDestination {
+        ShareDestination(endpoint: endpoint.trimmingCharacters(in: .whitespaces), bucket: bucket.trimmingCharacters(in: .whitespaces),
+                         region: region.isEmpty ? "auto" : region, accessKeyID: accessKeyID.trimmingCharacters(in: .whitespaces),
+                         publicBaseURL: publicBaseURL.trimmingCharacters(in: .whitespaces), prefix: prefix.isEmpty ? "r" : prefix)
+    }
+
+    var complete: Bool { !endpoint.isEmpty && !bucket.isEmpty && !accessKeyID.isEmpty && !secret.isEmpty && !publicBaseURL.isEmpty }
+
+    func runTest() {
+        guard let app else { return }
+        test = .testing
+        let d = destination, s = secret
+        Task {
+            do {
+                try await app.services.share.testConnection(d, secret: s)
+                test = .ok
+            } catch {
+                test = .failed((error as? any LocalizedError)?.errorDescription ?? error.localizedDescription)
+            }
+        }
+    }
+
+    func save() {
+        guard let app else { return }
+        do {
+            try app.services.share.saveDestination(destination, secret: secret)
+            app.refreshShareState()
+            hasSaved = true
+            saved = true
+        } catch {
+            test = .failed("Couldn't save to the Keychain: \(error.localizedDescription)")
+        }
+    }
+
+    func remove() {
+        app?.services.share.clearDestination()
+        app?.refreshShareState()
+        endpoint = ""; bucket = ""; accessKeyID = ""; secret = ""; publicBaseURL = ""; prefix = "r"; region = "auto"
+        hasSaved = false
+        test = .idle
+    }
+}
+
+struct SharingSettings: View {
+    @Bindable var model: SharingSettingsModel
+
+    var body: some View {
+        SettingsForm {
+            Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Links upload to a storage bucket you own. Nothing goes through Reelbird's servers, because there aren't any.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    DisclosureGroup("Set up Cloudflare R2 in five minutes") {
+                        VStack(alignment: .leading, spacing: 5) {
+                            step(1, "In Cloudflare, open R2 and create a bucket, e.g. “reelbird”.")
+                            step(2, "In the bucket's Settings, turn on the public r2.dev URL (or connect your own domain) and copy it.")
+                            step(3, "Create an R2 API token with Object Read & Write for that bucket. Copy the keys; the secret is shown once.")
+                            step(4, "Paste everything below, then Test connection.")
+                            Link("Full guide", destination: URL(string: ReelbirdInfo.repositoryURL + "/blob/main/docs/SHARING.md")!)
+                                .font(.system(size: 12)).foregroundStyle(Theme.accentText).padding(.top, 2)
+                        }
+                        .padding(.top, 6)
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                }
+            }
+            Section("Bucket") {
+                TextField("Endpoint", text: $model.endpoint, prompt: Text("https://<account>.r2.cloudflarestorage.com"))
+                TextField("Bucket", text: $model.bucket, prompt: Text("reelbird"))
+                TextField("Region", text: $model.region, prompt: Text("auto"))
+                TextField("Access key ID", text: $model.accessKeyID)
+                SecureField("Secret access key", text: $model.secret, prompt: Text("Stored in your Keychain"))
+            }
+            Section("Links") {
+                TextField("Public URL", text: $model.publicBaseURL, prompt: Text("https://pub-….r2.dev"))
+                TextField("Prefix", text: $model.prefix, prompt: Text("r"))
+                if !model.publicBaseURL.isEmpty {
+                    LabeledContent("Links look like") {
+                        Text("\(model.publicBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")))/\(model.prefix)/7Hk2pQx9aB/")
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    }
+                }
+            }
+            Section {
+                HStack(spacing: Theme.Space.s) {
+                    testResult
+                    Spacer()
+                    if model.hasSaved {
+                        Button("Remove", role: .destructive) { model.remove() }
+                    }
+                    Button("Test connection") { model.runTest() }
+                        .disabled(!model.complete || model.test == .testing)
+                    Button(model.saved ? "Saved" : "Save") { model.save() }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(!model.complete)
+                }
+            }
+        }
+        .onChange(of: model.destination) { _, _ in model.saved = false; if model.test != .testing { model.test = .idle } }
+    }
+
+    @ViewBuilder private var testResult: some View {
+        switch model.test {
+        case .idle: EmptyView()
+        case .testing:
+            HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Uploading a test file…").font(.system(size: 12)).foregroundStyle(.secondary) }
+        case .ok: StatusLine(tone: .success, text: "Connected. Reelbird can upload and your public URL serves files.")
+        case .failed(let m): StatusLine(tone: .error, text: m)
+        }
+    }
+
+    private func step(_ n: Int, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(n)").font(.system(size: 11, weight: .semibold).monospacedDigit()).foregroundStyle(.secondary).frame(width: 12)
+            Text(text).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+// MARK: Permissions
+
+@MainActor @Observable final class PermissionsModel {
+    private(set) var states: [Permission: PermissionState] = [:]
+    @ObservationIgnored let services: Services
+    @ObservationIgnored private var timer: Timer?
+
+    init(services: Services) {
+        self.services = services
+        refresh()
+    }
+
+    func refresh() {
+        for p in Permission.allCases { states[p] = services.permissions.status(p) }
+    }
+
+    func startPolling() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh() }
+        }
+    }
+
+    func stopPolling() { timer?.invalidate(); timer = nil }
+
+    func request(_ p: Permission) {
+        if states[p] == .notDetermined && p != .screen && p != .accessibility {
+            Task { _ = await services.permissions.request(p); refresh() }
+        } else {
+            if p == .screen && states[p] == .notDetermined { Task { _ = await services.permissions.request(.screen); refresh() } }
+            services.permissions.openSettings(for: p)
+        }
+    }
+}
+
+struct PermissionInfo {
+    let permission: Permission
+    let title: String
+    let detail: String
+    let symbol: String
+    let required: Bool
+
+    static let shown: [PermissionInfo] = [
+        .init(permission: .screen, title: "Screen Recording", detail: "To record your screen or a window.", symbol: "rectangle.dashed.badge.record", required: true),
+        .init(permission: .microphone, title: "Microphone", detail: "To record your voice.", symbol: "mic", required: false),
+        .init(permission: .camera, title: "Camera", detail: "To show your face in a bubble.", symbol: "video", required: false),
+        .init(permission: .accessibility, title: "Accessibility", detail: "To show keystrokes and follow the focused field when zooming.", symbol: "keyboard", required: false),
+    ]
+}
+
+struct PermissionsSettings: View {
+    let model: PermissionsModel
+
+    var body: some View {
+        SettingsForm {
+            Section {
+                ForEach(PermissionInfo.shown, id: \.permission) { info in
+                    PermissionRow(info: info, state: model.states[info.permission] ?? .notDetermined) { model.request(info.permission) }
+                }
+            } footer: {
+                Text("Reelbird checks again whenever you come back from System Settings. Screen Recording takes effect after Reelbird reopens.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+        }
+        .onAppear { model.refresh(); model.startPolling() }
+        .onDisappear { model.stopPolling() }
+    }
+}
+
+struct PermissionRow: View {
+    let info: PermissionInfo
+    let state: PermissionState
+    let action: () -> Void
+
+    var body: some View {
+        HStack(spacing: Theme.Space.m) {
+            Image(systemName: info.symbol)
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Theme.fieldFill))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(info.title).font(.system(size: 13, weight: .medium))
+                    if !info.required { Text("Optional").font(.system(size: 10.5)).foregroundStyle(.tertiary) }
+                }
+                Text(info.detail).font(.system(size: 11.5)).foregroundStyle(.secondary)
+            }
+            Spacer()
+            badge
+            if state != .granted {
+                Button(state == .notDetermined && info.permission != .accessibility ? "Allow…" : "Open Settings", action: action)
+            }
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var badge: some View {
+        let (text, color): (String, Color) = switch state {
+        case .granted: ("Allowed", Theme.success)
+        case .denied: ("Off", Theme.warning)
+        case .notDetermined: ("Not set", .secondary)
+        }
+        return HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(text).font(.system(size: 11.5, weight: .medium)).foregroundStyle(state == .granted ? .secondary : color)
+        }
+    }
+}
+
+// MARK: About
+
+struct AboutSettings: View {
+    let app: AppModel?
+    var body: some View {
+        VStack(spacing: Theme.Space.m) {
+            Mascot(pose: .idle, size: 96).padding(.top, Theme.Space.l)
+            BrandLogo(height: 26).padding(.top, -6)
+            Text("Version \(ReelbirdInfo.version)").font(.system(size: 12).monospacedDigit()).foregroundStyle(.secondary)
+            Text("Free and open source under the MIT licence.\nRecordings stay on your Mac unless you share them.")
+                .font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            HStack(spacing: Theme.Space.s) {
+                Button("GitHub") { NSWorkspace.shared.open(URL(string: ReelbirdInfo.repositoryURL)!) }
+                    .buttonStyle(SecondaryButtonStyle())
+                Button("Welcome Tour") { app?.showOnboarding() }
+                    .buttonStyle(SecondaryButtonStyle())
+                Button("Support Reelbird") { NSWorkspace.shared.open(URL(string: ReelbirdInfo.supportURL)!) }
+                    .buttonStyle(PrimaryButtonStyle())
+            }
+            .padding(.top, Theme.Space.s)
+            .padding(.bottom, Theme.Space.xl)
+        }
+        .frame(width: 560)
+    }
+}
