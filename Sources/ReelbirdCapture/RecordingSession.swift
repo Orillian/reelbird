@@ -375,7 +375,9 @@ actor SessionEngine {
         if let w = pipeline.microphone?.writer { writers.append((.microphone, w, nil)) }
         if let w = pipeline.systemAudio?.writer { writers.append((.systemAudio, w, nil)) }
         if let w = pipeline.cameraWriter { writers.append((.camera, w, endTime)) }
-        if let w = pipeline.shareWriter { writers.append((.share, w, endTime)) }
+        // The share stream leaves pauses out, so it ends earlier.
+        let shareEnd = pipeline.shareTimeMap.time(endTime) ?? max(0, endTime - pipeline.shareTimeMap.pausedTotal)
+        if let w = pipeline.shareWriter { writers.append((.share, w, shareEnd)) }
         var errors: [TrackKind: String] = [:]
         await withTaskGroup(of: (TrackKind, String?).self) { group in
             for (kind, writer, end) in writers {
@@ -385,7 +387,7 @@ actor SessionEngine {
             }
             for await (kind, error) in group { if let error { errors[kind] = error } }
         }
-        await pump?.finish(totalDuration: endTime, timeout: 1.5)
+        await pump?.finish(totalDuration: shareEnd, timeout: 1.5)
 
         // Consolidate segments into one file per track and verify each opens with AVFoundation.
         // A track whose segments can't be copied (disk full, I/O error) leaves the project in the

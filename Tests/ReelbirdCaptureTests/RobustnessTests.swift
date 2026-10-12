@@ -246,3 +246,67 @@ extension RecordingTests {
         #expect(!FileManager.default.fileExists(atPath: url.path))
     }
 }
+
+@Test func shareTimeMapLeavesPausesOut() {
+    let map = ShareTimeMap()
+    #expect(map.time(1) == 1)
+    map.pause(at: 2)
+    #expect(map.time(2.5) == nil)
+    map.resume(TimeRange(start: 2, end: 5))
+    #expect(map.time(2.5) == nil)
+    #expect(map.time(5) == 2)
+    #expect(map.time(6) == 3)
+
+    // Audio: a chunk spanning the pause keeps [1.9, 2) and [5, 5.1), placed back to back.
+    var pieces: [(Int64, Int, Int)] = []
+    map.mapAudio(frame: 91_200, frames: 153_600, rate: 48_000) { pieces.append(($0, $1, $2)) }
+    #expect(pieces.count == 2)
+    #expect(pieces[0] == (91_200, 0, 4_800))
+    #expect(pieces[1] == (96_000, 148_800, 4_800))
+    // After the pause everything shifts by 3 s; inside an open pause nothing is emitted.
+    pieces = []
+    map.mapAudio(frame: 288_000, frames: 960, rate: 48_000) { pieces.append(($0, $1, $2)) }
+    #expect(pieces.count == 1 && pieces[0] == (144_000, 0, 960))
+    map.pause(at: 7)
+    pieces = []
+    map.mapAudio(frame: 336_000 - 480, frames: 960, rate: 48_000) { pieces.append(($0, $1, $2)) }
+    #expect(pieces.count == 1 && pieces[0] == (192_000 - 480, 0, 480))
+}
+
+extension RecordingTests {
+    /// The live link plays straight through a pause: share media is the recording minus the pause,
+    /// segments stay ~2 s (no giant segment), and audio and video have no gap at the cut.
+    @Test func shareStreamPlaysStraightThroughPauses() async throws {
+        let url = tempBundleURL("sharepause")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let sink = MockShareSink()
+        let session = RecordingSession(options: options(), bundleURL: url, shareSink: sink, frameSource: SyntheticFrameSource())
+        try await session.start()
+        await sleep(2.5)
+        await session.pause()
+        await sleep(3)
+        await session.resume()
+        await sleep(2.5)
+        let bundle = try await session.stop()
+        let m = try bundle.readManifest()
+        let pause = try #require(m.pauses.first)
+        let expected = m.duration - pause.duration
+
+        let calls = sink.calls.withLock { $0 }
+        let media = calls.compactMap { c -> Double? in if case .media(_, let d) = c { return d } else { return nil } }
+        #expect(media.allSatisfy { $0 < 2.3 }, "segment durations \(media)")
+        if case .finish(let total) = calls.last { #expect(abs(total - expected) < 0.15, "finish \(total) vs \(expected)") }
+
+        let file = bundle.resolve(try #require(m.track(.share)?.file))
+        let (duration, _) = try await loadAsset(file)
+        #expect(abs(duration - expected) < 0.2, "share \(duration) s, recording \(m.duration) s minus pause \(pause.duration) s")
+        let pts = try await samplePTS(file, type: .video).sorted()
+        let maxGap = zip(pts, pts.dropFirst()).map { $1 - $0 }.max() ?? 0
+        #expect(maxGap < 0.15, "largest video gap \(maxGap) s")
+        let windows = try await audioWindows(file)
+        #expect(windows.filter { $0.t > 0.3 && $0.t < expected - 0.3 }.allSatisfy { $0.rms > 0.15 }, "share audio has no silent pause")
+        // The full-quality tracks still keep the pause on the recording timeline.
+        let (screenDuration, _) = try await loadAsset(bundle.resolve(try #require(m.track(.screen)?.file)))
+        #expect(abs(screenDuration - m.duration) < 0.1)
+    }
+}

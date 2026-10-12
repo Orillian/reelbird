@@ -29,6 +29,8 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
     let composer: ShareComposer?
     let mixer: AudioMixer?
     let shareWriter: SegmentedWriter?
+    /// Recording time → share time (pauses left out).
+    let shareTimeMap: ShareTimeMap
     private let cameraDirectory: URL
 
     private struct Timing {
@@ -75,12 +77,18 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
         self.cameraDirectory = cameraDirectory
         self.shareWriter = shareWriter
         self.composer = composer
+        self.shareTimeMap = composer?.timeMap ?? ShareTimeMap()
         if let shareWriter {
             let inputs = (microphone != nil ? 1 : 0) + (systemAudio != nil ? 1 : 0)
             if inputs > 0 {
                 let factory = PCMBufferFactory(channels: 2)
+                let map = shareTimeMap
+                let rate = Double(AudioPCM.sampleRate)
                 let mixer = AudioMixer(inputs: inputs) { frame, samples, n in
-                    if let sb = factory.make(frame: frame, samples: samples, frames: n) { shareWriter.append(audio: sb) }
+                    // The share stream leaves pauses out (see ShareTimeMap).
+                    map.mapAudio(frame: frame, frames: n, rate: rate) { shareFrame, offset, count in
+                        if let sb = factory.make(frame: shareFrame, samples: samples + offset * 2, frames: count) { shareWriter.append(audio: sb) }
+                    }
                 }
                 self.mixer = mixer
                 var input = 0
@@ -296,6 +304,7 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
         timing.withLock { s -> Double? in
             guard let o = s.origin, s.pauseStart == nil else { return nil }
             s.pauseStart = host - o
+            shareTimeMap.pause(at: host - o)
             return host - o
         }
     }
@@ -307,6 +316,7 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
             let r = TimeRange(start: p, end: max(p, host - o))
             s.pauses.append(r)
             s.pauseStart = nil
+            shareTimeMap.resume(r)
             return r
         }
         guard let range else { return nil }
@@ -367,6 +377,7 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
             guard let p = s.pauseStart else { return nil }
             s.pauses.append(TimeRange(start: p, end: max(p, endTime)))
             s.pauseStart = nil
+            shareTimeMap.resume(TimeRange(start: p, end: max(p, endTime)))
             return p
         }
         composer?.stop()
