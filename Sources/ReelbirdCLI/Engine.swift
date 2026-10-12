@@ -88,7 +88,10 @@ protocol Engine: Sendable {
 enum EngineFactory {
     /// The engine the CLI uses. The coordinator replaces this with an adapter over
     /// ReelbirdCapture / ReelbirdRender / ReelbirdShare once those modules land.
-    static func make() -> any Engine { UnavailableEngine() }
+    static func make() -> any Engine {
+        if ProcessInfo.processInfo.environment["REELBIRD_DEMO_ENGINE"] == "1" { return DemoEngine() }
+        return UnavailableEngine()
+    }
 }
 
 /// Placeholder engine: every capture/render/share call fails with a clear message.

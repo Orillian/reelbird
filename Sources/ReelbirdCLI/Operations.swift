@@ -17,6 +17,26 @@ struct RecordParams: Sendable {
     var out: String?
 }
 
+/// Hands out unique new-bundle URLs even when several recordings start in the same second (MCP).
+enum BundleNames {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var reserved: Set<String> = []
+
+    static func reserve(in library: ProjectLibrary) -> URL {
+        lock.withLock {
+            var url = library.newBundleURL()
+            let base = url.deletingPathExtension().lastPathComponent
+            var n = 2
+            while reserved.contains(url.path) || FileManager.default.fileExists(atPath: url.path) {
+                url = library.root.appendingPathComponent("\(base) \(n).\(ProjectBundle.pathExtension)")
+                n += 1
+            }
+            reserved.insert(url.path)
+            return url
+        }
+    }
+}
+
 /// Every CLI/MCP operation. Each returns a `Report` (JSON + human text) or throws a `CLIError`.
 struct Operations: Sendable {
     let engine: any Engine
@@ -76,7 +96,7 @@ struct Operations: Sendable {
             }
             url = u
         } else {
-            url = locator.library.newBundleURL()
+            url = BundleNames.reserve(in: locator.library)
         }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)

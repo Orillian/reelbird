@@ -24,13 +24,15 @@ private enum CLI {
         var json: [String: Any]? { (try? JSONSerialization.jsonObject(with: Data(out.utf8))) as? [String: Any] }
     }
 
-    static func run(_ args: [String], stdin: String? = nil, library: URL? = nil) throws -> Result {
+    static func run(_ args: [String], stdin: String? = nil, library: URL? = nil, demo: Bool = false,
+                    interruptAfter: Double? = nil) throws -> Result {
         guard let binary else { throw CocoaError(.fileNoSuchFile) }
         let p = Process()
         p.executableURL = binary
         p.arguments = args
         var env = ProcessInfo.processInfo.environment
         if let library { env["REELBIRD_LIBRARY"] = library.path }
+        if demo { env["REELBIRD_DEMO_ENGINE"] = "1" }
         p.environment = env
         let outPipe = Pipe(), errPipe = Pipe(), inPipe = Pipe()
         p.standardOutput = outPipe
@@ -38,6 +40,10 @@ private enum CLI {
         p.standardInput = inPipe
         try p.run()
         if let stdin { inPipe.fileHandleForWriting.write(Data(stdin.utf8)) }
+        if let interruptAfter {
+            Thread.sleep(forTimeInterval: interruptAfter)
+            p.interrupt()
+        }
         try inPipe.fileHandleForWriting.close()
         let out = outPipe.fileHandleForReading.readDataToEndOfFile()
         let err = errPipe.fileHandleForReading.readDataToEndOfFile()
@@ -112,6 +118,27 @@ private func tempDir() throws -> URL {
     let r = try CLI.run(["record", "--json", "--duration", "2"], library: try tempDir())
     #expect(r.code == 69)
     #expect(r.json?["ok"] as? Bool == false)
+}
+
+@Test(.enabled(if: binaryAvailable)) func recordStopsAfterDurationAndOnCtrlC() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let timed = try CLI.run(["record", "--duration", "0.6", "--json"], library: dir, demo: true)
+    #expect(timed.code == 0, "\(timed.err)")
+    let path = try #require(timed.json?["bundle"] as? String)
+    let m = try ProjectBundle(url: URL(fileURLWithPath: path)).readManifest()
+    #expect(m.status == .complete && m.duration >= 0.5)
+
+    let out = dir.appendingPathComponent("interrupted").path
+    let interrupted = try CLI.run(["record", "--out", out, "--mic", "none"], library: dir, demo: true, interruptAfter: 0.8)
+    #expect(interrupted.code == 0, "\(interrupted.err)")
+    #expect(interrupted.out.trimmingCharacters(in: .whitespacesAndNewlines) == out + ".reelbird")
+    #expect(interrupted.err.contains("Stopping"))
+    #expect(try ProjectBundle(url: URL(fileURLWithPath: out + ".reelbird")).readManifest().status == .complete)
+
+    let sources = try CLI.run(["sources", "--json"], demo: true)
+    #expect(sources.code == 0 && (sources.json?["displays"] as? [Any])?.count == 1)
 }
 
 // MARK: - edit / info / list
@@ -227,8 +254,8 @@ private func tempDir() throws -> URL {
 
 // MARK: - MCP
 
-private func mcp(_ messages: [String], library: URL? = nil) throws -> [String: [String: Any]] {
-    let r = try CLI.run(["mcp"], stdin: messages.joined(separator: "\n") + "\n", library: library)
+private func mcp(_ messages: [String], library: URL? = nil, demo: Bool = false) throws -> [String: [String: Any]] {
+    let r = try CLI.run(["mcp"], stdin: messages.joined(separator: "\n") + "\n", library: library, demo: demo)
     var byID: [String: [String: Any]] = [:]
     for line in r.out.split(separator: "\n") {
         guard let obj = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any] else {
@@ -328,4 +355,33 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
 
     #expect(errorCode(responses["m"]) == -32602)   // missing clientCapabilities
     #expect(errorCode(responses["n"]) == -32602)   // no _meta and no initialize
+}
+
+@Test(.enabled(if: binaryAvailable)) func mcpRecordingSessions() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let meta = #""_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}"#
+    // Two recordings: one stopped explicitly, one left running when stdin closes (must still be saved).
+    let r = try CLI.run(["mcp"], stdin: [
+        #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"start_recording","arguments":{"microphone":"none"},\#(meta)}}"#,
+        #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"start_recording","arguments":{"display":"1"},\#(meta)}}"#,
+    ].joined(separator: "\n") + "\n", library: dir, demo: true)
+    let lines = r.out.split(separator: "\n").compactMap { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] }
+    let sessions = lines.compactMap { (($0["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["session_id"] as? String }
+    #expect(sessions.count == 2, "\(r.out) \(r.err)")
+    #expect(r.err.contains("saving recording"))
+    let saved = ProjectLibrary(root: dir).list()
+    #expect(saved.count == 2)
+    #expect(saved.allSatisfy { (try? $0.readManifest().status) == .complete })
+
+    // start → stop in one connection; stop waits for the start response because the client sends it after.
+    let dir2 = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir2) }
+    let start = try mcp([#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"start_recording","arguments":{"duration":0.3},\#(meta)}}"#],
+                        library: dir2, demo: true)
+    let sid = try #require((toolResult(start["1"])?["structuredContent"] as? [String: Any])?["session_id"] as? String)
+    #expect(sid.hasPrefix("rec_"))
+    let stopUnknown = try mcp([#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"stop_recording","arguments":{"session_id":"rec_nope"},\#(meta)}}"#],
+                              library: dir2, demo: true)
+    #expect(toolResult(stopUnknown["2"])?["isError"] as? Bool == true)
 }
