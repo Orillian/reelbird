@@ -6,10 +6,10 @@ import Foundation
 let args = CommandLine.arguments
 if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
     let dir = URL(fileURLWithPath: args[i + 1], isDirectory: true)
-    let filter = i + 2 < args.count ? args[i + 2] : nil
+    let filter = i + 2 < args.count && !args[i + 2].hasPrefix("--") ? args[i + 2] : nil
     MainActor.assumeIsolated {
         _ = NSApplication.shared
-        SnapshotRunner.run(dir: dir, filter: filter)
+        SnapshotRunner.run(dir: dir, filter: filter, live: args.contains("--live"))
     }
     exit(0)
 }

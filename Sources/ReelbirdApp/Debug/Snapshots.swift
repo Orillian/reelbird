@@ -1,9 +1,11 @@
 import AppKit
+import ReelbirdCapture
 import ReelbirdCore
 import SwiftUI
 
-/// `ReelbirdApp --snapshot <dir> [filter]`: renders every key view with mock data to PNGs in
-/// light and dark, without screen-recording permission. Used for design review.
+/// `ReelbirdApp --snapshot <dir> [filter] [--live]`: renders every key view with mock data to PNGs in
+/// light and dark, without screen-recording permission. Used for design review. `--live` adds scenes
+/// built on the real engine.
 @MainActor enum SnapshotRunner {
     private final class KeyWindow: NSWindow {
         override var isKeyWindow: Bool { true }
@@ -18,7 +20,7 @@ import SwiftUI
         let build: () -> AnyView
     }
 
-    static func run(dir: URL, filter: String?) {
+    static func run(dir: URL, filter: String?, live: Bool = false) {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -210,6 +212,10 @@ import SwiftUI
             })
         }
 
+        // Live scenes go first: every snapshot window with a spinner keeps an AppKit animation thread
+        // alive, and dozens of them starve the dispatch threads the engine's async work needs.
+        if live { scenes = liveScenes(prefs: prefs, work: work) + scenes }
+
         // Menu bar glyphs
         scenes.append(Scene(name: "menubar", size: CGSize(width: 260, height: 60), backdrop: false) {
             AnyView(HStack(spacing: 18) {
@@ -225,7 +231,9 @@ import SwiftUI
         })
 
         var count = 0
-        for scene in scenes where filter == nil || scene.name.contains(filter!) {
+        // `filter` may list several name fragments separated by commas.
+        let fragments = filter?.split(separator: ",").map(String.init)
+        for scene in scenes where fragments == nil || fragments!.contains(where: { scene.name.contains($0) }) {
             for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
                 let url = dir.appendingPathComponent("\(scene.name)-\(suffix).png")
                 render(scene, appearance: appearance, to: url)
@@ -233,6 +241,75 @@ import SwiftUI
             }
         }
         print("Wrote \(count) snapshots to \(dir.path)")
+    }
+
+    /// `--snapshot <dir> [filter] --live`: the real engine with this Mac's real permission state, on a
+    /// synthetic recording (the Metal preview itself doesn't appear in cached snapshots; posters do).
+    private static func liveScenes(prefs: Preferences, work: URL) -> [Scene] {
+        let services = Services.live()
+        let library = work.appendingPathComponent("live-library", isDirectory: true)
+        try? FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        let bundleURL = library.appendingPathComponent("Synthetic take.reelbird")
+        var scenes: [Scene] = []
+        scenes.append(Scene(name: "live-picker", size: CGSize(width: 620, height: 600), backdrop: true) {
+            prefs.sourceTab = .display
+            let picker = SourcePickerModel(services: services, prefs: prefs)
+            picker.load()
+            wait(seconds: 1.5) { !picker.loading }
+            return AnyView(SourcePickerView(model: picker, controller: nil, prefs: prefs))
+        })
+        guard let bundle = recordSynthetic(at: bundleURL, seconds: 6) else {
+            print("Couldn't record the synthetic take for live snapshots")
+            return scenes
+        }
+        scenes.append(Scene(name: "live-editor", size: CGSize(width: 1320, height: 840), backdrop: false) {
+            guard let m = try? EditorModel(bundle: bundle, services: services) else { return AnyView(Text("Editor failed")) }
+            m.autosaveEnabled = false
+            m.attachPlayer()
+            wait(seconds: 30) { m.filmstrip.count >= 12 && !m.waveform.isEmpty }
+            m.setPlayheadForSnapshot(2)
+            return AnyView(EditorView(model: m, app: nil))
+        })
+        scenes.append(Scene(name: "live-library", size: CGSize(width: 1080, height: 700), backdrop: false) {
+            let livePrefs = Preferences(defaults: UserDefaults(suiteName: "app.reelbird.snapshots.live")!)
+            livePrefs.libraryPath = library.path
+            let store = LibraryStore(services: services, prefs: livePrefs)
+            store.reload()
+            wait(seconds: 30) { store.posters.count == store.items.count }
+            return AnyView(LibraryView(store: store, app: nil))
+        })
+        return scenes
+    }
+
+    /// Records generated frames and tones (as fast as the encoder allows) into a new bundle.
+    private static func recordSynthetic(at url: URL, seconds: Double) -> ProjectBundle? {
+        var options = RecordingOptions(source: .synthetic(name: "snapshot"))
+        options.frameRate = 30
+        var config = SyntheticFrameSource.Configuration()
+        config.frameRate = 30
+        config.mode = .asFastAsPossible(duration: seconds)
+        let source = SyntheticFrameSource(configuration: config)
+        let session = RecordingSession(options: options, bundleURL: url, frameSource: source)
+        var result: ProjectBundle?
+        var done = false
+        Task {
+            do {
+                try await session.start()
+                await source.waitUntilFinished()
+                result = try await session.stop()
+            } catch {
+                print("Synthetic recording failed: \(error.localizedDescription)")
+            }
+            done = true
+        }
+        wait(seconds: 60) { done }
+        return result
+    }
+
+    /// Runs the main run loop until `condition` holds or `seconds` pass.
+    private static func wait(seconds: Double, until condition: () -> Bool) {
+        let deadline = Date().addingTimeInterval(seconds)
+        while !condition() && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
     }
 
     private static func render(_ scene: Scene, appearance: NSAppearance.Name, to url: URL) {

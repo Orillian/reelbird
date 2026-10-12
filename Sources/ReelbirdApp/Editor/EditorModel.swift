@@ -427,8 +427,8 @@ enum CaptionState: Equatable {
         Task {
             do {
                 let url = try await services.render.export(bundle: bundle, edit: edit, options: options) { p in
-                    Task { @MainActor [weak self] in
-                        if case .running = self?.exportState { self?.exportState = .running(p) }
+                    Task { @MainActor in
+                        if case .running = self.exportState { self.exportState = .running(p) }
                     }
                 }
                 exportState = .done(url)
@@ -460,7 +460,7 @@ enum CaptionState: Equatable {
                 let video = try await services.render.export(bundle: bundle, edit: edit,
                                                              options: ExportOptions(format: .mp4H264, height: 1080,
                                                                                     destination: tmp.appendingPathComponent("video.mp4"))) { p in
-                    Task { @MainActor [weak self] in self?.shareState = .working("Rendering", p * 0.6) }
+                    Task { @MainActor in self.shareState = .working("Rendering", p * 0.6) }
                 }
                 let poster = try? await services.render.poster(bundle: bundle, at: 0, maxWidth: 1280)
                 var captions: URL?
@@ -471,7 +471,7 @@ enum CaptionState: Equatable {
                 }
                 let info = try await services.share.publish(bundle: bundle, video: video, poster: poster, captions: captions,
                                                             destination: dest, secret: secret) { p in
-                    Task { @MainActor [weak self] in self?.shareState = .working("Uploading", 0.6 + p * 0.4) }
+                    Task { @MainActor in self.shareState = .working("Uploading", 0.6 + p * 0.4) }
                 }
                 var m = manifest
                 m.share = info

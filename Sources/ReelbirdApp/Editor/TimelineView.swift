@@ -258,19 +258,21 @@ struct Ruler: View {
             let candidates: [Double] = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600]
             let step = candidates.first { CGFloat($0) * scale.pps >= 64 } ?? 600
             let minor = step / 5
-            var t = 0.0
-            while t <= scale.duration + 0.001 {
+            var i = 0
+            while Double(i) * minor <= scale.duration + 0.001 {
+                // Index-based so ticks don't drift and sub-second labels read 0:00.5, not 0:00 twice.
+                let t = Double(i) * minor
                 let x = scale.x(t)
-                let isMajor = abs(t / step - (t / step).rounded()) < 0.001
+                let isMajor = i % 5 == 0
                 var p = Path()
                 p.move(to: CGPoint(x: x, y: size.height - (isMajor ? 8 : 4)))
                 p.addLine(to: CGPoint(x: x, y: size.height))
                 ctx.stroke(p, with: .color(Color.primary.opacity(isMajor ? 0.3 : 0.14)), lineWidth: 1)
                 if isMajor {
-                    ctx.draw(Text(TimeFormat.clock(t)).font(.system(size: 10).monospacedDigit()).foregroundStyle(.secondary),
+                    ctx.draw(Text(TimeFormat.clock(t + 0.001, tenths: step < 1)).font(.system(size: 10).monospacedDigit()).foregroundStyle(.secondary),
                              at: CGPoint(x: x + 3, y: 9), anchor: .leading)
                 }
-                t += minor
+                i += 1
             }
         }
         .contentShape(Rectangle())
