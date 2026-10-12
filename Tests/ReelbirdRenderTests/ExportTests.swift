@@ -116,6 +116,39 @@ func cpuSeconds() -> Double {
     let result = await task.result
     #expect(throws: CancellationError.self) { try result.get() }
     #expect(!FileManager.default.fileExists(atPath: dest.path))
+    // Nothing half-written is left next to it either.
+    let leftovers = try FileManager.default.contentsOfDirectory(atPath: dest.deletingLastPathComponent().path).filter { $0.contains(".partial.") && $0.contains("rb-cancel") }
+    #expect(leftovers.isEmpty, "\(leftovers)")
+}
+
+@Test func exportNamesDontRepeatTheDate() async throws {
+    let bundle = try await Synthetic.makeBundle()
+    defer { try? FileManager.default.removeItem(at: bundle.url) }
+    var manifest = try bundle.readManifest()
+    manifest.title = "Reelbird 2026-10-12 at 16.09.51"
+    let edit = EditDocument()
+    let a = try Exporter.destination(bundle: bundle, manifest: manifest, edit: edit, options: ExportOptions())
+    #expect(a.lastPathComponent == "Reelbird 2026-10-12 at 16.09.51.mp4")
+    try Data().write(to: a)
+    let b = try Exporter.destination(bundle: bundle, manifest: manifest, edit: edit, options: ExportOptions())
+    #expect(b.lastPathComponent == "Reelbird 2026-10-12 at 16.09.51 2.mp4")
+    manifest.title = "Launch demo"
+    let c = try Exporter.destination(bundle: bundle, manifest: manifest, edit: edit, options: ExportOptions(format: .gif),
+                                     now: Date(timeIntervalSince1970: 0))
+    #expect(c.lastPathComponent.hasPrefix("Launch demo 19") && c.pathExtension == "gif")
+    // A real export lands at the final name and leaves no partial file.
+    try FileManager.default.removeItem(at: a)
+    var m2 = try bundle.readManifest(); m2.title = "Reelbird 2026-10-12 at 16.09.51"; try bundle.writeManifest(m2)
+    let out = try await Exporter.export(bundle: bundle, edit: try bundle.readEdit(), options: ExportOptions(format: .mp4H264, height: 360)) { _ in }
+    #expect(out.lastPathComponent == "Reelbird 2026-10-12 at 16.09.51.mp4")
+    // AVFoundation removes its own scratch copy (".sb-…") a moment after finishing; allow for that.
+    var files: [String] = []
+    for _ in 0..<30 {
+        files = try FileManager.default.contentsOfDirectory(atPath: bundle.exportsURL.path)
+        if !files.contains(where: { $0.contains(".partial.") }) { break }
+        try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(!files.contains { $0.contains(".partial.") }, "\(files)")
 }
 
 @Test func posterFromSavedEdit() async throws {
@@ -125,7 +158,7 @@ func cpuSeconds() -> Double {
     #expect(img.width == 640 && img.height == 360)
 }
 
-/// 4K exports + throughput benchmark. Heavy: run with `RB_BENCH=1 research/heavy.sh scripts/test.sh --filter benchmark4K`.
+/// 4K exports + throughput benchmark. Heavy (run it on an otherwise idle machine): `RB_BENCH=1 scripts/test.sh --filter benchmark4K`.
 @Test func benchmark4K() async throws {
     guard ProcessInfo.processInfo.environment["RB_BENCH"] != nil else { return }
     var o = Synthetic.Options()
