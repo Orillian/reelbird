@@ -148,6 +148,10 @@ actor SessionEngine {
     private var freeDiskProbe: @Sendable () -> Int64?
     private var stopTask: Task<ProjectBundle, any Error>?
     private var cameraSize: PixelSize?
+    /// The first frame arrived (there is a take to finalize).
+    private var recordingStarted = false
+    private var discardRequested = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(options: RecordingOptions, bundle: ProjectBundle, sink: (any ShareSegmentSink)?, source: (any FrameSource)?,
          broadcaster: StatusBroadcaster) {
@@ -173,8 +177,9 @@ actor SessionEngine {
     // MARK: Start
 
     func start() async throws {
-        guard phase == .idle, manifest == nil else { throw CaptureError.alreadyStarted }
+        guard phase == .idle, manifest == nil, !discardRequested else { throw CaptureError.alreadyStarted }
         phase = .countdown  // "starting": guards against a second start while we await
+        defer { resumeStartWaiters() }
         do {
             try await startCapture()
         } catch {
@@ -182,14 +187,32 @@ actor SessionEngine {
             phase = .failed
             publish()
             broadcaster.finish()
-            throw error
+            throw discardRequested ? CancellationError() : error
         }
+    }
+
+    /// Waits while `start()` is still bringing capture up.
+    private func waitForStart() async {
+        guard phase == .countdown else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    private func resumeStartWaiters() {
+        let w = startWaiters
+        startWaiters = []
+        w.forEach { $0.resume() }
+    }
+
+    /// Throws if `discard()` was called while starting.
+    private func checkNotDiscarded() throws {
+        if discardRequested { throw CancellationError() }
     }
 
     private func startCapture() async throws {
         let src = providedSource ?? ScreenCaptureKitSource(options: options)
         source = src
         let fmt = try await src.prepare()
+        try checkNotDiscarded()
         format = fmt
         _ = try ProjectBundle.create(at: bundle.url)
 
@@ -249,13 +272,16 @@ actor SessionEngine {
         eventLog = try EventLogWriter(url: bundle.eventsURL)
 
         try await src.start(output: pipeline)
+        try checkNotDiscarded()
         let first = try await pipeline.waitForFirstFrame(timeout: fmt.isRealTime ? 6 : 30)
+        try checkNotDiscarded()
         didStart(origin: first)
     }
 
     private func didStart(origin: Double) {
         guard let fmt = format, let pipeline, let eventLog else { return }
         self.origin = origin
+        recordingStarted = true
         manifest?.clock.originHostTime = origin
         writeManifest()
         let src: (any FrameSource)? = source
@@ -318,8 +344,10 @@ actor SessionEngine {
     // MARK: Stop
 
     func stop() async throws -> ProjectBundle {
+        // Stop pressed while capture is still starting (slow first frame): finish starting, then stop.
+        await waitForStart()
         if let stopTask { return try await stopTask.value }
-        guard phase == .recording || phase == .paused || (phase == .failed && pipeline != nil) else {
+        guard !discardRequested, recordingStarted, phase == .recording || phase == .paused || phase == .failed else {
             throw CaptureError.notRecording
         }
         let task = Task { try await self.finalize() }
@@ -440,6 +468,11 @@ actor SessionEngine {
     // MARK: Discard / crash
 
     func discard() async {
+        discardRequested = true
+        pipeline?.cancelFirstFrameWait()
+        await waitForStart()
+        // Stop already finishing: let it settle so nothing writes into the folder after it is deleted.
+        if let stopTask { _ = try? await stopTask.value }
         ticker?.cancel()
         let wasRunning = pipeline != nil
         await source?.stop()
@@ -447,7 +480,7 @@ actor SessionEngine {
         pipeline?.abandon()
         eventLog?.close()
         await pump?.cancel()
-        if wasRunning || FileManager.default.fileExists(atPath: bundle.manifestURL.path) {
+        if wasRunning || recordingStarted || FileManager.default.fileExists(atPath: bundle.manifestURL.path) {
             try? FileManager.default.removeItem(at: bundle.url)
         }
         phase = .idle

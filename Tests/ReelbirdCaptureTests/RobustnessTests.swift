@@ -193,3 +193,56 @@ extension RecordingTests {
     #expect(chosen.codec == .h264)
     writer.abandon()
 }
+
+// Control races: stop/discard while starting or finishing, stop twice, pause while stopping.
+extension RecordingTests {
+    func slowStartSession(_ name: String, delay: Double = 1) -> (RecordingSession, URL) {
+        let url = tempBundleURL(name)
+        var config = SyntheticFrameSource.Configuration()
+        config.startDelay = delay
+        return (RecordingSession(options: options(), bundleURL: url, frameSource: SyntheticFrameSource(configuration: config)), url)
+    }
+
+    @Test func stopWhileStartingFinishesTheTake() async throws {
+        let (session, url) = slowStartSession("stopstarting")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let starter = Task { try await session.start() }
+        await sleep(0.2)   // still inside the 1 s start delay
+        let bundle = try await session.stop()   // used to throw "Nothing is being recorded" and leave capture running
+        try await starter.value
+        #expect(try bundle.readManifest().status == .complete)
+        #expect(session.currentStatus.phase == .finished)
+        // Concurrent and repeated stops return the same bundle.
+        async let a = session.stop()
+        async let b = session.stop()
+        let (ra, rb) = try await (a, b)
+        #expect(ra == bundle && rb == bundle)
+    }
+
+    @Test func discardWhileStartingCancelsAndLeavesNothing() async throws {
+        let (session, url) = slowStartSession("discardstarting")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let starter = Task { try await session.start() }
+        await sleep(0.2)
+        await session.discard()
+        await #expect(throws: (any Error).self) { try await starter.value }
+        await sleep(1.2)
+        #expect(!FileManager.default.fileExists(atPath: url.path), "nothing may be written after discard")
+        await #expect(throws: CaptureError.self) { try await session.start() }
+    }
+
+    @Test func discardWhileStoppingDeletesAfterFinishing() async throws {
+        let url = tempBundleURL("discardstopping")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let session = RecordingSession(options: options(), bundleURL: url, frameSource: SyntheticFrameSource())
+        try await session.start()
+        await sleep(2)
+        let stopper = Task { try await session.stop() }
+        await sleep(0.01)
+        await session.pause()            // ignored while finishing
+        await session.discard()
+        _ = try? await stopper.value
+        await sleep(0.5)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+}

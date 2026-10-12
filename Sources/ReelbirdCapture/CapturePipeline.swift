@@ -132,6 +132,12 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
         }
     }
 
+    /// Ends a pending `waitForFirstFrame` (discard while starting).
+    func cancelFirstFrameWait() {
+        let waiter = timing.withLock { t in defer { t.waiter = nil }; return t.waiter }
+        waiter?.resume(throwing: CancellationError())
+    }
+
     func isPaused(_ t: Double) -> Bool {
         timing.withLock { s in Self.paused(s, t) }
     }
