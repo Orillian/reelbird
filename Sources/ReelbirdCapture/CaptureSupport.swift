@@ -52,3 +52,15 @@ enum CaptureLog {
         FileHandle.standardError.write(Data("[capture] \(message())\n".utf8))
     }
 }
+
+/// A lock around a value that may be non-Sendable (pixel buffers, writers). The closure runs under
+/// an unfair lock; keep it short and never await inside.
+final class Locked<Value>: @unchecked Sendable {
+    private var value: Value
+    private let lock = NSLock()
+    init(_ value: Value) { self.value = value }
+    @inline(__always) func withLock<R>(_ body: (inout Value) throws -> R) rethrows -> R {
+        lock.lock(); defer { lock.unlock() }
+        return try body(&value)
+    }
+}
