@@ -106,7 +106,8 @@ final class Compositor {
         let layout = CanvasLayout(plan: plan, width: W, height: H)
         let edit = plan.edit
         let src = plan.timeline.sourceTime(forOutput: outputTime)
-        let (s, c) = plan.camera.transform(at: src)
+        let (s, rawCenter) = plan.camera.transform(at: src)
+        let c = layout.fillCenter(scale: s, center: rawCenter)
 
         let rp = MTLRenderPassDescriptor()
         rp.colorAttachments[0].texture = target
@@ -131,7 +132,7 @@ final class Compositor {
             let sp = plan.timeline.sourceTime(forOutput: max(0, outputTime - shutter))
             if abs((src - sp) - shutter) < 1e-3 {
                 srcPrev = sp
-                let pt = plan.camera.transform(at: srcPrev); prev = (pt.scale, pt.center)
+                let pt = plan.camera.transform(at: srcPrev); prev = (pt.scale, layout.fillCenter(scale: pt.scale, center: pt.center))
                 var maxMove = 0.0
                 // How far visible content moves on screen: the corners and centre of the current view.
                 let v = plan.camera.viewport(at: src)

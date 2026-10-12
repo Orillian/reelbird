@@ -261,6 +261,22 @@ struct CanvasLayout {
         return SIMD4(Float(ax), Float(ay), Float(bx), Float(by))
     }
 
+    /// Moves the camera centre so that, once a zoom is deep enough to cover the canvas on an axis, the
+    /// zoomed screen fills the frame edge to edge instead of showing a strip of background where the
+    /// focus sits near the screen's edge. Blended in as coverage approaches, so the camera never jumps.
+    func fillCenter(scale s: Double, center c: NormPoint) -> NormPoint {
+        guard !crops, s > 1 else { return c }
+        func axis(_ v: Double, span: Double) -> Double {
+            let target = min(max(v, min(span / 2, 0.5)), max(1 - span / 2, 0.5))
+            let t = min(1, max(0, (1.2 - span) / 0.25))
+            return v + (target - v) * (t * t * (3 - 2 * t))
+        }
+        // Visible source span per axis: the whole canvas measured in source units.
+        let spanX = base.x * Double(width) / (s * Double(card.width))
+        let spanY = base.y * Double(height) / (s * Double(card.height))
+        return NormPoint(x: axis(c.x, span: spanX), y: axis(c.y, span: spanY))
+    }
+
     /// Whether the card is a window onto part of the source (narrow outputs).
     var crops: Bool { base.x < 0.999 || base.y < 0.999 }
 
