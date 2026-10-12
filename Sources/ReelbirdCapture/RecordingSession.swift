@@ -193,10 +193,13 @@ actor SessionEngine {
         format = fmt
         _ = try ProjectBundle.create(at: bundle.url)
 
-        let screenSpec = EncoderSettings.screen(size: fmt.pixelSize, frameRate: fmt.frameRate, quality: options.quality)
-        let screen = try SegmentedWriter(kind: .screen, directory: bundle.directory(for: .screen), video: screenSpec, audio: nil,
-                                         realTime: fmt.isRealTime)
-        try screen.start(at: 0)
+        let (screen, screenSpec) = try EncoderSettings.makeWriter(
+            EncoderSettings.screen(size: fmt.pixelSize, frameRate: fmt.frameRate, quality: options.quality)) { spec in
+            let w = try SegmentedWriter(kind: .screen, directory: bundle.directory(for: .screen), video: spec, audio: nil,
+                                        realTime: fmt.isRealTime)
+            try w.start(at: 0)
+            return w
+        }
         var tracks = [TrackInfo(kind: .screen, directory: TrackKind.screen.rawValue, codec: screenSpec.codec.rawValue,
                                 pixelSize: fmt.pixelSize)]
 
@@ -217,18 +220,20 @@ actor SessionEngine {
         var shareWriter: SegmentedWriter?
         var composer: ShareComposer?
         if let sink {
-            let spec = EncoderSettings.share(screen: fmt.pixelSize)
             let pump = SharePump(sink: sink, recordingID: m.id, title: title) { [weak self] result in
                 Task { await self?.shareBegan(result) }
             }
             self.pump = pump
-            let w = try SegmentedWriter(kind: .share, directory: bundle.directory(for: .share), video: spec,
-                                        audio: (mic != nil || system != nil) ? EncoderSettings.shareAudio : nil,
-                                        profile: .mpeg4AppleHLS, realTime: fmt.isRealTime) { pump.send($0) }
-            try w.start(at: 0)
+            let shareAudio = (mic != nil || system != nil) ? EncoderSettings.shareAudio : nil
+            let (w, spec) = try EncoderSettings.makeWriter(EncoderSettings.share(screen: fmt.pixelSize)) { spec in
+                let w = try SegmentedWriter(kind: .share, directory: bundle.directory(for: .share), video: spec, audio: shareAudio,
+                                            profile: .mpeg4AppleHLS, realTime: fmt.isRealTime) { pump.send($0) }
+                try w.start(at: 0)
+                return w
+            }
             shareWriter = w
             composer = ShareComposer(writer: w, size: spec.size)
-            tracks.append(TrackInfo(kind: .share, directory: TrackKind.share.rawValue, codec: "h264", pixelSize: spec.size,
+            tracks.append(TrackInfo(kind: .share, directory: TrackKind.share.rawValue, codec: spec.codec.rawValue, pixelSize: spec.size,
                                     sampleRate: 48_000, channels: 2))
         }
         m.tracks = tracks

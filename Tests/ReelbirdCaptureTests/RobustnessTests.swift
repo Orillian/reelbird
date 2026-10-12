@@ -157,3 +157,39 @@ extension RecordingTests {
         #expect(windows.filter { $0.t > 3.5 && $0.t < m.duration - 0.2 }.allSatisfy { $0.rms > 0.1 }, "tone after the gap")
     }
 }
+
+@Test func encoderFallsBackFromHEVCToH264ToSoftware() throws {
+    let hevc = EncoderSettings.screen(size: PixelSize(width: 2560, height: 1440), frameRate: 60, quality: .high)
+    #expect(hevc.codec == .hevc && hevc.requireHardware)
+    // HEVC session creation fails: H.264 hardware, with more bits for the same quality.
+    let h264 = EncoderSettings.resolve(hevc) { !($0.codec == .hevc && $0.requireHardware) }
+    #expect(h264.codec == .h264 && h264.requireHardware)
+    #expect(h264.bitrate > hevc.bitrate)
+    // Nothing in hardware: software HEVC rather than no recording.
+    let soft = EncoderSettings.resolve(hevc) { !$0.requireHardware }
+    #expect(soft.codec == .hevc && !soft.requireHardware)
+    // 5K is beyond H.264 hardware, so its chain skips straight to software HEVC.
+    let fiveK = EncoderSettings.screen(size: PixelSize(width: 5120, height: 2880), frameRate: 60, quality: .max)
+    #expect(EncoderSettings.candidates(for: fiveK).map(\.codec) == [.hevc, .hevc])
+    #expect(EncoderSettings.candidates(for: fiveK).map(\.requireHardware) == [true, false])
+    // The real probe on this Mac: hardware HEVC at 1080p exists; a 16K frame does not.
+    #expect(EncoderSettings.canEncode(VideoSpec(codec: .hevc, size: PixelSize(width: 1920, height: 1080), frameRate: 60, bitrate: 8_000_000)))
+    #expect(!EncoderSettings.canEncode(VideoSpec(codec: .h264, size: PixelSize(width: 16_384, height: 16_384), frameRate: 30, bitrate: 8_000_000)))
+}
+
+@Test func writerFallsThroughWhenTheFirstEncoderFailsToStart() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-fallback-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let spec = EncoderSettings.screen(size: PixelSize(width: 1280, height: 720), frameRate: 30, quality: .high)
+    var tried: [VideoSpec.Codec] = []
+    let (writer, chosen) = try EncoderSettings.makeWriter(spec, probe: { _ in true }) { candidate in
+        tried.append(candidate.codec)
+        if candidate.codec == .hevc && candidate.requireHardware { throw CaptureError.encoderUnavailable("simulated") }
+        let w = try SegmentedWriter(kind: .screen, directory: dir, video: candidate, audio: nil, realTime: false)
+        try w.start(at: 0)
+        return w
+    }
+    #expect(tried == [.hevc, .h264])
+    #expect(chosen.codec == .h264)
+    writer.abandon()
+}

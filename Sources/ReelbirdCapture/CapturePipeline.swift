@@ -238,11 +238,13 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
             if c.writer == nil && !c.failed {
                 let size = PixelSize(width: CVPixelBufferGetWidth(pb) & ~1, height: CVPixelBufferGetHeight(pb) & ~1)
                 do {
-                    let w = try SegmentedWriter(kind: .camera, directory: cameraDirectory,
-                                                video: EncoderSettings.camera(size: size, frameRate: 30), audio: nil,
-                                                realTime: format.isRealTime)
+                    let (w, _) = try EncoderSettings.makeWriter(EncoderSettings.camera(size: size, frameRate: 30)) { spec in
+                        let w = try SegmentedWriter(kind: .camera, directory: cameraDirectory, video: spec, audio: nil,
+                                                    realTime: format.isRealTime)
+                        try w.start(at: 0)
+                        return w
+                    }
                     watch(w)
-                    try w.start(at: 0)
                     // Hold the first picture from timeline zero so every track starts at 0.
                     if t > 0.001 { w.append(pixelBuffer: pb, at: 0) }
                     c.writer = w

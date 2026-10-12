@@ -1,5 +1,6 @@
 import AVFoundation
 import ReelbirdCore
+import Synchronization
 import VideoToolbox
 
 /// Video encoder configuration for one track.
@@ -11,6 +12,8 @@ struct VideoSpec: Sendable, Hashable {
     var bitrate: Int
     /// Seconds between keyframes (aligned with the 2 s segments).
     var keyframeInterval: Double = 2
+    /// Require the hardware encoder (the default). `false` is the last-resort software fallback.
+    var requireHardware = true
 
     /// `AVAssetWriterInput` output settings: hardware encoder required, no B-frames, BT.709 tags.
     var outputSettings: [String: Any] {
@@ -28,9 +31,9 @@ struct VideoSpec: Sendable, Hashable {
             AVVideoCodecKey: codec == .hevc ? AVVideoCodecType.hevc : AVVideoCodecType.h264,
             AVVideoWidthKey: size.width,
             AVVideoHeightKey: size.height,
-            AVVideoEncoderSpecificationKey: [
-                kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder as String: true,
-            ],
+            AVVideoEncoderSpecificationKey: requireHardware
+                ? [kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder as String: true]
+                : [kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder as String: true],
             AVVideoCompressionPropertiesKey: compression,
             AVVideoColorPropertiesKey: [
                 AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
@@ -101,6 +104,69 @@ enum EncoderSettings {
         let size = PixelSize(width: even(w * scale), height: even(h * scale))
         let px = Double(size.width * size.height)
         return VideoSpec(codec: .h264, size: size, frameRate: 30, bitrate: max(1_500_000, Int(px * 30 * 0.06)))
+    }
+
+    // MARK: Encoder availability
+
+    /// Specs to try in order for `spec`: the requested hardware encoder, the other hardware codec
+    /// (H.264 needs ~40% more bits for the same quality; it tops out at 4096×2304), then software.
+    static func candidates(for spec: VideoSpec) -> [VideoSpec] {
+        func with(_ codec: VideoSpec.Codec, hardware: Bool) -> VideoSpec? {
+            var s = spec
+            s.codec = codec
+            s.requireHardware = hardware
+            if codec == .h264 && (s.size.width > h264MaxWidth || s.size.height > h264MaxHeight) && hardware { return nil }
+            if codec != spec.codec { s.bitrate = codec == .h264 ? Int(Double(spec.bitrate) * 1.4) : Int(Double(spec.bitrate) / 1.4) }
+            return s
+        }
+        let other: VideoSpec.Codec = spec.codec == .hevc ? .h264 : .hevc
+        return [with(spec.codec, hardware: true), with(other, hardware: true), with(spec.codec, hardware: false)].compactMap { $0 }
+    }
+
+    /// The first candidate the machine can encode, according to `probe` (default: a real
+    /// VideoToolbox session). Falls back to the software encoder if nothing else is available.
+    static func resolve(_ spec: VideoSpec, probe: (VideoSpec) -> Bool = canEncode) -> VideoSpec {
+        let list = candidates(for: spec)
+        return list.first(where: probe) ?? list.last ?? spec
+    }
+
+    private static let probeCache = Mutex<[String: Bool]>([:])
+
+    /// Whether a compression session for this codec, size and hardware requirement can be created.
+    /// Cached per configuration; costs a few milliseconds the first time.
+    static func canEncode(_ spec: VideoSpec) -> Bool {
+        let key = "\(spec.codec.rawValue) \(spec.size.width)x\(spec.size.height) \(spec.requireHardware)"
+        if let cached = probeCache.withLock({ $0[key] }) { return cached }
+        let encoderSpec: CFDictionary = (spec.requireHardware
+            ? [kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder as String: true]
+            : [kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder as String: true]) as CFDictionary
+        var session: VTCompressionSession?
+        let status = VTCompressionSessionCreate(
+            allocator: nil, width: Int32(spec.size.width), height: Int32(spec.size.height),
+            codecType: spec.codec == .hevc ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264,
+            encoderSpecification: encoderSpec, imageBufferAttributes: nil, compressedDataAllocator: nil,
+            outputCallback: nil, refcon: nil, compressionSessionOut: &session)
+        if let session { VTCompressionSessionInvalidate(session) }
+        let ok = status == noErr && session != nil
+        probeCache.withLock { $0[key] = ok }
+        return ok
+    }
+
+    /// Builds a writer with the first candidate that works: probed first, then actually started,
+    /// so an encoder that fails at `startWriting` also falls through to the next codec.
+    static func makeWriter(_ spec: VideoSpec, probe: (VideoSpec) -> Bool = canEncode,
+                           build: (VideoSpec) throws -> SegmentedWriter) throws -> (SegmentedWriter, VideoSpec) {
+        var lastError: (any Error)?
+        let list = candidates(for: spec)
+        for candidate in list where probe(candidate) || candidate == list.last {
+            do {
+                return (try build(candidate), candidate)
+            } catch {
+                CaptureLog.debug("encoder \(candidate.codec) \(candidate.size.width)x\(candidate.size.height) hw=\(candidate.requireHardware): \(error)")
+                lastError = error
+            }
+        }
+        throw lastError ?? CaptureError.encoderUnavailable("\(spec.codec.rawValue) \(spec.size.width)x\(spec.size.height)")
     }
 
     static let microphone = AudioSpec(channels: 1, bitrate: 96_000)
