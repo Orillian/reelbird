@@ -90,7 +90,15 @@ final class InputEventRecorder: @unchecked Sendable {
 
     // MARK: Recording
 
-    private func write(_ e: InputEvent) {
+    /// Times and positions are rounded to 4 decimals to keep hour-long logs compact and fast to read.
+    private func write(_ event: InputEvent) {
+        var e = event
+        let r4: (Double) -> Double = { ($0 * 10_000).rounded() / 10_000 }
+        e.t = r4(e.t)
+        e.x = e.x.map(r4)
+        e.y = e.y.map(r4)
+        e.dx = e.dx.map { ($0 * 100).rounded() / 100 }
+        e.dy = e.dy.map { ($0 * 100).rounded() / 100 }
         log.append(e)
         state.withLock { $0.count += 1 }
     }
@@ -121,18 +129,18 @@ final class InputEventRecorder: @unchecked Sendable {
         }
         guard let point else { return }
         let changed = state.withLock { s -> Bool in
-            if let last = s.lastPoint, abs(last.x - point.x) < 1e-5, abs(last.y - point.y) < 1e-5 { return false }
+            if let last = s.lastPoint, abs(last.x - point.x) < 5e-5, abs(last.y - point.y) < 5e-5 { return false }
             s.lastPoint = point
             return true
         }
-        if changed { write(.move(t, round(point))) }
+        if changed { write(.move(t, point)) }
     }
 
     /// Mouse buttons and scroll from the NSEvent monitors (main thread).
     func record(type: NSEvent.EventType, location: CGPoint, timestamp: Double, button: Int, dx: Double, dy: Double) {
         let now = HostClock.now()
         let host = abs(timestamp - now) < 1 ? timestamp : now
-        guard let t = timeline(host), let p = normalize(location).map(round) else { return }
+        guard let t = timeline(host), let p = normalize(location) else { return }
         state.withLock { $0.lastActivityHost = now }
         switch type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown: write(.down(t, p, button: button))
@@ -155,10 +163,6 @@ final class InputEventRecorder: @unchecked Sendable {
     }
 
     var cursorRecorder: CursorRecorder { cursors }
-
-    private func round(_ p: NormPoint) -> NormPoint {
-        NormPoint(x: (p.x * 100_000).rounded() / 100_000, y: (p.y * 100_000).rounded() / 100_000)
-    }
 }
 
 /// NSEvent monitors and cursor polling, which must live on the main thread.

@@ -42,6 +42,7 @@ final class SegmentedWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendabl
         var startTime: Double = 0
         var lastVideoTime: Double = -.infinity
         var lastSampleEnd: Double = 0
+        var sampleCount = 0
         var segments: [(name: String, duration: Double)] = []
         var writeError: String?
     }
@@ -102,6 +103,7 @@ final class SegmentedWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendabl
     }
 
     var isStarted: Bool { state.withLock { $0.started } }
+    var hasSamples: Bool { state.withLock { $0.sampleCount > 0 } }
     var startTime: Double { state.withLock { $0.startTime } }
     var segmentCount: Int { state.withLock { $0.segments.count } }
     /// End of the last appended sample on the recording timeline.
@@ -125,7 +127,7 @@ final class SegmentedWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendabl
         guard waitUntilReady(videoInput) else { return .notReady }
         guard adaptor.append(pixelBuffer, withPresentationTime: .seconds(time)) else { return .closed }
         let frame = 1.0 / Double(video?.frameRate ?? 60)
-        state.withLock { $0.lastVideoTime = time; $0.lastSampleEnd = max($0.lastSampleEnd, time + frame) }
+        state.withLock { $0.lastVideoTime = time; $0.lastSampleEnd = max($0.lastSampleEnd, time + frame); $0.sampleCount += 1 }
         return .appended
     }
 
@@ -140,7 +142,7 @@ final class SegmentedWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendabl
         guard waitUntilReady(audioInput, realTimeWait: 0.05) else { return .notReady }
         guard audioInput.append(sampleBuffer) else { return .closed }
         let end = (sampleBuffer.presentationTimeStamp + sampleBuffer.duration).seconds
-        state.withLock { $0.lastSampleEnd = max($0.lastSampleEnd, end) }
+        state.withLock { $0.lastSampleEnd = max($0.lastSampleEnd, end); $0.sampleCount += 1 }
         return .appended
     }
 
@@ -159,6 +161,11 @@ final class SegmentedWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendabl
     /// Finishes the last segment and closes the playlist. Safe to call more than once.
     func finish(endTime: Double? = nil) async throws {
         guard close() else { return }
+        guard hasSamples else {
+            // A writer that never received a sample can't finish (AVAssetWriter spins); drop it.
+            writer.cancelWriting()
+            throw CaptureError.writerFailed("\(kind.rawValue): no media was recorded")
+        }
         videoInput?.markAsFinished()
         audioInput?.markAsFinished()
         if let endTime, video != nil, endTime > startTime { writer.endSession(atSourceTime: .seconds(endTime)) }

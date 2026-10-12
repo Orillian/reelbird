@@ -107,8 +107,9 @@ final class PCMNormalizer: @unchecked Sendable {
         guard frames > 0, asbd.mFormatID == kAudioFormatLinearPCM else { return nil }
 
         var needed = 0
+        let flags = kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment
         CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(sb, bufferListSizeNeededOut: &needed, bufferListOut: nil, bufferListSize: 0,
-                                                                blockBufferAllocator: nil, blockBufferMemoryAllocator: nil, flags: 0, blockBufferOut: nil)
+                                                                blockBufferAllocator: nil, blockBufferMemoryAllocator: nil, flags: flags, blockBufferOut: nil)
         if needed > ablSize {
             ablStorage.deallocate()
             ablSize = needed
@@ -117,9 +118,9 @@ final class PCMNormalizer: @unchecked Sendable {
         let ablPtr = ablStorage.bindMemory(to: AudioBufferList.self, capacity: 1)
         var block: CMBlockBuffer?
         guard CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-            sb, bufferListSizeNeededOut: nil, bufferListOut: ablPtr, bufferListSize: ablSize,
+            sb, bufferListSizeNeededOut: nil, bufferListOut: ablPtr, bufferListSize: needed,
             blockBufferAllocator: nil, blockBufferMemoryAllocator: nil,
-            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment, blockBufferOut: &block) == noErr else { return nil }
+            flags: flags, blockBufferOut: &block) == noErr else { return nil }
         let abl = UnsafeMutableAudioBufferListPointer(ablPtr)
 
         let isFloat = asbd.mFormatFlags & kAudioFormatFlagIsFloat != 0
