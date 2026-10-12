@@ -225,3 +225,30 @@ private func render(_ bundle: ProjectBundle, _ edit: EditDocument, at t: Double,
     }
     print("regions:", plan.regions)
 }
+
+@Test func narrowCanvasShowsAWindowOntoTheScreen() async throws {
+    var o = Synthetic.Options()
+    o.stillPointer = .center
+    let bundle = try await Synthetic.makeBundle(o)
+    defer { try? FileManager.default.removeItem(at: bundle.url) }
+    let manifest = try bundle.readManifest()
+    var e = plainEdit(manifest)
+    e.canvas.aspect = .vertical
+    let plan = try RenderPlan(bundle: bundle, manifest: manifest, edit: e)
+    // 16:9 source into 9:16: card aspect = canvas^0.6 · source^0.4 (padded canvas), full height, part width.
+    #expect(plan.viewBase.y == 1 && plan.viewBase.x > 0.4 && plan.viewBase.x < 0.6, "\(plan.viewBase)")
+    let wide = try RenderPlan(bundle: bundle, manifest: manifest, edit: plainEdit(manifest))
+    #expect(wide.viewBase == SIMD2(1, 1))
+    let sources = try await MediaSources.load(bundle: bundle, manifest: manifest)
+    let px = Pixels(try Thumbnailer.render(plan: plan, sources: sources, at: 1, maxWidth: 540))
+    let bg = (0x20, 0x50, 0xA0)
+    // Background above and below the window, the screen (grey, centre square black) inside it.
+    #expect(px.near(270, 20, bg, tol: 4) && px.near(270, px.height - 20, bg, tol: 4))
+    #expect(px.near(270, px.height / 2, (0, 0, 0), tol: 10), "centre \(px[270, px.height / 2])")
+    #expect(px.near(60, px.height / 2, Synthetic.greyRGB, tol: 8), "window left \(px[60, px.height / 2])")
+    // The window fills the padded width and is far taller than a letterboxed strip would be.
+    var top = 0
+    while top < px.height, px.near(270, top, bg, tol: 6) { top += 1 }
+    let windowHeight = px.height - 2 * top
+    #expect(Double(windowHeight) > Double(px.width) * 0.95, "window height \(windowHeight)")
+}

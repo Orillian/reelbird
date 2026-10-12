@@ -47,6 +47,12 @@ public final class RenderPlan: Sendable {
     public let frameRate: Int
     /// Screen video size in pixels.
     public let sourceSize: PixelSize
+    /// Aspect (width / height) of the screen card on the canvas. Equals the source's unless the canvas is
+    /// much narrower than the source (a 9:16 or 1:1 export of a landscape screen), where the card becomes a
+    /// window onto part of the screen that follows the action.
+    public let cardAspect: Double
+    /// The part of the source the card shows at zoom 1 (normalized; `(1, 1)` = all of it).
+    public let viewBase: SIMD2<Double>
     public let cursorImages: [String: CursorImageInfo]
     public let captions: [CaptionCue]
     let keyEvents: [InputEvent]
@@ -90,13 +96,15 @@ public final class RenderPlan: Sendable {
                                                  intensity: edit.zoom.intensity)
             }
         }
-        if let old, old.regions == regions, old.cursor.smoothing == cursor.smoothing, old.camera.duration == duration {
+        canvasSize = Self.canvasSize(source: sourceSize, aspect: edit.canvas.aspect, height: edit.canvas.outputHeight)
+        (cardAspect, viewBase) = Self.cardGeometry(source: sourceSize, canvas: canvasSize, background: edit.background)
+        if let old, old.regions == regions, old.cursor.smoothing == cursor.smoothing, old.camera.duration == duration,
+           old.camera.base == viewBase {
             camera = old.camera
         } else {
-            camera = CameraPath(regions: regions, cursor: cursor, duration: duration)
+            camera = CameraPath(regions: regions, cursor: cursor, duration: duration, aspect: sourceSize.aspect, base: viewBase)
         }
 
-        canvasSize = Self.canvasSize(source: sourceSize, aspect: edit.canvas.aspect, height: edit.canvas.outputHeight)
         frameRate = min(240, max(1, edit.canvas.frameRate ?? manifest.capture.frameRate))
 
         if let old {
@@ -139,6 +147,24 @@ public final class RenderPlan: Sendable {
         let short = Double(min(source.width, source.height))
         return ratio >= 1 ? PixelSize(width: even(short * ratio), height: even(short))
                           : PixelSize(width: even(short), height: even(short / ratio))
+    }
+
+    /// The card's aspect and the part of the source it shows at zoom 1.
+    ///
+    /// When the padded canvas is narrower than 0.8× the source aspect, letterboxing would leave the screen a
+    /// thin strip (a 16:10 screen fills under a third of a 9:16 frame). Instead the card's aspect is a
+    /// weighted geometric mean, canvas^0.6 · source^0.4: 16:10 → 9:16 gives a 0.82:1 window (51% of the
+    /// screen's width, full height, 58% of the frame's height), 16:10 → 1:1 a 1.21:1 window (75%). Text
+    /// stays legible on a phone and the camera follows the action.
+    static func cardGeometry(source: PixelSize, canvas: PixelSize, background: BackgroundSettings) -> (Double, SIMD2<Double>) {
+        let src = source.aspect
+        let short = Double(min(canvas.width, canvas.height))
+        let pad = background.kind == .none ? 0 : min(0.45, max(0, background.padding)) * short
+        let availW = max(1, Double(canvas.width) - 2 * pad), availH = max(1, Double(canvas.height) - 2 * pad)
+        let avail = availW / availH
+        guard avail / src < 0.8 else { return (src, SIMD2(1, 1)) }
+        let card = pow(avail, 0.6) * pow(src, 0.4)
+        return (card, SIMD2(card / src, 1))
     }
 
     /// Recent keystroke text to show at recording time `t`, with its opacity, or `nil`.
@@ -186,6 +212,10 @@ struct CanvasLayout {
     var short: Double { min(width, height) }
     /// The screen card at zoom 1, in output pixels (top-left origin).
     let card: CGRect
+    /// The part of the source the card shows at zoom 1 (normalized).
+    let base: SIMD2<Double>
+    /// Output pixels per source pixel at zoom 1.
+    let contentScale: Double
     let cornerRadius: Double
     let shadowStrength: Double
     let shadowBlur: Double
@@ -198,26 +228,58 @@ struct CanvasLayout {
         let short = min(width, height)
         let pad = bg.kind == .none ? 0 : min(0.45, max(0, bg.padding)) * short
         let avail = CGSize(width: max(1, width - 2 * pad), height: max(1, height - 2 * pad))
-        let srcAspect = plan.sourceSize.aspect
-        var w = avail.width, h = avail.width / srcAspect
-        if h > avail.height { h = avail.height; w = h * srcAspect }
+        let cardAspect = plan.cardAspect
+        var w = avail.width, h = avail.width / cardAspect
+        if h > avail.height { h = avail.height; w = h * cardAspect }
         card = CGRect(x: (width - w) / 2, y: (height - h) / 2, width: w, height: h)
+        base = plan.viewBase
+        contentScale = Double(w) / (base.x * Double(plan.sourceSize.width))
         cornerRadius = bg.kind == .none ? 0 : max(0, bg.cornerRadius) * short
         shadowStrength = bg.kind == .none ? 0 : min(1, max(0, bg.shadow))
-        shadowBlur = 0.035 * short
-        shadowOffset = 0.012 * short
+        // A soft ambient shadow (blur 4.5% of the short side, dropped 1.8%) for depth, plus a tight contact
+        // shadow (0.6%) that defines the card's edge on light backgrounds.
+        shadowBlur = 0.045 * short
+        shadowOffset = 0.018 * short
     }
 
     /// Output pixel for a normalized source point under camera (scale, centre).
     func map(_ p: NormPoint, scale s: Double, center c: NormPoint) -> CGPoint {
-        CGPoint(x: card.minX + card.width * ((p.x - c.x) * s + 0.5),
-                y: card.minY + card.height * ((p.y - c.y) * s + 0.5))
+        CGPoint(x: card.minX + card.width * ((p.x - c.x) * s / base.x + 0.5),
+                y: card.minY + card.height * ((p.y - c.y) * s / base.y + 0.5))
     }
 
     /// Output rectangle for a normalized source rectangle.
     func map(_ r: NormRect, scale s: Double, center c: NormPoint) -> CGRect {
         let a = map(NormPoint(x: r.x, y: r.y), scale: s, center: c)
-        return CGRect(x: a.x, y: a.y, width: r.width * card.width * s, height: r.height * card.height * s)
+        return CGRect(x: a.x, y: a.y, width: r.width * card.width * s / base.x, height: r.height * card.height * s / base.y)
+    }
+
+    /// Source uv for output pixel p: `uv = a + p·b` per axis (a = .xy, b = .zw).
+    func uvMap(scale s: Double, center c: NormPoint) -> SIMD4<Float> {
+        let bx = base.x / (s * card.width), by = base.y / (s * card.height)
+        let ax = c.x - (card.midX) * bx, ay = c.y - (card.midY) * by
+        return SIMD4(Float(ax), Float(ay), Float(bx), Float(by))
+    }
+
+    /// Whether the card is a window onto part of the source (narrow outputs).
+    var crops: Bool { base.x < 0.999 || base.y < 0.999 }
+
+    /// How much the card's frame (corners, shadow) grows at zoom `s`. A full-source card grows with the zoom
+    /// and slides off the canvas, so the zoomed screen fills the frame; a cropping card stays a fixed window
+    /// and the screen zooms inside it, which keeps a tall output tidy instead of showing the screen's top
+    /// edge halfway down the frame.
+    func frameGrowth(_ s: Double) -> Double { crops ? 1 : s }
+
+    /// The visible screen card at a camera: the whole source mapped to the canvas, or (when cropping) the
+    /// zoom-1 card window.
+    func screenRect(scale s: Double, center c: NormPoint) -> CGRect {
+        let a = map(NormPoint(x: 0, y: 0), scale: s, center: c), b = map(NormPoint(x: 1, y: 1), scale: s, center: c)
+        var x0 = a.x, y0 = a.y, x1 = b.x, y1 = b.y
+        if crops {
+            x0 = max(x0, card.minX); x1 = min(x1, card.maxX)
+            y0 = max(y0, card.minY); y1 = min(y1, card.maxY)
+        }
+        return CGRect(x: x0, y: y0, width: max(0, x1 - x0), height: max(0, y1 - y0))
     }
 }
 

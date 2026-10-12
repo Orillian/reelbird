@@ -8,17 +8,19 @@ using namespace metal;
 
 struct CompositeUniforms {
     float4 canvas;      // W, H, viewport origin x, y (px)
-    float4 card;        // card rect at zoom 1: x, y, w, h (px)
-    float4 camera;      // scale, centre x, centre y, corner radius (px at zoom 1)
-    float4 cameraPrev;  // scale, centre x, centre y, motion blur taps (0 = off)
-    float4 shadow;      // strength, blur (px), offset y (px), 0
+    float4 card;        // visible screen card: x0, y0, x1, y1 (px)
+    float4 uvMap;       // source uv = xy + p * zw (p in canvas px)
+    float4 uvPrev;      // the same half a frame earlier (motion blur)
+    float4 params;      // corner radius (px), motion blur taps (0 = off), source px per output px, 0
+    float4 shadow;      // ambient: strength, blur (px), offset y (px), 0
+    float4 shadow2;     // contact: strength, blur (px), offset y (px), 0
     float4 bg0;
     float4 bg1;
     float4 bg2;
     float4 bg3;
     float4 bgInfo;      // kind (0 solid, 1 gradient, 2 image), stop count, dither, 0
     float4 bgImage;     // aspect-fill: uv scale x, y, offset x, y
-    float4 screenInfo;  // source W, H, isYUV, footprint (source px per output px)
+    float4 screenInfo;  // source W, H, isYUV, 0
     float4 yuv0;        // YCbCr → RGB rows (r, g, b) with offsets in .w
     float4 yuv1;
     float4 yuv2;
@@ -36,8 +38,8 @@ struct SpriteUniforms {
     float4 yuv1;
     float4 yuv2;
     float4 yuvOffset;   // y offset, c offset, isYUV, 0
-    float4 camera;      // for screen-sampling modes: scale, cx, cy, 0
-    float4 card;        // card rect at zoom 1
+    float4 camera;      // for screen-sampling modes: source uv = xy + p * zw (p in canvas px)
+    float4 card;        // unused
     int4 mode;
 };
 
@@ -113,38 +115,42 @@ fragment float4 composite_fragment(VOut in [[stage_in]],
     float2 p = in.position.xy - u.canvas.zw;
     float3 col = background(p, u, bgTex, lin);
 
-    float s = u.camera.x;
-    float2 c = u.camera.yz;
-    float2 cardSize = u.card.zw * s;
-    float2 cardOrigin = u.card.xy + u.card.zw * ((float2(0) - c) * s + 0.5);
-    float2 cardCentre = cardOrigin + cardSize * 0.5;
-    float radius = u.camera.w * s;
+    float2 cardCentre = (u.card.xy + u.card.zw) * 0.5;
+    float2 cardHalf = max(float2(0), (u.card.zw - u.card.xy) * 0.5);
+    float radius = u.params.x;
 
+    // Shadows: a soft ambient one, then a tight contact one. Squared falloff reads as a gaussian.
     if (u.shadow.x > 0) {
-        float blur = max(1.0, u.shadow.y * s);
-        float sd = sdRoundRect(p - cardCentre - float2(0, u.shadow.z * s), cardSize * 0.5, radius);
+        float blur = max(1.0, u.shadow.y);
+        float sd = sdRoundRect(p - cardCentre - float2(0, u.shadow.z), cardHalf, radius);
         float a = 1 - smoothstep(-blur, blur, sd);
         col = mix(col, float3(0), a * a * u.shadow.x);
     }
+    if (u.shadow2.x > 0) {
+        float blur = max(1.0, u.shadow2.y);
+        float sd = sdRoundRect(p - cardCentre - float2(0, u.shadow2.z), cardHalf, radius);
+        float a = 1 - smoothstep(-blur, blur, sd);
+        col = mix(col, float3(0), a * a * u.shadow2.x);
+    }
 
-    float sd = sdRoundRect(p - cardCentre, cardSize * 0.5, radius);
+    float sd = sdRoundRect(p - cardCentre, cardHalf, radius);
     float coverage = saturate(0.5 - sd);
     if (coverage > 0) {
-        float2 q = (p - u.card.xy) / u.card.zw;
-        float2 uv = (q - 0.5) / s + c;
+        float2 uv = u.uvMap.xy + p * u.uvMap.zw;
         float3 sc;
-        int taps = int(u.cameraPrev.w);
+        int taps = int(u.params.y);
+        float footprint = u.params.z;
         if (taps > 1) {
-            float2 uvPrev = (q - 0.5) / u.cameraPrev.x + u.cameraPrev.yz;
+            float2 uvPrev = u.uvPrev.xy + p * u.uvPrev.zw;
             float3 acc = float3(0);
             for (int i = 0; i < taps; i++) {
                 float k = (float(i) + 0.5) / float(taps);
                 acc += sampleScreen(screen0, screen1, lin, mix(uv, uvPrev, k), u).rgb;
             }
             sc = acc / float(taps);
-        } else if (u.screenInfo.w / s > 1.3) {
+        } else if (footprint > 1.3) {
             // Downscaling: 4 rotated-grid taps so text does not shimmer.
-            float2 d = u.screenInfo.w / u.screenInfo.xy / s;
+            float2 d = footprint / u.screenInfo.xy;
             sc = (sampleScreen(screen0, screen1, lin, uv + d * float2(-0.125, -0.375), u).rgb +
                   sampleScreen(screen0, screen1, lin, uv + d * float2(0.375, -0.125), u).rgb +
                   sampleScreen(screen0, screen1, lin, uv + d * float2(0.125, 0.375), u).rgb +
@@ -155,6 +161,32 @@ fragment float4 composite_fragment(VOut in [[stage_in]],
         col = mix(col, sc, coverage);
     }
     return float4(col, 1);
+}
+
+// Catmull-Rom bicubic from 9 bilinear taps (mip 0): crisp when a cursor bitmap is drawn larger than it is.
+static inline float4 sampleCatmullRom(texture2d<float> tex, sampler s, float2 uv, float2 texSize) {
+    float2 pos = uv * texSize;
+    float2 p1 = floor(pos - 0.5) + 0.5;
+    float2 f = pos - p1;
+    float2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+    float2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+    float2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+    float2 w3 = f * f * (-0.5 + 0.5 * f);
+    float2 w12 = w1 + w2;
+    float2 t0 = (p1 - 1) / texSize, t3 = (p1 + 2) / texSize, t12 = (p1 + w2 / w12) / texSize;
+    float4 r = float4(0);
+    r += tex.sample(s, float2(t0.x, t0.y), level(0)) * w0.x * w0.y;
+    r += tex.sample(s, float2(t12.x, t0.y), level(0)) * w12.x * w0.y;
+    r += tex.sample(s, float2(t3.x, t0.y), level(0)) * w3.x * w0.y;
+    r += tex.sample(s, float2(t0.x, t12.y), level(0)) * w0.x * w12.y;
+    r += tex.sample(s, float2(t12.x, t12.y), level(0)) * w12.x * w12.y;
+    r += tex.sample(s, float2(t3.x, t12.y), level(0)) * w3.x * w12.y;
+    r += tex.sample(s, float2(t0.x, t3.y), level(0)) * w0.x * w3.y;
+    r += tex.sample(s, float2(t12.x, t3.y), level(0)) * w12.x * w3.y;
+    r += tex.sample(s, float2(t3.x, t3.y), level(0)) * w3.x * w3.y;
+    r = saturate(r);
+    r.rgb = min(r.rgb, r.aaa);
+    return r;
 }
 
 vertex VOut sprite_vertex(uint vid [[vertex_id]], constant SpriteUniforms& u [[buffer(0)]]) {
@@ -192,19 +224,39 @@ fragment float4 sprite_fragment(VOut in [[stage_in]],
         return tex0.sample(zero, in.uv) * u.color.a;
     }
     if (mode == 1) {
-        // Cursor with a soft drop shadow. params: shadow offset (uv), blur (uv), shadow alpha.
-        float4 c = tex0.sample(zero, in.uv);
+        // Cursor with a soft drop shadow and motion blur.
+        // params: shadow offset (uv), blur (uv), shadow alpha. params2: trail (uv), taps, 1 = magnifying.
         float2 o = u.params.xy;
         float b = u.params.z;
-        float sh = 0;
-        sh += tex0.sample(zero, in.uv - o).a * 0.4;
-        sh += tex0.sample(zero, in.uv - o + float2(b, 0)).a * 0.15;
-        sh += tex0.sample(zero, in.uv - o - float2(b, 0)).a * 0.15;
-        sh += tex0.sample(zero, in.uv - o + float2(0, b)).a * 0.15;
-        sh += tex0.sample(zero, in.uv - o - float2(0, b)).a * 0.15;
-        sh *= u.params.w;
-        float4 r = c + float4(0, 0, 0, sh) * (1 - c.a);
-        return r * u.color.a;
+        int taps = max(1, int(u.params2.z));
+        bool cubic = u.params2.w > 0.5;
+        float2 texSize = float2(tex0.get_width(), tex0.get_height());
+        float4 acc = float4(0);
+        for (int i = 0; i < taps; i++) {
+            float k = taps > 1 ? float(i) / float(taps - 1) : 0.0;
+            float2 uv = in.uv + u.params2.xy * k;
+            float4 c = cubic ? sampleCatmullRom(tex0, zero, uv, texSize) : tex0.sample(zero, uv);
+            float sh = 0;
+            sh += tex0.sample(zero, uv - o).a * 0.4;
+            sh += tex0.sample(zero, uv - o + float2(b, 0)).a * 0.15;
+            sh += tex0.sample(zero, uv - o - float2(b, 0)).a * 0.15;
+            sh += tex0.sample(zero, uv - o + float2(0, b)).a * 0.15;
+            sh += tex0.sample(zero, uv - o - float2(0, b)).a * 0.15;
+            sh *= u.params.w;
+            acc += c + float4(0, 0, 0, sh) * (1 - c.a);
+        }
+        return acc / float(taps) * u.color.a;
+    }
+    if (mode == 9) {
+        // Click ripple: a faint disc, a crisp white ring, a thin dark outline so it reads on light and dark
+        // screens. params: radius, ring width, ring alpha, disc alpha; params2.x: outline alpha.
+        float d = length(centred);
+        float r = u.params.x, th = u.params.y;
+        float disc = (1 - smoothstep(r - 1.0, r + 0.5, d)) * u.params.w;
+        float ring = (1 - smoothstep(th * 0.5 - 0.6, th * 0.5 + 0.6, abs(d - (r - th * 0.5)))) * u.params.z;
+        float line = (1 - smoothstep(0.35, 1.1, abs(d - r - 0.6))) * u.params2.x;
+        float w = max(ring, disc);
+        return float4(w, w, w, w) + float4(0, 0, 0, line) * (1 - w);
     }
     if (mode == 2) {
         // Ring. params: radius, thickness (px), softness.
@@ -243,9 +295,7 @@ fragment float4 sprite_fragment(VOut in [[stage_in]],
         float a = saturate(0.5 - d);
         if (a <= 0) { return float4(0); }
         float2 p = u.rect.xy + lp;
-        float s = u.camera.x;
-        float2 q = (p - u.card.xy) / u.card.zw;
-        float2 uv = (q - 0.5) / s + u.camera.yz;
+        float2 uv = u.camera.xy + p * u.camera.zw;
         float2 cell = float2(u.params.w, u.params.w * u.params2.x);
         float2 cuv = (floor(uv / cell) + 0.5) * cell;
         float4 acc = float4(0);
