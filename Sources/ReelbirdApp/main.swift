@@ -13,6 +13,14 @@ if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
     exit(0)
 }
 
+if args.contains("--selftest") {
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        Task { @MainActor in exit(await SelfTest.run() ? 0 : 1) }
+    }
+    RunLoop.main.run()
+}
+
 MainActor.assumeIsolated {
     let app = NSApplication.shared
     let delegate = AppDelegate()

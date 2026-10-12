@@ -126,9 +126,9 @@ struct SourcePickerView: View {
                             .background(RoundedRectangle(cornerRadius: 4).fill(Theme.accentSoft))
                             .aspectRatio(aspect, contentMode: .fit)
                             .frame(maxWidth: 170, maxHeight: 92)
-                        Text("\(Int(a.rect.width * 2)) × \(Int(a.rect.height * 2))")
+                        Text(verbatim: "\(Int(a.rect.width * 2)) × \(Int(a.rect.height * 2))")
                             .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                        Text("Last area · \(Int(a.rect.width)) × \(Int(a.rect.height)) pt")
+                        Text(verbatim: "Last area · \(Int(a.rect.width)) × \(Int(a.rect.height)) pt")
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 } else {

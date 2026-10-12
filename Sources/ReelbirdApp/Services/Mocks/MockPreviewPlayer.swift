@@ -116,7 +116,6 @@ final class MockPreviewView: NSView {
         ctx.saveGState()
         ctx.addPath(CGPath(roundedRect: frame, cornerWidth: 6, cornerHeight: 6, transform: nil))
         ctx.clip()
-        drawBackground(ctx, frame)
 
         let short = min(frame.width, frame.height)
         let bg = edit.background
@@ -136,14 +135,17 @@ final class MockPreviewView: NSView {
         let (scale, focus) = zoomState(at: sourceTime)
         ctx.saveGState()
         if scale > 1.001 {
-            // Keep the visible window inside the screen, then move the focus to the centre.
-            let half = 0.5 / scale
-            let cx = screen.minX + screen.width * min(max(focus.x, half), 1 - half)
-            let cy = screen.minY + screen.height * min(max(focus.y, half), 1 - half)
-            ctx.translateBy(x: screen.midX, y: screen.midY)
+            // Zoom the whole composition towards the focus point, keeping the view inside the frame.
+            let px = screen.minX + screen.width * focus.x
+            let py = screen.minY + screen.height * focus.y
+            let halfW = frame.width / 2 / scale, halfH = frame.height / 2 / scale
+            let cx = min(max(px, frame.minX + halfW), frame.maxX - halfW)
+            let cy = min(max(py, frame.minY + halfH), frame.maxY - halfH)
+            ctx.translateBy(x: frame.midX, y: frame.midY)
             ctx.scaleBy(x: scale, y: scale)
             ctx.translateBy(x: -cx, y: -cy)
         }
+        drawBackground(ctx, frame)
 
         let radius = bg.kind == .none ? 0 : short * bg.cornerRadius
         let screenPath = CGPath(roundedRect: screen, cornerWidth: radius, cornerHeight: radius, transform: nil)

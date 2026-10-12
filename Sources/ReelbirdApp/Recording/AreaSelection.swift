@@ -221,7 +221,7 @@ struct AreaBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text("\(Int(pixelSize.width)) × \(Int(pixelSize.height))")
+            Text(verbatim: "\(Int(pixelSize.width)) × \(Int(pixelSize.height))")
                 .font(.system(size: 12, weight: .semibold).monospacedDigit())
                 .foregroundStyle(.white)
                 .padding(.leading, 4)
