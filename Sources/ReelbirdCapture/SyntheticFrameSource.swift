@@ -187,20 +187,24 @@ public final class SyntheticFrameSource: FrameSource, @unchecked Sendable {
         let total = Int64(duration * fps)
         var n: Int64 = 0
         var camN: Int64 = 0
+        // The whole take is generated in one dispatch block, so drain autoreleased objects per frame
+        // (a real source returns to its queue after every sample, which drains them).
         while n < total, let out = currentOutput {
-            let t = Double(n) / fps
-            audioTick(start: start, upTo: start + t + 0.02)
-            if let camera {
-                let cfps = Double(configuration.cameraFrameRate)
-                while Double(camN) / cfps <= t {
-                    if let pb = camera.render(contentTime: Double(camN) / cfps),
-                       let sb = Self.videoSample(pb, pts: start + Double(camN) / cfps, fps: cfps) {
-                        out.frameSource(didOutput: sb, of: .camera)
+            autoreleasepool {
+                let t = Double(n) / fps
+                audioTick(start: start, upTo: start + t + 0.02)
+                if let camera {
+                    let cfps = Double(configuration.cameraFrameRate)
+                    while Double(camN) / cfps <= t {
+                        if let pb = camera.render(contentTime: Double(camN) / cfps),
+                           let sb = Self.videoSample(pb, pts: start + Double(camN) / cfps, fps: cfps) {
+                            out.frameSource(didOutput: sb, of: .camera)
+                        }
+                        camN += 1
                     }
-                    camN += 1
                 }
+                emitScreen(index: n, pts: start + t, contentTime: t, to: out)
             }
-            emitScreen(index: n, pts: start + t, contentTime: t, to: out)
             n += 1
         }
         run.withLock { $0.finished = true }
