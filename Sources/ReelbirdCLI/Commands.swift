@@ -20,6 +20,8 @@ enum CLI {
             .flag("keystrokes", "Record key presses for a keystroke overlay"),
             .flag("share", "Upload while recording; the link works the moment you stop"),
             .value("out", "PATH", "Bundle path (default: a new project in the library)"),
+            .flag("synthetic", "Record generated frames and tones instead of the screen", hidden: true),
+            .value("synthetic-mic", "AUDIO", "With --synthetic: play this audio file as the microphone", hidden: true),
         ], discussion: "Prints the project path (and share link) when done."),
         CommandSpec(name: "info", summary: "Show a project's details.", positionals: ["PROJECT"]),
         CommandSpec(name: "list", summary: "List projects in the library, newest first.", options: [
@@ -126,7 +128,8 @@ enum CLI {
         }
         let a = try ArgumentParser.parse(args, spec: spec)
         if a.has("help") { return Report(json: ["help": .string(spec.help)], text: spec.help) }
-        let ops = Operations(engine: EngineFactory.make(), locator: ProjectLocator(libraryPath: a.value("library")))
+        let syntheticMic = a.value("synthetic-mic").map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+        let ops = Operations(engine: EngineFactory.make(syntheticMicrophone: syntheticMic), locator: ProjectLocator(libraryPath: a.value("library")))
         let project = a.positional(0) ?? ""
 
         switch spec.name {

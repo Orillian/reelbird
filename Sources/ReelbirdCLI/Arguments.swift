@@ -8,10 +8,14 @@ struct OptionSpec: Sendable {
     var value: String?
     var repeatable = false
     var help: String
+    /// Accepted but left out of help (developer and test options).
+    var hidden = false
 
-    static func flag(_ name: String, _ help: String) -> OptionSpec { OptionSpec(name: name, value: nil, help: help) }
-    static func value(_ name: String, _ placeholder: String, _ help: String, repeatable: Bool = false) -> OptionSpec {
-        OptionSpec(name: name, value: placeholder, repeatable: repeatable, help: help)
+    static func flag(_ name: String, _ help: String, hidden: Bool = false) -> OptionSpec {
+        OptionSpec(name: name, value: nil, help: help, hidden: hidden)
+    }
+    static func value(_ name: String, _ placeholder: String, _ help: String, repeatable: Bool = false, hidden: Bool = false) -> OptionSpec {
+        OptionSpec(name: name, value: placeholder, repeatable: repeatable, help: help, hidden: hidden)
     }
 }
 
@@ -42,7 +46,7 @@ struct CommandSpec: Sendable {
     var help: String {
         var s = "\(summary)\n\nUsage: \(usage)\n"
         if let discussion { s += "\n\(discussion)\n" }
-        let rows = allOptions.map { o -> (String, String) in
+        let rows = allOptions.filter { !$0.hidden }.map { o -> (String, String) in
             ("--\(o.name)" + (o.value.map { " \($0)" } ?? ""), o.help + (o.repeatable ? " (repeatable)" : ""))
         }
         let width = min(30, (rows.map(\.0.count).max() ?? 0) + 2)

@@ -6,11 +6,13 @@ import ReelbirdCore
 enum Recorder {
     static func params(from a: ParsedArguments) throws -> RecordParams {
         var p = RecordParams()
-        let picked = ["display", "window", "area"].filter { a.value($0) != nil }
+        let picked = ["display", "window", "area"].filter { a.value($0) != nil } + (a.has("synthetic") ? ["synthetic"] : [])
         guard picked.count <= 1 else { throw CLIError.usage("Choose one of --display, --window or --area.") }
         if let d = a.value("display") { p.selector = .display(d) }
         if let w = a.value("window") { p.selector = .window(w) }
         if let area = a.value("area") { p.selector = try parseArea(area) }
+        if a.has("synthetic") { p.selector = .synthetic }
+        if a.value("synthetic-mic") != nil, !a.has("synthetic") { throw CLIError.usage("--synthetic-mic needs --synthetic.") }
         p.duration = try a.double("duration")
         p.frameRate = try a.int("fps") ?? 60
         if let q = a.value("quality") {

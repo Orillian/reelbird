@@ -1,8 +1,8 @@
 import Foundation
 import ReelbirdCore
 
-// The CLI reaches capture, rendering and sharing only through `Engine`, so those modules can be
-// wired in with one small adapter (see `EngineFactory`). Everything that needs only ReelbirdCore
+// The CLI reaches capture, rendering and sharing only through `Engine` (`LiveEngine` in production,
+// `DemoEngine` for flow tests), so those modules stay behind one small adapter. Everything that needs only ReelbirdCore
 // and ReelbirdAI (info, list, edit, captions, suggest, silences, MCP) is implemented directly.
 
 /// A recordable source or input device, as listed by `reelbird sources`.
@@ -28,6 +28,8 @@ enum SourceSelector: Hashable, Sendable {
     case window(String)
     /// Rectangle in global display points (top-left origin), on `display` (default: the display containing it).
     case area(x: Double, y: Double, width: Double, height: Double, display: String?)
+    /// Generated frames and tones instead of the screen (end-to-end checks without Screen Recording permission).
+    case synthetic
 }
 
 /// A running recording.
@@ -86,15 +88,14 @@ protocol Engine: Sendable {
 }
 
 enum EngineFactory {
-    /// The engine the CLI uses. The coordinator replaces this with an adapter over
-    /// ReelbirdCapture / ReelbirdRender / ReelbirdShare once those modules land.
-    static func make() -> any Engine {
+    /// The engine the CLI uses: `LiveEngine`, or `DemoEngine` when `REELBIRD_DEMO_ENGINE=1`.
+    static func make(syntheticMicrophone: URL? = nil) -> any Engine {
         if ProcessInfo.processInfo.environment["REELBIRD_DEMO_ENGINE"] == "1" { return DemoEngine() }
-        return UnavailableEngine()
+        return LiveEngine(syntheticMicrophone: syntheticMicrophone)
     }
 }
 
-/// Placeholder engine: every capture/render/share call fails with a clear message.
+/// Every call fails with a clear message. Backs the parts of an engine that aren't wired in yet (sharing).
 struct UnavailableEngine: Engine {
     private func unavailable(_ what: String, _ module: String) -> CLIError {
         CLIError("\(what) isn't available in this build yet (\(module) is not wired into the CLI).", code: .unavailable)
