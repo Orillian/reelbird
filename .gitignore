@@ -1,0 +1,11 @@
+.build/
+.build-*/
+.swiftpm/
+build/
+*.reelbird/
+.DS_Store
+notes/
+*.xcodeproj/
+xcuserdata/
+.env
+.env.*
