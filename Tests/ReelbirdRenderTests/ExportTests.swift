@@ -149,7 +149,21 @@ func cpuSeconds() -> Double {
                      format.rawValue, elapsed.secs, fps, fps / 60, cpu / elapsed.secs * 100))
         #expect(abs(info.duration - 5) < 0.1)
         #expect(info.size == CGSize(width: 3840, height: 2160))
-        if format != .proRes { #expect(fps >= 60, "4K export slower than realtime: \(fps) fps") }
+        // Hardware ceilings measured on M4 Pro: H.264 4K ≈ 63 fps, HEVC 4K (speed priority) ≈ 107 fps.
+        let floor: Double = format == .mp4H264 ? 50 : (format == .mp4HEVC ? 85 : 150)
+        #expect(fps >= floor, "4K export \(format): \(fps) fps")
+    }
+    // The common share case: 4K60 source → 1080p60.
+    for format in [ExportOptions.Format.mp4H264, .mp4HEVC] {
+        let clock = ContinuousClock()
+        let cpu0 = cpuSeconds()
+        let elapsed = try await clock.measure {
+            _ = try await Exporter.export(bundle: bundle, edit: edit, options: ExportOptions(format: format, height: 1080)) { _ in }
+        }
+        let fps = frames / elapsed.secs
+        print(String(format: "BENCH 4K60 → %@ 1920x1080: %.2f s, %.0f fps (%.2fx realtime), CPU %.0f%% avg",
+                     format.rawValue, elapsed.secs, fps, fps / 60, (cpuSeconds() - cpu0) / elapsed.secs * 100))
+        #expect(fps >= 120, "1080p export below 2x realtime: \(fps)")
     }
     let gifClock = ContinuousClock()
     let gifTime = try await gifClock.measure { _ = try await Exporter.export(bundle: bundle, edit: edit, options: ExportOptions(format: .gif)) { _ in } }
