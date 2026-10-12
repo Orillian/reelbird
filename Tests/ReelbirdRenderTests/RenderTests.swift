@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import CoreGraphics
+import ImageIO
 import Foundation
 import Testing
 import ReelbirdCore
@@ -175,4 +176,33 @@ private func render(_ bundle: ProjectBundle, _ edit: EditDocument, at t: Double,
     #expect(cues.count == 2)
     #expect(cues[0].text == "Hello there" && cues[0].range == TimeRange(start: 1, end: 2.5))
     #expect(cues[1].range.start == 60)
+}
+
+/// Writes sample frames as PNGs for eyeballing: `RB_DUMP_DIR=/path scripts/test.sh --filter dumpFrames`.
+@Test func dumpFrames() async throws {
+    guard let dir = ProcessInfo.processInfo.environment["RB_DUMP_DIR"] else { return }
+    var o = Synthetic.Options()
+    o.camera = true
+    o.seconds = 4
+    o.captureScale = 2
+    let bundle = try await Synthetic.makeBundle(o)
+    defer { try? FileManager.default.removeItem(at: bundle.url) }
+    let log = try EventLogWriter(url: bundle.eventsURL)
+    for (i, ch) in "hello".enumerated() { log.append(InputEvent(t: 1.0 + Double(i) * 0.1, type: .key, chars: String(ch))) }
+    log.close()
+    let manifest = try bundle.readManifest()
+    var e = EditDocument.initial(for: manifest)
+    e.cursor.showKeystrokes = true
+    e.annotations = [Annotation(kind: .arrow, range: TimeRange(start: 0, end: 4), rect: NormRect(x: 0.6, y: 0.2, width: 0.15, height: 0.15)),
+                     Annotation(kind: .text, range: TimeRange(start: 0, end: 4), rect: NormRect(x: 0.6, y: 0.1, width: 0.3, height: 0.06), text: "Click here")]
+    let plan = try RenderPlan(bundle: bundle, manifest: manifest, edit: e)
+    let sources = try await MediaSources.load(bundle: bundle, manifest: manifest)
+    for t in [0.3, 1.2, 1.6, 2.2] {
+        let img = try Thumbnailer.render(plan: plan, sources: sources, at: t, maxWidth: 1280)
+        let url = URL(fileURLWithPath: dir).appendingPathComponent("frame-\(t).png")
+        let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(dest, img, nil)
+        CGImageDestinationFinalize(dest)
+    }
+    print("regions:", plan.regions)
 }
