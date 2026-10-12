@@ -96,11 +96,19 @@ struct ExportSheet: View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             Text("Exporting…").font(.system(size: 17, weight: .semibold))
             ProgressView(value: p).tint(Theme.accent)
+                .accessibilityLabel("Export progress")
             HStack {
                 Text("\(Int(p * 100))%").font(.system(size: 12).monospacedDigit()).foregroundStyle(.secondary)
                 Spacer()
-                Text("Keep editing other recordings while this runs.").font(.system(size: 11)).foregroundStyle(.tertiary)
+                Text("Other recordings stay editable while this runs.").font(.system(size: 11)).foregroundStyle(.tertiary)
             }
+            HStack {
+                Spacer()
+                Button("Cancel Export") { model.cancelWork() }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(.top, Theme.Space.xs)
         }
         .padding(Theme.Space.xl)
     }
@@ -185,24 +193,52 @@ struct ExportSheet: View {
 
 // MARK: Share
 
+/// "Share" opens the share popover. Once a link exists the button copies it in one click
+/// (with a brief "Copied"), and the chevron beside it opens the popover for updates.
 struct ShareButton: View {
     @Bindable var model: EditorModel
     let app: AppModel?
+    @ViewState private var copied = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Button {
-            model.showShare.toggle()
-        } label: {
-            HStack(spacing: 6) {
-                if case .working(_, let p) = model.shareState {
-                    ProgressView(value: p).progressViewStyle(.circular).controlSize(.mini)
+        HStack(spacing: 1) {
+            Button {
+                if model.shareInfo != nil, !model.shareState.isWorking {
+                    model.copyLink()
+                    withAnimation(reduceMotion ? nil : Theme.snappy) { copied = true }
+                    NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                                         userInfo: [.announcement: "Link copied", .priority: NSAccessibilityPriorityLevel.high.rawValue])
+                    Task {
+                        try? await Task.sleep(for: .seconds(1.6))
+                        withAnimation(reduceMotion ? nil : Theme.snappy) { copied = false }
+                    }
                 } else {
-                    Image(systemName: "link")
+                    model.showShare.toggle()
                 }
-                Text(model.shareInfo == nil ? "Share" : "Copy Link")
+            } label: {
+                HStack(spacing: 6) {
+                    if case .working(_, let p) = model.shareState {
+                        ProgressView(value: p).progressViewStyle(.circular).controlSize(.mini)
+                    } else {
+                        Image(systemName: copied ? "checkmark" : "link")
+                            .contentTransition(.symbolEffect(.replace))
+                    }
+                    Text(copied ? "Copied" : model.shareInfo == nil ? "Share" : "Copy Link")
+                        .frame(minWidth: model.shareInfo == nil ? nil : 62, alignment: .leading)
+                }
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .help(model.shareInfo == nil ? "Share with a link (⇧⌘E)" : "Copy the link")
+            if model.shareInfo != nil {
+                Button { model.showShare.toggle() } label: {
+                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .help("Sharing options (⇧⌘E)")
+                .accessibilityLabel("Sharing options")
             }
         }
-        .buttonStyle(SecondaryButtonStyle())
         .popover(isPresented: $model.showShare, arrowEdge: .bottom) {
             SharePanel(model: model, app: app).frame(width: 340)
         }
@@ -220,7 +256,7 @@ struct SharePanel: View {
                 Text("Share with a link").font(.system(size: 14, weight: .semibold))
                 Text("Links upload to your own storage bucket. Cloudflare R2 is free to start and takes about five minutes to set up.")
                     .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Button("Open Settings → Sharing") {
+                Button("Set Up Sharing…") {
                     model.showShare = false
                     app?.openSettings(.sharing)
                 }
@@ -246,11 +282,11 @@ struct SharePanel: View {
                 progressOrError
                 HStack {
                     Button("Open in Browser") { model.openLink() }.buttonStyle(SecondaryButtonStyle())
-                    Button("Update link") { model.publish() }.buttonStyle(SecondaryButtonStyle()).disabled(model.shareState.isWorking)
+                    Button("Update Link") { model.publish() }.buttonStyle(SecondaryButtonStyle()).disabled(model.shareState.isWorking)
                     Spacer()
                 }
                 Divider()
-                Button("Stop sharing", role: .destructive) { model.unpublish() }
+                Button("Stop Sharing…", role: .destructive) { confirmUnpublish() }
                     .buttonStyle(.link).font(.system(size: 12)).foregroundStyle(Theme.accentText)
                     .help("Deletes the uploaded files. The link stops working.")
             } else {
@@ -264,6 +300,16 @@ struct SharePanel: View {
             }
         }
         .padding(Theme.Space.l)
+    }
+
+    private func confirmUnpublish() {
+        let alert = NSAlert()
+        alert.messageText = "Stop sharing this recording?"
+        alert.informativeText = "The uploaded video is deleted from your bucket and the link stops working for everyone who has it. The recording stays on your Mac."
+        alert.addButton(withTitle: "Stop Sharing")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        if alert.runModal() == .alertFirstButtonReturn { model.unpublish() }
     }
 
     @ViewBuilder private var progressOrError: some View {

@@ -67,10 +67,15 @@ enum CaptionState: Equatable {
     var showShare = false
     var shareState: ShareState = .idle
     var captionState: CaptionState = .idle
+    var storyState: CaptionState = .idle
+    /// Filled in once the captions panel asks (the check is async on macOS 26).
+    private(set) var captionsUnavailableReason: String?
     private(set) var transcript: Transcript?
     private(set) var waveform: [Float] = []
     private(set) var filmstrip: [CGImage] = []
     private(set) var saveError: String?
+    /// Set when the preview can't load; the stage explains instead of spinning forever.
+    private(set) var previewError: String?
 
     @ObservationIgnored let undoManager = UndoManager()
     /// Off in snapshots so scenes don't write into the shared demo bundle.
@@ -78,6 +83,8 @@ enum CaptionState: Equatable {
     @ObservationIgnored private(set) var player: (any PreviewPlayerHandle)?
     @ObservationIgnored private let services: Services
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var exportTask: Task<Void, Never>?
+    @ObservationIgnored private var shareTask: Task<Void, Never>?
     @ObservationIgnored private var coalesceKey: String?
     @ObservationIgnored private var coalesceUntil = Date.distantPast
 
@@ -118,12 +125,12 @@ enum CaptionState: Equatable {
             let p = try services.render.makePreviewPlayer(bundle: bundle)
             p.onTimeChange = { [weak self] output in self?.playerTimeChanged(output) }
             p.onReady = { [weak self] error in
-                if let error { self?.saveError = "The preview couldn't load: \(error.localizedDescription)" }
+                if let error { self?.previewError = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription }
             }
             p.update(edit: edit)
             player = p
         } catch {
-            saveError = "The preview couldn't load: \(error.localizedDescription)"
+            previewError = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
         }
         loadTimelineMedia()
     }
@@ -421,21 +428,36 @@ enum CaptionState: Equatable {
 
     // MARK: Export
 
+    /// True while an export or a link upload is running (closing or quitting asks first).
+    var isBusy: Bool {
+        if case .running = exportState { return true }
+        return shareState.isWorking
+    }
+
+    /// Stops a running export or upload. The recording and its edits are untouched.
+    func cancelWork() {
+        exportTask?.cancel(); exportTask = nil
+        shareTask?.cancel(); shareTask = nil
+        if case .running = exportState { exportState = .idle }
+        if shareState.isWorking { shareState = .idle }
+    }
+
     func export(_ options: ExportOptions) {
         exportState = .running(0)
         let services = services, bundle = bundle, edit = edit
-        Task {
+        exportTask = Task {
             do {
                 let url = try await services.render.export(bundle: bundle, edit: edit, options: options) { p in
                     Task { @MainActor in
                         if case .running = self.exportState { self.exportState = .running(p) }
                     }
                 }
+                guard !Task.isCancelled else { exportState = .idle; return }
                 exportState = .done(url)
             } catch is CancellationError {
                 exportState = .idle
             } catch {
-                exportState = .failed((error as? any LocalizedError)?.errorDescription ?? error.localizedDescription)
+                exportState = Task.isCancelled ? .idle : .failed((error as? any LocalizedError)?.errorDescription ?? error.localizedDescription)
             }
         }
     }
@@ -452,7 +474,7 @@ enum CaptionState: Equatable {
         let services = services, bundle = bundle, edit = edit
         // Viewers see the edited video, so captions go on the output timeline.
         let captionsVTT = edit.captions.file == nil ? nil : transcript.map { services.ai.webVTT($0.remapped(to: timeline)) }
-        Task {
+        shareTask = Task {
             let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("reelbird-share-\(UUID().uuidString)", isDirectory: true)
             defer { try? FileManager.default.removeItem(at: tmp) }
             do {
@@ -481,7 +503,7 @@ enum CaptionState: Equatable {
                 copyLink()
                 Toast.show(title: "Link copied", detail: info.polished ? "Your link now plays the edited video" : nil, symbol: "link")
             } catch {
-                shareState = .failed((error as? any LocalizedError)?.errorDescription ?? error.localizedDescription)
+                shareState = Task.isCancelled ? .idle : .failed((error as? any LocalizedError)?.errorDescription ?? error.localizedDescription)
             }
         }
     }
@@ -543,6 +565,36 @@ enum CaptionState: Equatable {
             }
         }
     }
+
+    func checkCaptionsAvailability() {
+        let ai = services.ai
+        Task { captionsUnavailableReason = await ai.captionsUnavailableReason() }
+    }
+
+    var storySupported: Bool { services.ai.storySupported }
+    var storyUnavailableReason: String? { services.ai.storyUnavailableReason }
+
+    /// Suggests a title and chapters from the transcript with on-device Apple Intelligence.
+    /// Chapter times are on the recording's timeline, like the transcript (same as `reelbird suggest`).
+    func suggestStory() {
+        guard let t = transcript else { return }
+        storyState = .working
+        let ai = services.ai
+        Task {
+            do {
+                let story = try await ai.suggestStory(transcript: t)
+                storyState = .idle
+                change("Suggest Title and Chapters") { e in
+                    if !story.title.isEmpty { e.title = story.title }
+                    e.chapters = story.chapters
+                }
+            } catch {
+                storyState = .failed((error as? any LocalizedError)?.errorDescription ?? error.localizedDescription)
+            }
+        }
+    }
+
+    func clearChapters() { change("Clear Chapters") { $0.chapters = [] } }
 
     func removeCaptions() {
         change("Remove Captions") { $0.captions.file = nil; $0.captions.burnIn = false }
