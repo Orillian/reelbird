@@ -171,7 +171,7 @@ h1{margin:0;font-size:clamp(20px,2.3vw,25px);line-height:1.25;font-weight:650;le
 .foot a,.foot button{all:unset;cursor:pointer;color:var(--faint);display:inline-flex;align-items:center;gap:8px;border-radius:4px}
 .foot a:hover,.foot button:hover{color:var(--text)}
 .foot .dot{width:14px;height:14px;flex:none}
-.keys{position:fixed;right:20px;bottom:20px;z-index:5;width:290px;padding:16px 18px;border-radius:14px;background:var(--raise);color:var(--text);box-shadow:var(--ring),0 24px 60px -20px rgba(0,0,0,.45);font-size:13.5px}
+.keys{position:fixed;right:20px;bottom:64px;z-index:5;width:290px;padding:16px 18px;border-radius:14px;background:var(--raise);color:var(--text);box-shadow:var(--ring),0 24px 60px -20px rgba(0,0,0,.45);font-size:13.5px}
 .keys[hidden]{display:none}
 .keys h2{margin:0 0 10px;font-size:14px;font-weight:600}
 .keys dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:8px 14px;align-items:center}
@@ -450,7 +450,10 @@ v.addEventListener("timeupdate", () => {
 // Copy link
 $("copy").addEventListener("click", async () => {
   const label = $("copy").querySelector("span");
-  try { await navigator.clipboard.writeText(meta.pageURL); }
+  try {
+    await Promise.race([navigator.clipboard.writeText(meta.pageURL),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 800))]);
+  }
   catch (e) {
     const ta = document.createElement("textarea");
     ta.value = meta.pageURL; ta.style.position = "fixed"; ta.style.opacity = "0";
@@ -510,13 +513,15 @@ const toggleKeys = show => {
   keys.hidden = !(show === undefined ? keys.hidden : show);
   keysOpen.setAttribute("aria-expanded", String(!keys.hidden));
 };
-keysOpen.addEventListener("click", () => toggleKeys());
+keysOpen.addEventListener("click", e => { e.stopPropagation(); toggleKeys(); });
+document.addEventListener("click", e => { if (!keys.hidden && !keys.contains(e.target)) toggleKeys(false); });
 const seek = d => { v.currentTime = Math.max(0, Math.min((v.duration || Infinity), v.currentTime + d)); };
 document.addEventListener("keydown", e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const tag = (e.target.tagName || "").toLowerCase();
   if (tag === "input" || tag === "textarea" || tag === "select" || e.target.isContentEditable) return;
-  const k = e.key;
+  let k = e.key;
+  if (e.shiftKey && (!k || k.length !== 1 || /[/.,]/.test(k))) k = { Slash: "?", Period: ">", Comma: "<" }[e.code] || k;
   if (k === " " && (e.target === v || tag === "button")) return; // native handling
   let handled = true;
   switch (k) {

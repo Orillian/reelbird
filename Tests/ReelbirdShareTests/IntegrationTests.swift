@@ -153,7 +153,7 @@ enum Integration {
         lines.append("hls \(info2.url)")
 
         // 3. Recording right now, in real time.
-        let long = try await Synthetic.cmaf(Synthetic.Options(width: 1280, height: 720, fps: 30, seconds: 150, title: "Live recording", bitrate: 1_500_000))
+        let long = try await Synthetic.cmaf(Synthetic.Options(width: 1280, height: 720, fps: 30, seconds: Double(Integration.env["REELBIRD_DEMO_LIVE_SECONDS"] ?? "") ?? 150, title: "Live recording", bitrate: 1_500_000))
         let up3 = LiveShareUploader(destination: dest, secret: server.secret, journalDirectory: dir.appendingPathComponent("j3"))
         let liveTask = Task { try await Integration.live(up3, title: "Design review, live", stream: long, realTime: true) }
         try await Task.sleep(nanoseconds: 1_000_000_000)
