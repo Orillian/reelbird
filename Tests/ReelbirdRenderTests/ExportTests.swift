@@ -29,6 +29,16 @@ func inspect(_ url: URL) async throws -> MediaInfo {
     return MediaInfo(duration: duration, size: size, codec: fds.first.map(fourCC) ?? "?", audioCodec: audio, frameRate: fps)
 }
 
+/// Physical memory footprint of this process in MB (what Activity Monitor shows as Memory).
+func footprintMB() -> Double {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+    let kr = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+    }
+    return kr == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : 0
+}
+
 /// CPU seconds used by this process so far (user + system).
 func cpuSeconds() -> Double {
     var u = rusage()
@@ -178,8 +188,8 @@ func cpuSeconds() -> Double {
         let cpu = cpuSeconds() - cpu0
         let info = try await inspect(url)
         let fps = frames / elapsed.secs
-        print(String(format: "BENCH 4K60 → %@ 3840x2160: %.2f s, %.0f fps (%.2fx realtime), CPU %.0f%% avg",
-                     format.rawValue, elapsed.secs, fps, fps / 60, cpu / elapsed.secs * 100))
+        print(String(format: "BENCH 4K60 → %@ 3840x2160: %.2f s, %.0f fps (%.2fx realtime), CPU %.0f%% avg, footprint %.0f MB",
+                     format.rawValue, elapsed.secs, fps, fps / 60, cpu / elapsed.secs * 100, footprintMB()))
         #expect(abs(info.duration - 5) < 0.1)
         #expect(info.size == CGSize(width: 3840, height: 2160))
         // Hardware ceilings measured on M4 Pro: H.264 4K ≈ 63 fps, HEVC 4K (speed priority) ≈ 107 fps.
@@ -205,4 +215,26 @@ func cpuSeconds() -> Double {
 
 extension Duration {
     var secs: Double { Double(components.seconds) + Double(components.attoseconds) / 1e18 }
+}
+
+/// Long exports must not grow memory: footprint at 90% matches footprint at 10%.
+/// Heavy (two minutes of source): `RB_BENCH=1 scripts/test.sh --filter longExportMemoryIsFlat`.
+@Test func longExportMemoryIsFlat() async throws {
+    guard ProcessInfo.processInfo.environment["RB_BENCH"] != nil else { return }
+    var o = Synthetic.Options()
+    o.width = 1920; o.height = 1080; o.fps = 30; o.seconds = 120; o.camera = true
+    let bundle = try await Synthetic.makeBundle(o)
+    defer { try? FileManager.default.removeItem(at: bundle.url) }
+    let samples = Box<[Double: Double]>([:])
+    let clock = ContinuousClock()
+    let elapsed = try await clock.measure {
+        _ = try await Exporter.export(bundle: bundle, edit: try bundle.readEdit(), options: ExportOptions(format: .mp4HEVC)) { p in
+            let k = (p * 10).rounded(.down) / 10
+            if samples.value[k] == nil { samples.value[k] = footprintMB() }
+        }
+    }
+    let early = samples.value[0.1] ?? 0, late = samples.value[0.9] ?? 0
+    print(String(format: "BENCH 120 s 1080p30 HEVC export: %.1f s (%.1fx realtime), footprint %.0f MB at 10%%, %.0f MB at 90%%",
+                 elapsed.secs, 120 / elapsed.secs, early, late))
+    #expect(late - early < 60, "memory grew \(late - early) MB")
 }

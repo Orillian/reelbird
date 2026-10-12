@@ -117,8 +117,10 @@ public struct CameraPath: Sendable {
         func stepFollow(_ t: Double, scale s: Double) {
             let cur = cursor.position(at: t) ?? NormPoint(x: tx, y: ty)
             let cx = min(1, max(0, cur.x)), cy = min(1, max(0, cur.y))
-            // Dead zone: the middle half of the view.
-            let dx = 0.25 * base.x / s, dy = 0.25 * base.y / s
+            // Dead zone: the middle half of a zoomed view; the middle 36% of an un-zoomed cropped window,
+            // whose narrow view otherwise parks off to one side of the action.
+            let k = s <= 1.001 ? 0.18 : 0.25
+            let dx = k * base.x / s, dy = k * base.y / s
             if cx > tx + dx { tx = cx - dx } else if cx < tx - dx { tx = cx + dx }
             if cy > ty + dy { ty = cy - dy } else if cy < ty - dy { ty = cy + dy }
             let tc = clampCenter(NormPoint(x: tx, y: ty), scale: s, base: base)
