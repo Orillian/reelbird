@@ -42,7 +42,7 @@ struct Operations: Sendable {
     let engine: any Engine
     let locator: ProjectLocator
 
-    static func transcriptURL(_ b: ProjectBundle) -> URL { b.url.appendingPathComponent("transcript.json") }
+    static func transcriptURL(_ b: ProjectBundle) -> URL { b.transcriptURL }
 
     // MARK: Sources
 

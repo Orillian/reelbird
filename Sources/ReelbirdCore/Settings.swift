@@ -77,6 +77,8 @@ public struct HealthWarning: Codable, Hashable, Sendable, Identifiable {
         case lowDisk
         /// Uploads are falling behind.
         case uploadBacklog
+        /// The share link couldn't be reserved when recording started; the take is saved locally only.
+        case shareFailed
         case permissionMissing
     }
     public var id: String { kind.rawValue }

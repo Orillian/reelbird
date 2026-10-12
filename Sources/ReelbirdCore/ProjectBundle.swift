@@ -10,6 +10,7 @@ import Foundation
 ///       screen/             init.mp4, seg_00001.m4s …, index.m3u8   (+ screen.mp4 when consolidated)
 ///       camera/  microphone/  systemAudio/  share/   (same layout, when recorded)
 ///       captions.vtt        optional, from transcription
+///       transcript.json     optional, word-timed transcript (ReelbirdAI.Transcript) behind captions.vtt
 ///       exports/            rendered outputs
 public struct ProjectBundle: Hashable, Sendable {
     public static let pathExtension = "reelbird"
@@ -24,6 +25,7 @@ public struct ProjectBundle: Hashable, Sendable {
     public var cursorIndexURL: URL { cursorsURL.appendingPathComponent("cursors.json") }
     public var exportsURL: URL { url.appendingPathComponent("exports", isDirectory: true) }
     public var captionsURL: URL { url.appendingPathComponent("captions.vtt") }
+    public var transcriptURL: URL { url.appendingPathComponent("transcript.json") }
 
     public func directory(for kind: TrackKind) -> URL { url.appendingPathComponent(kind.rawValue, isDirectory: true) }
     public func resolve(_ relative: String) -> URL {

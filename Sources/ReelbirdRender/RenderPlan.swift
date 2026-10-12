@@ -228,8 +228,8 @@ struct CanvasLayout {
 }
 
 /// Minimal WebVTT reader: cue timings and text (tags stripped).
-enum WebVTT {
-    static func parse(_ text: String) -> [CaptionCue] {
+public enum WebVTT {
+    public static func parse(_ text: String) -> [CaptionCue] {
         var cues: [CaptionCue] = []
         let blocks = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n\n")
         for block in blocks {

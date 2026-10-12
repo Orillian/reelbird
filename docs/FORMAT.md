@@ -14,6 +14,7 @@ Demo.reelbird/
   systemAudio/      same layout, audio only (optional)
   share/            the quick-share stream (optional)
   captions.vtt      optional
+  transcript.json   optional, word-timed transcript behind captions.vtt (source timeline)
   exports/          rendered files
 ```
 

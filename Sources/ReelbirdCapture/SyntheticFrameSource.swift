@@ -18,6 +18,9 @@ public final class SyntheticFrameSource: FrameSource, @unchecked Sendable {
     public enum AudioSignal: Sendable, Hashable {
         case sine(frequency: Double, amplitude: Double)
         case silence
+        /// Mono 48 kHz samples played once from the start of the recording, then silence
+        /// (e.g. synthesized speech for end-to-end transcription checks).
+        case samples([Float])
     }
 
     public struct Configuration: Sendable {
@@ -256,6 +259,12 @@ public final class SyntheticFrameSource: FrameSource, @unchecked Sendable {
                 for i in 0..<count {
                     let v = Float(amp * sin(w * Double(firstFrame + Int64(i))))
                     for c in 0..<channels { f[c * count + i] = v }  // non-interleaved planes
+                }
+            case .samples(let pcm):
+                for i in 0..<count {
+                    let n = Int(firstFrame) + i
+                    let v = n < pcm.count ? pcm[n] : 0
+                    for c in 0..<channels { f[c * count + i] = v }
                 }
             }
         }

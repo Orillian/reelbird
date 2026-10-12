@@ -255,7 +255,8 @@ struct ControlBarView: View {
         case .captureStalled: "pause.rectangle.fill"
         case .avDrift: "waveform.badge.exclamationmark"
         case .lowDisk: "internaldrive.fill"
-        case .uploadBacklog: "icloud.slash.fill"
+        case .uploadBacklog: "icloud.and.arrow.up.fill"
+        case .shareFailed: "icloud.slash.fill"
         case .permissionMissing: "lock.fill"
         }
     }

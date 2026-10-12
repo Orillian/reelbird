@@ -50,8 +50,9 @@ struct HealthMonitor: Sendable {
             now[.lowDisk] = "Less than 2 GB of disk space left (\(ByteCountFormatter.string(fromByteCount: free, countStyle: .file)))."
         }
         if let failure = i.shareFailure {
-            now[.uploadBacklog] = "The share link couldn't start: \(failure). The recording is saved locally."
-        } else if i.uploadBacklog > Self.backlogLimit {
+            now[.shareFailed] = "The share link couldn't start: \(failure). The recording is saved locally."
+        }
+        if i.uploadBacklog > Self.backlogLimit {
             now[.uploadBacklog] = "Uploads are falling behind (\(i.uploadBacklog) segments waiting). The link catches up after you stop."
         }
         if let p = i.missingPermission {
