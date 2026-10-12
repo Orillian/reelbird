@@ -1,11 +1,25 @@
+# Build outputs
 .build/
 .build-*/
 .swiftpm/
 build/
-*.reelbird/
-.DS_Store
-notes/
 *.xcodeproj/
 xcuserdata/
+
+# Recordings and exports (never commit media)
+*.reelbird/
+*.reelbird
+/*.mp4
+/*.mov
+/*.m4a
+/*.gif
+
+# Private notes, credentials and local config
+notes/
 .env
 .env.*
+*.secret
+*.p12
+*.pem
+
+.DS_Store

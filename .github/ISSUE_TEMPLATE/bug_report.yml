@@ -1,0 +1,50 @@
+name: Bug report
+description: Something doesn't work the way it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Reelbird and choose New Recording…
+        2. …
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: macOS 26.1, MacBook Pro M3
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Reelbird version or commit
+      description: "Settings… → About, `reelbird version`, or `git rev-parse --short HEAD`."
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Recording
+        - Editor or export
+        - Sharing
+        - Captions
+        - Command line or MCP
+        - Building from source
+        - Something else
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error messages or logs
+      description: Paste any message Reelbird showed, or CLI output with `--json`. Remove keys and bucket names you'd rather keep private.
+      render: text
