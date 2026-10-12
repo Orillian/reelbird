@@ -213,8 +213,10 @@ private struct ChapterOutput: Generable {
 
     static var generationSchema: GenerationSchema {
         GenerationSchema(type: Self.self, description: "A chapter of the recording", properties: [
-            .init(name: "start", description: "Start time in seconds, copied from a [Ns] marker", type: Int.self),
+            // Title first: the model picks the topic, then copies the marker of the line where it begins.
+            // (Generating the time first makes it drift one line ahead of the title.)
             .init(name: "title", description: "Chapter title, 2 to 5 words", type: String.self),
+            .init(name: "start", description: "Start time in seconds, copied from the [Ns] marker of the line where this topic begins", type: Int.self),
         ])
     }
     init(_ content: GeneratedContent) throws {
