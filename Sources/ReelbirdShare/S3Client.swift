@@ -1,5 +1,6 @@
 import Foundation
 import ReelbirdCore
+import Synchronization
 
 /// A failed storage request, with a message a person can act on.
 public struct ShareError: Error, LocalizedError, Hashable, Sendable {
@@ -16,8 +17,11 @@ public struct ShareError: Error, LocalizedError, Hashable, Sendable {
 
     public var errorDescription: String? { message }
 
-    /// Worth retrying: network errors, throttling and server errors.
-    var isTransient: Bool { status == 0 || status == 408 || status == 429 || status >= 500 }
+    /// Worth retrying: network errors, throttling, server errors, and S3's idle-socket
+    /// `RequestTimeout` (sent as HTTP 400).
+    var isTransient: Bool {
+        status == 0 || status == 408 || status == 429 || status >= 500 || code == "RequestTimeout" || code == "SlowDown"
+    }
 }
 
 /// One object from a listing or HEAD.
@@ -43,6 +47,14 @@ public final class S3Client: Sendable {
     let baseDelay: Double
     /// Endpoint without a trailing slash, e.g. "https://acc.r2.cloudflarestorage.com".
     let endpoint: String
+    /// Scheme + host (+ port) of the endpoint.
+    let origin: String
+    /// Path the endpoint is mounted under ("" normally; "/minio" behind a reverse proxy). It is part
+    /// of the signed canonical URI.
+    let basePath: String
+    /// Server clock minus local clock, learned from `RequestTimeTooSkewed` responses, so a Mac
+    /// whose clock is off by more than SigV4's 15 minutes still uploads.
+    private let clockOffset = Mutex<Double>(0)
 
     /// - Parameters:
     ///   - maxConcurrent: requests in flight at once (default 6).
@@ -60,7 +72,19 @@ public final class S3Client: Sendable {
         while e.hasSuffix("/") { e.removeLast() }
         if !e.contains("://") { e = "https://" + e }
         self.endpoint = e
+        if let c = URLComponents(string: e), let scheme = c.scheme, let host = c.host {
+            origin = "\(scheme)://\(host)" + (c.port.map { ":\($0)" } ?? "")
+            var p = c.percentEncodedPath
+            while p.hasSuffix("/") { p.removeLast() }
+            basePath = p.removingPercentEncoding ?? p
+        } else {
+            origin = e
+            basePath = ""
+        }
     }
+
+    /// Now, corrected by the server clock offset.
+    var now: Date { Date().addingTimeInterval(clockOffset.withLock { $0 }) }
 
     static func makeSession() -> URLSession {
         let c = URLSessionConfiguration.ephemeral
@@ -257,10 +281,10 @@ public final class S3Client: Sendable {
         var response: HTTPURLResponse
     }
 
-    /// Path ("/bucket/key") before encoding.
+    /// Path ("/bucket/key", under the endpoint's base path) before encoding.
     func path(for key: String?) -> String {
-        guard let key else { return "/\(destination.bucket)" }
-        return "/\(destination.bucket)/\(key)"
+        guard let key else { return "\(basePath)/\(destination.bucket)" }
+        return "\(basePath)/\(destination.bucket)/\(key)"
     }
 
     func send(_ method: String, key: String?, query: [(String, String)] = [],
@@ -268,22 +292,26 @@ public final class S3Client: Sendable {
         let canonicalURI = SigV4Signer.encodePath(path(for: key))
         let qs = query.map { $0.1.isEmpty && $0.0 == "uploads" ? "uploads=" : "\(SigV4Signer.uriEncode($0.0))=\(SigV4Signer.uriEncode($0.1))" }
             .joined(separator: "&")
-        guard let url = URL(string: endpoint + canonicalURI + (qs.isEmpty ? "" : "?" + qs)), let host = url.host else {
+        guard let url = URL(string: origin + canonicalURI + (qs.isEmpty ? "" : "?" + qs)), let host = url.host else {
             throw ShareError(status: 0, message: "The endpoint \"\(destination.endpoint)\" is not a valid URL.")
         }
         let hostHeader = url.port.map { "\(host):\($0)" } ?? host
         let payloadHash = body.map { SigV4Signer.sha256Hex($0) } ?? SigV4Signer.emptyPayloadHash
 
         var attempt = 0
+        var clockFixed = false
         while true {
             attempt += 1
             try Task.checkCancellation()
+            // One timestamp for both the header and the signature (two Date() calls could straddle
+            // a second boundary and fail with SignatureDoesNotMatch).
+            let date = now
             var signed = headers
             signed["host"] = hostHeader
-            signed["x-amz-date"] = SigV4Signer.amzDate(Date())
+            signed["x-amz-date"] = SigV4Signer.amzDate(date)
             signed["x-amz-content-sha256"] = payloadHash
             let sig = signer.sign(method: method, canonicalURI: canonicalURI, query: query,
-                                  headers: signed, payloadHash: payloadHash, date: Date())
+                                  headers: signed, payloadHash: payloadHash, date: date)
             var req = URLRequest(url: url)
             req.httpMethod = method
             for (k, v) in signed where k != "host" { req.setValue(v, forHTTPHeaderField: k) }
@@ -310,6 +338,14 @@ public final class S3Client: Sendable {
                 let err = Self.describe(status: http.statusCode, code: XMLValue.first("Code", in: result.0),
                                         serverMessage: XMLValue.first("Message", in: result.0),
                                         key: key, bucket: destination.bucket, endpoint: endpoint)
+                if err.code == "RequestTimeTooSkewed", !clockFixed,
+                   let server = http.value(forHTTPHeaderField: "Date").flatMap(Self.parseHTTPDate) {
+                    // Sign with the server's clock from now on and retry right away.
+                    clockFixed = true
+                    clockOffset.withLock { $0 = server.timeIntervalSince(Date()) }
+                    attempt -= 1
+                    continue
+                }
                 if err.isTransient && attempt < maxAttempts {
                     try await backoff(attempt, retryAfter: http.value(forHTTPHeaderField: "Retry-After"))
                     continue
@@ -329,6 +365,15 @@ public final class S3Client: Sendable {
                 throw err
             }
         }
+    }
+
+    /// Parses an RFC 7231 IMF-fixdate ("Sun, 06 Nov 1994 08:49:37 GMT").
+    static func parseHTTPDate(_ s: String) -> Date? {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "GMT")
+        f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return f.date(from: s)
     }
 
     func backoff(_ attempt: Int, retryAfter: String?) async throws {
@@ -379,6 +424,8 @@ public final class S3Client: Sendable {
             msg = "The access key ID isn't recognised. Check the access key."
         case (_, "RequestTimeTooSkewed"):
             msg = "Your Mac's clock is off. Turn on \"Set time and date automatically\" in System Settings."
+        case (301, _), (_, "PermanentRedirect"), (_, "AuthorizationHeaderMalformed"):
+            msg = "The endpoint doesn't match the bucket's region. For AWS S3 use https://s3.<region>.amazonaws.com and set the region."
         case (_, "NoSuchBucket"):
             msg = "Bucket \"\(bucket)\" doesn't exist at \(endpoint). Check the bucket name and endpoint."
         case (_, "AccessDenied"), (403, _):
