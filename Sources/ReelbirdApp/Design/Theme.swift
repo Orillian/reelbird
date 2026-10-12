@@ -66,7 +66,7 @@ extension NSColor {
     static let rbNeutralMark = dynamic(light: NSColor(hex: 0x6E645C), dark: NSColor(hex: 0xA69C93))
     static let rbStage = dynamic(light: NSColor(hex: 0xECE7E2), dark: NSColor(hex: 0x110D0B))
     static let rbPanel = dynamic(light: NSColor(hex: 0xFCFAF8), dark: NSColor(hex: 0x1F1A17))
-    static let rbRaised = dynamic(light: NSColor(hex: 0xFFFFFF), dark: NSColor(hex: 0x2A2320))
+    static let rbRaised = dynamic(light: NSColor(hex: 0xFFFFFF), dark: NSColor(hex: 0x3B332F))
     static let rbField = dynamic(light: NSColor(hex: 0x1A1512, alpha: 0.05), dark: NSColor(hex: 0xFFF4E8, alpha: 0.07))
     static let rbSuccess = dynamic(light: NSColor(hex: 0x2E8A57), dark: NSColor(hex: 0x56C68A))
     static let rbWarning = dynamic(light: NSColor(hex: 0xA86A00), dark: NSColor(hex: 0xF2B544))

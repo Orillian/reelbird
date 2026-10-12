@@ -43,16 +43,18 @@ enum MockData {
     static func autoZoom(events: [InputEvent], duration: Double, intensity: Double) -> [ZoomRegion] {
         let clicks = events.filter { $0.type == .down }
         guard !clicks.isEmpty else { return [] }
-        let hold = 2.2 + intensity * 1.2
-        let minGap = 4.5 - intensity * 2.5
+        let hold = 1.4 + intensity * 1.2
+        let minGap = 0.8 + (1 - intensity) * 0.6
         var regions: [ZoomRegion] = []
-        for c in clicks {
-            let start = max(0, c.t - 0.6)
-            if let last = regions.last, start - last.range.end < minGap {
+        // Every other click cluster zooms; lower intensity skips more of them.
+        let stride = intensity > 0.66 ? 1 : intensity > 0.33 ? 2 : 3
+        for (i, c) in clicks.enumerated() where i % stride == 0 {
+            let start = max(0, c.t - 0.5)
+            if let last = regions.last, start - last.range.end < minGap, c.t + hold - last.range.start < 6 {
                 regions[regions.count - 1].range.end = min(duration, c.t + hold)
             } else {
                 regions.append(ZoomRegion(range: TimeRange(start: start, end: min(duration, c.t + hold)),
-                                          scale: 1.35 + intensity * 0.9, focus: nil, source: .auto))
+                                          scale: 1.4 + intensity * 0.8, focus: nil, source: .auto))
             }
         }
         return regions

@@ -2,26 +2,34 @@ import AppKit
 import SwiftUI
 
 /// A compact switch drawn in SwiftUI so it keeps the accent in floating panels and snapshots.
-struct BrandSwitchStyle: ToggleStyle {
+struct BrandSwitch: View {
+    @Binding var isOn: Bool
     @Environment(\.isEnabled) private var isEnabled
 
+    var body: some View {
+        ZStack(alignment: isOn ? .trailing : .leading) {
+            Capsule()
+                .fill(isOn ? Theme.accent : Color.primary.opacity(0.14))
+                .frame(width: 30, height: 18)
+            Circle()
+                .fill(.white)
+                .shadow(color: .black.opacity(0.22), radius: 1, y: 0.5)
+                .frame(width: 14, height: 14)
+                .padding(2)
+        }
+        .opacity(isEnabled ? 1 : 0.45)
+        .animation(Theme.snappy, value: isOn)
+        .contentShape(Rectangle())
+        .onTapGesture { if isEnabled { isOn.toggle() } }
+    }
+}
+
+struct BrandSwitchStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: Theme.Space.s) {
             configuration.label
             Spacer(minLength: 0)
-            ZStack(alignment: configuration.isOn ? .trailing : .leading) {
-                Capsule()
-                    .fill(configuration.isOn ? Theme.accent : Color.primary.opacity(0.14))
-                    .frame(width: 30, height: 18)
-                Circle()
-                    .fill(.white)
-                    .shadow(color: .black.opacity(0.22), radius: 1, y: 0.5)
-                    .frame(width: 14, height: 14)
-                    .padding(2)
-            }
-            .opacity(isEnabled ? 1 : 0.45)
-            .animation(Theme.snappy, value: configuration.isOn)
-            .onTapGesture { configuration.isOn.toggle() }
+            BrandSwitch(isOn: configuration.$isOn)
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
@@ -87,11 +95,11 @@ struct IconButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: size * 0.5, weight: .medium))
             .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(active ? Theme.accentText : Color.primary.opacity(0.82))
+            .foregroundStyle(active ? Theme.ink : Color.primary.opacity(0.82))
             .frame(width: size, height: size)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous)
-                    .fill(active ? Theme.accentSoft : Color.primary.opacity(configuration.isPressed ? 0.14 : hovering ? 0.07 : 0))
+                    .fill(active ? Color.primary.opacity(0.09) : Color.primary.opacity(configuration.isPressed ? 0.14 : hovering ? 0.07 : 0))
             )
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
@@ -127,7 +135,7 @@ struct LevelMeter: View {
                 ForEach(0..<segments, id: \.self) { i in
                     let threshold = Double(i) / Double(segments)
                     RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                        .fill(color(for: i).opacity(active && level > threshold ? 1 : 0.16))
+                        .fill(active && level > threshold ? color(for: i) : Color.primary.opacity(0.13))
                         .frame(width: w)
                 }
             }

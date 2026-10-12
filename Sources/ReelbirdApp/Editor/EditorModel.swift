@@ -71,6 +71,8 @@ enum CaptionState: Equatable {
     private(set) var saveError: String?
 
     @ObservationIgnored let undoManager = UndoManager()
+    /// Off in snapshots so scenes don't write into the shared demo bundle.
+    @ObservationIgnored var autosaveEnabled = true
     @ObservationIgnored private(set) var player: (any PreviewPlayerHandle)?
     @ObservationIgnored private let services: Services
     @ObservationIgnored private var saveTask: Task<Void, Never>?
@@ -223,6 +225,8 @@ enum CaptionState: Equatable {
         let region = ZoomRegion(range: TimeRange(start: start, end: min(duration, start + 3)), scale: 1.8, source: .user)
         change("Add Zoom") { e in
             if e.zoom.mode == .off { e.zoom.mode = .manual }
+            // A zoom you add replaces automatic zooms it overlaps.
+            e.zoom.regions.removeAll { $0.source == .auto && $0.range.overlaps(region.range) }
             e.zoom.regions.append(region)
             e.zoom.regions.sort { $0.range.start < $1.range.start }
         }
@@ -364,6 +368,13 @@ enum CaptionState: Equatable {
         if timeline.outputTime(forSource: playhead) == nil { seek(source: playhead) }
     }
 
+    /// First moment at or after `t` that isn't inside a zoom (snapshots show the full frame).
+    func unzoomedTime(after t: Double) -> Double {
+        var x = t
+        while let r = edit.zoom.regions.first(where: { x >= $0.range.start - 0.5 && x <= $0.range.end + 0.5 }) { x = r.range.end + 0.6 }
+        return min(x, duration)
+    }
+
     func setPlayheadForSnapshot(_ t: Double) {
         playhead = t
         player?.seek(to: timeline.outputTime(forSource: t) ?? 0)
@@ -372,6 +383,7 @@ enum CaptionState: Equatable {
     // MARK: Saving
 
     private func scheduleSave() {
+        guard autosaveEnabled else { return }
         saveTask?.cancel()
         let doc = edit
         let bundle = bundle

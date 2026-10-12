@@ -213,6 +213,7 @@ struct SourcePickerView: View {
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
+            .tint(.secondary)
             .fixedSize()
 
             Spacer()
@@ -290,12 +291,22 @@ struct SourceTile: View {
 struct AppIconView: View {
     let appName: String?
     var body: some View {
-        if let name = appName,
-           let icon = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name })?.icon {
+        if let icon = Self.icon(for: appName) {
             Image(nsImage: icon).resizable()
         } else {
             Image(systemName: "app.dashed").resizable().foregroundStyle(.tertiary)
         }
+    }
+
+    @MainActor static func icon(for name: String?) -> NSImage? {
+        guard let name else { return nil }
+        if let running = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name })?.icon { return running }
+        let dirs = ["/Applications", "/System/Applications", "/System/Applications/Utilities",
+                    "/System/Volumes/Preboot/Cryptexes/App/System/Applications"]
+        for d in dirs where FileManager.default.fileExists(atPath: "\(d)/\(name).app") {
+            return NSWorkspace.shared.icon(forFile: "\(d)/\(name).app")
+        }
+        return nil
     }
 }
 
@@ -316,7 +327,12 @@ struct InputRow<Accessory: View>: View {
             Text(title).font(.system(size: 12.5)).foregroundStyle(enabled ? .primary : .secondary)
             Spacer(minLength: Theme.Space.s)
             accessory
-            Toggle(title, isOn: $isOn).toggleStyle(.brand).labelsHidden().disabled(!enabled)
+            BrandSwitch(isOn: $isOn).disabled(!enabled)
+                .accessibilityElement()
+                .accessibilityLabel(title)
+                .accessibilityAddTraits(.isToggle)
+                .accessibilityValue(isOn ? "On" : "Off")
+                .accessibilityAction { if enabled { isOn.toggle() } }
         }
         .frame(height: 32)
     }
@@ -343,6 +359,7 @@ struct DeviceMenu: View {
                 .lineLimit(1)
         }
         .menuStyle(.borderlessButton)
+        .tint(.secondary)
         .fixedSize()
         .frame(maxWidth: 170, alignment: .trailing)
     }

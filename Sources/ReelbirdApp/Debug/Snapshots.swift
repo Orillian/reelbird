@@ -94,11 +94,12 @@ import SwiftUI
         func editor(_ section: InspectorSection, configure: @escaping (EditorModel) -> Void = { _ in }) -> Scene {
             Scene(name: "editor-\(section.rawValue)", size: CGSize(width: 1320, height: 840), backdrop: false) {
                 guard let m = try? EditorModel(bundle: demo, services: services) else { return AnyView(Text("Editor failed")) }
+                m.autosaveEnabled = false
                 m.attachPlayer()
                 m.setTimelineMediaForSnapshot(waveform: MockArt.waveform(count: 600, seed: 3),
                                               filmstrip: (0..<6).compactMap { MockArt.image(width: 160, height: 100, variant: MockArt.Variant(rawValue: $0 % 5) ?? .docs) })
                 m.section = section
-                m.setPlayheadForSnapshot(12.6)
+                m.setPlayheadForSnapshot(m.unzoomedTime(after: 4))
                 configure(m)
                 return AnyView(EditorView(model: m, app: nil))
             }
@@ -128,6 +129,7 @@ import SwiftUI
         // Export and share
         func editorModel() -> EditorModel? {
             let m = try? EditorModel(bundle: demo, services: services)
+            m?.autosaveEnabled = false
             return m
         }
         scenes.append(Scene(name: "export-form", size: nil, backdrop: false) {
@@ -242,10 +244,12 @@ import SwiftUI
         let root = content
             .environment(\.isSnapshot, true)
             .tint(Theme.accent)
+            .ignoresSafeArea()
         let hosting = NSHostingView(rootView: root)
+        hosting.appearance = NSAppearance(named: appearance)
         let size = scene.size ?? hosting.fittingSize
         let w = KeyWindow(contentRect: NSRect(x: -20000, y: -20000, width: size.width, height: size.height),
-                          styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+                          styleMask: [.borderless], backing: .buffered, defer: false)
         w.appearance = NSAppearance(named: appearance)
         w.titlebarAppearsTransparent = true
         w.contentView = hosting
