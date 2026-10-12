@@ -22,9 +22,9 @@ public enum Thumbnailer {
         let comp = try sources.composition(timeline: plan.timeline, camera: plan.showsCamera, audio: nil)
         guard let screenTrack = comp.screen else { throw RenderError.missingScreenTrack }
 
-        func grab(_ track: AVAssetTrack) throws -> CMSampleBuffer? {
+        func grab(_ track: AVAssetTrack, _ kind: TrackKind) throws -> CMSampleBuffer? {
             let reader = try AVAssetReader(asset: comp.asset)
-            let out = AVAssetReaderTrackOutput(track: track, outputSettings: MediaSources.decodeSettings)
+            let out = AVAssetReaderTrackOutput(track: track, outputSettings: sources.decodeSettings(for: kind))
             out.alwaysCopiesSampleData = false
             reader.timeRange = CMTimeRange(start: MediaSources.time(max(0, t - 2)), end: MediaSources.time(t + 0.5))
             reader.add(out)
@@ -34,8 +34,8 @@ public enum Thumbnailer {
             _ = steps.frame(at: t, tolerance: 1e-3)
             return steps.current
         }
-        let screenSB = try grab(screenTrack)
-        let cameraSB = try comp.camera.flatMap { try grab($0) }
+        let screenSB = try grab(screenTrack, .screen)
+        let cameraSB = try comp.camera.flatMap { try grab($0, .camera) }
 
         let canvas = plan.canvasSize
         let w = min(max(16, maxWidth), canvas.width)

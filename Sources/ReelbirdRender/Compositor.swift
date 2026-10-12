@@ -6,8 +6,8 @@ import Metal
 import ReelbirdCore
 
 struct CompositeUniforms {
-    var canvas = SIMD4<Float>(), card = SIMD4<Float>(), camera = SIMD4<Float>(), cameraPrev = SIMD4<Float>()
-    var shadow = SIMD4<Float>(), bg0 = SIMD4<Float>(), bg1 = SIMD4<Float>(), bg2 = SIMD4<Float>(), bg3 = SIMD4<Float>()
+    var canvas = SIMD4<Float>(), card = SIMD4<Float>(), uvMap = SIMD4<Float>(), uvPrev = SIMD4<Float>(), params = SIMD4<Float>()
+    var shadow = SIMD4<Float>(), shadow2 = SIMD4<Float>(), bg0 = SIMD4<Float>(), bg1 = SIMD4<Float>(), bg2 = SIMD4<Float>(), bg3 = SIMD4<Float>()
     var bgInfo = SIMD4<Float>(), bgImage = SIMD4<Float>(), screenInfo = SIMD4<Float>()
     var yuv0 = SIMD4<Float>(), yuv1 = SIMD4<Float>(), yuv2 = SIMD4<Float>(), yuvOffset = SIMD4<Float>()
 }
@@ -120,15 +120,22 @@ final class Compositor {
         let screenFrame = screen.flatMap(bind)
         if let f = screenFrame { keep += f.keepAlive }
 
-        // Motion blur: compare against the camera half a frame earlier (same kept segment only).
+        // Motion blur: compare against the camera a shutter earlier (same kept segment only). The shutter is
+        // 0.4 of a frame (144°): enough to turn a fast zoom into a smooth smear instead of judder, short of
+        // the 180° film look that makes text unreadable mid-move.
+        let shutter = frameInterval * Self.shutter
         var taps: Float = 0
         var prev = (s: s, c: c)
+        var srcPrev = src
         if edit.background.motionBlur {
-            let srcPrev = plan.timeline.sourceTime(forOutput: max(0, outputTime - frameInterval * 0.5))
-            if abs((src - srcPrev) - frameInterval * 0.5) < 1e-3 || outputTime < frameInterval {
+            let sp = plan.timeline.sourceTime(forOutput: max(0, outputTime - shutter))
+            if abs((src - sp) - shutter) < 1e-3 {
+                srcPrev = sp
                 let pt = plan.camera.transform(at: srcPrev); prev = (pt.scale, pt.center)
                 var maxMove = 0.0
-                for corner in [NormPoint(x: 0, y: 0), NormPoint(x: 1, y: 1), NormPoint(x: 0.5, y: 0.5)] {
+                // How far visible content moves on screen: the corners and centre of the current view.
+                let v = plan.camera.viewport(at: src)
+                for corner in [NormPoint(x: v.x, y: v.y), NormPoint(x: v.x + v.width, y: v.y + v.height), v.center] {
                     let a = layout.map(corner, scale: s, center: c), b = layout.map(corner, scale: prev.s, center: prev.c)
                     maxMove = max(maxMove, hypot(a.x - b.x, a.y - b.y))
                 }
@@ -139,10 +146,15 @@ final class Compositor {
         // 1. Background, shadow, screen.
         var u = CompositeUniforms()
         u.canvas = SIMD4(Float(W), Float(H), Float(vp.minX), Float(vp.minY))
-        u.card = SIMD4(Float(layout.card.minX), Float(layout.card.minY), Float(layout.card.width), Float(layout.card.height))
-        u.camera = SIMD4(Float(s), Float(c.x), Float(c.y), Float(layout.cornerRadius))
-        u.cameraPrev = SIMD4(Float(prev.s), Float(prev.c.x), Float(prev.c.y), taps)
-        u.shadow = SIMD4(Float(layout.shadowStrength * 0.85), Float(layout.shadowBlur), Float(layout.shadowOffset), 0)
+        let screenRect = layout.screenRect(scale: s, center: c)
+        u.card = SIMD4(Float(screenRect.minX), Float(screenRect.minY), Float(screenRect.maxX), Float(screenRect.maxY))
+        let uvMap = layout.uvMap(scale: s, center: c)
+        u.uvMap = uvMap
+        u.uvPrev = layout.uvMap(scale: prev.s, center: prev.c)
+        let g = layout.frameGrowth(s)
+        u.params = SIMD4(Float(layout.cornerRadius * g), taps, Float(Double(uvMap.z) * Double(plan.sourceSize.width)), 0)
+        u.shadow = SIMD4(Float(layout.shadowStrength * 0.7), Float(layout.shadowBlur * g), Float(layout.shadowOffset * g), 0)
+        u.shadow2 = SIMD4(Float(layout.shadowStrength * 0.35), Float(0.006 * layout.short * g), Float(0.002 * layout.short * g), 0)
         let colors = edit.background.colors.isEmpty ? [RGBA(0.1, 0.1, 0.1)] : edit.background.colors
         func v4(_ c: RGBA) -> SIMD4<Float> { SIMD4(Float(c.r), Float(c.g), Float(c.b), Float(c.a)) }
         u.bg0 = v4(colors[0]); u.bg1 = v4(colors[min(1, colors.count - 1)])
@@ -162,8 +174,7 @@ final class Compositor {
             }
         }
         u.bgInfo = SIMD4(bgKind, Float(min(4, colors.count)), 1.5 / 255, 0)
-        let footprint = Double(plan.sourceSize.width) / layout.card.width
-        u.screenInfo = SIMD4(Float(screenFrame?.width ?? 1), Float(screenFrame?.height ?? 1), screenFrame?.yuv != nil ? 1 : 0, Float(footprint))
+        u.screenInfo = SIMD4(Float(screenFrame?.width ?? 1), Float(screenFrame?.height ?? 1), screenFrame?.yuv != nil ? 1 : 0, 0)
         if let y = screenFrame?.yuv { u.yuv0 = y.r0; u.yuv1 = y.r1; u.yuv2 = y.r2; u.yuvOffset = y.offset }
         enc.setRenderPipelineState(ctx.compositePipeline)
         enc.setFragmentBytes(&u, length: MemoryLayout<CompositeUniforms>.stride, index: 0)
@@ -224,18 +235,17 @@ final class Compositor {
                 su.rect = rect(r)
                 su.mode.x = 6
                 let cellPx = max(8.0, min(r.width, r.height) / 10)
-                let cellU = cellPx / (layout.card.width * s)
+                let cellU = cellPx * Double(uvMap.z)
                 su.params = SIMD4(Float(r.width / 2), Float(r.height / 2), Float(0.006 * short), Float(cellU))
-                su.params2 = SIMD4(Float(layout.card.width / layout.card.height), 0, 0, 0)
-                su.camera = SIMD4(Float(s), Float(c.x), Float(c.y), 0)
-                su.card = u.card
+                su.params2 = SIMD4(Float(uvMap.w / uvMap.z), 0, 0, 0)
+                su.camera = uvMap
                 if let y = f.yuv { su.yuv0 = y.r0; su.yuv1 = y.r1; su.yuv2 = y.r2; su.yuvOffset = y.offset }
                 su.color = SIMD4(1, 1, 1, Float(alpha))
                 draw(&su, f.t0, f.t1)
             case .text:
                 guard let str = a.text, !str.isEmpty else { continue }
                 // Render at the zoom-1 size ×2 so zooming stays crisp; mipmaps handle shrinking.
-                let base = a.rect.height * layout.card.height * 0.7
+                let base = a.rect.height * layout.card.height / layout.base.y * 0.7
                 let key = TextCache.Key(text: str, fontSize: Int((base * 2).rounded()), weight: 600,
                                         color: packRGBA(a.color), pill: 0, maxWidth: 0)
                 guard let e = text.texture(key, context: ctx, queue: queue) else { continue }
@@ -254,8 +264,8 @@ final class Compositor {
            pos.x > -0.02, pos.x < 1.02, pos.y > -0.02, pos.y < 1.02 {
             let opacity = plan.cursor.opacity(at: src, hideAfter: cursorSettings.hideWhenIdleAfter)
             let sprite = cursorSprite(plan.cursor.imageID(at: src), plan: plan)
-            // Points → source pixels → output pixels, enlarged by zoom and the size setting.
-            let pxPerPoint = plan.manifest.capture.scale * (layout.card.width / Double(plan.sourceSize.width)) * s * max(0.1, cursorSettings.size)
+            // Points → source pixels → output pixels, enlarged by the size setting and partly by the zoom.
+            let pxPerPoint = cursorPixelsPerPoint(plan: plan, layout: layout, scale: s)
             var cw = sprite.size.width * pxPerPoint, ch = sprite.size.height * pxPerPoint
             let at = layout.map(pos, scale: s, center: c)
             let ref = max(8, ch)
@@ -266,23 +276,22 @@ final class Compositor {
                 let age = src - click.t
                 let o = layout.map(cp, scale: s, center: c)
                 var su = SpriteUniforms()
-                su.mode.x = 2
                 switch cursorSettings.clickEffect {
                 case .none: return
                 case .ripple:
-                    let p = age / 0.5
+                    // A quick, light ripple from the tip: grows to 0.8 cursor heights on an ease-out over 0.45 s
+                    // while it fades, with a 0.92 press of the cursor itself for the first 0.18 s.
+                    let p = age / 0.45
+                    if age < 0.18 { press = min(press, 1 - 0.08 * sin(age / 0.18 * .pi)) }
                     guard p < 1 else { return }
                     let e = 1 - pow(1 - p, 3)
-                    let radius = ref * (0.25 + 0.95 * e)
-                    let thick = max(1.5, ref * 0.14 * (1 - p))
-                    let alpha = pow(1 - p, 1.5) * opacity
-                    let side = (radius + thick * 2 + 2) * 2
+                    let radius = ref * (0.16 + 0.64 * e)
+                    let fade = pow(1 - p, 1.4)
+                    let side = (radius + 4) * 2
                     su.rect = SIMD4(Float(o.x - side / 2), Float(o.y - side / 2), Float(side), Float(side))
-                    su.params = SIMD4(Float(radius), Float(thick * 1.9), Float(thick * 0.6), 0)
-                    su.color = SIMD4(0, 0, 0, Float(0.22 * alpha))
-                    draw(&su)
-                    su.params = SIMD4(Float(radius), Float(thick), 0.75, 0)
-                    su.color = SIMD4(repeating: Float(0.92 * alpha))
+                    su.mode.x = 9
+                    su.params = SIMD4(Float(radius), Float(max(1.5, ref * 0.06)), Float(0.95 * fade * opacity), Float(0.2 * (1 - p) * (1 - p) * opacity))
+                    su.params2 = SIMD4(Float(0.28 * fade * opacity), 0, 0, 0)
                     draw(&su)
                 case .ring:
                     let p = age / 0.4
@@ -291,6 +300,7 @@ final class Compositor {
                     let thick = max(1.5, ref * 0.09)
                     let alpha = sin(p * .pi) * opacity
                     let side = (radius + thick * 2 + 2) * 2
+                    su.mode.x = 2
                     su.rect = SIMD4(Float(o.x - side / 2), Float(o.y - side / 2), Float(side), Float(side))
                     su.params = SIMD4(Float(radius), Float(thick), 0.75, 0)
                     su.color = SIMD4(Float(1.0 * alpha), Float(0.62 * alpha), Float(0.3 * alpha), Float(alpha))
@@ -302,14 +312,27 @@ final class Compositor {
             }
             if opacity > 0.001 {
                 cw *= press; ch *= press
+                // Motion blur along the cursor's on-screen path over the shutter (camera motion included).
+                var trail = CGPoint.zero
+                var ctaps: Float = 1
+                if edit.background.motionBlur, srcPrev < src, let pp = plan.cursor.position(at: srcPrev) {
+                    let b = layout.map(pp, scale: prev.s, center: prev.c)
+                    trail = CGPoint(x: b.x - at.x, y: b.y - at.y)
+                    let len = hypot(trail.x, trail.y)
+                    if len > 2 { ctaps = Float(min(12, (len / 2).rounded(.up) + 1)) } else { trail = .zero }
+                }
                 let margin = max(2, ch * 0.18)
                 let x0 = at.x - sprite.hot.x * cw, y0 = at.y - sprite.hot.y * ch
+                let ex0 = min(0, trail.x), ex1 = max(0, trail.x), ey0 = min(0, trail.y), ey1 = max(0, trail.y)
                 var su = SpriteUniforms()
-                su.rect = SIMD4(Float(x0 - margin), Float(y0 - margin), Float(cw + 2 * margin), Float(ch + 2 * margin))
-                let mu = margin / cw, mv = margin / ch
-                su.uvRect = SIMD4(Float(-mu), Float(-mv), Float(1 + mu), Float(1 + mv))
+                let qx = x0 - margin + ex0, qy = y0 - margin + ey0
+                let qw = cw + 2 * margin + ex1 - ex0, qh = ch + 2 * margin + ey1 - ey0
+                su.rect = SIMD4(Float(qx), Float(qy), Float(qw), Float(qh))
+                su.uvRect = SIMD4(Float((qx - x0) / cw), Float((qy - y0) / ch), Float((qx + qw - x0) / cw), Float((qy + qh - y0) / ch))
                 su.mode.x = 1
                 su.params = SIMD4(0, Float(0.06), Float(0.05), 0.35)
+                let magnifying = cw > Double(sprite.texture.width) * 1.05
+                su.params2 = SIMD4(Float(trail.x / cw), Float(trail.y / ch), ctaps, magnifying ? 1 : 0)
                 su.color = SIMD4(1, 1, 1, Float(opacity))
                 draw(&su, sprite.texture)
             }
@@ -376,6 +399,17 @@ final class Compositor {
         return keep
     }
 
+    /// Motion blur shutter as a fraction of the frame interval.
+    static let shutter = 0.4
+    /// How much of the zoom the cursor takes on: at 1.8× zoom it grows 1.42×, so it stays in scale with the
+    /// zoomed UI without becoming a giant blob over it.
+    static let cursorZoomExponent = 0.6
+
+    /// Output pixels per cursor point at a zoom.
+    func cursorPixelsPerPoint(plan: RenderPlan, layout: CanvasLayout, scale s: Double) -> Double {
+        plan.manifest.capture.scale * layout.contentScale * pow(s, Self.cursorZoomExponent) * max(0.1, plan.edit.cursor.size)
+    }
+
     private func backgroundTexture(_ plan: RenderPlan) -> (any MTLTexture)? {
         guard let path = plan.edit.background.imagePath else { return nil }
         if let b = background, b.path == path { return b.texture }
@@ -396,7 +430,7 @@ final class Compositor {
             }
         }
         if let d = defaultCursor { return d }
-        let img = DefaultCursor.image()
+        let img = DefaultCursor.image(scale: 8)
         let tex = img.flatMap { ctx.texture(from: $0, mipmapped: true, queue: queue) } ?? ctx.blank
         let d = CursorSprite(texture: tex, size: DefaultCursor.pointSize, hot: DefaultCursor.hotSpot)
         defaultCursor = d

@@ -44,18 +44,27 @@ public enum Exporter {
         return (size, max(1, min(240, fps)))
     }
 
-    static func destination(bundle: ProjectBundle, manifest: ProjectManifest, edit: EditDocument, options: ExportOptions) throws -> URL {
+    /// The output file: `options.destination`, or `<bundle>/exports/<name>.<ext>`.
+    ///
+    /// The name is the title, plus the export time unless the title already carries a date (the default
+    /// "Reelbird 2026-10-12 at 16.09.51" bundle name), so names never repeat the date. Collisions get " 2",
+    /// " 3", ….
+    static func destination(bundle: ProjectBundle, manifest: ProjectManifest, edit: EditDocument, options: ExportOptions,
+                            now: Date = Date()) throws -> URL {
         if let d = options.destination { return d }
         try FileManager.default.createDirectory(at: bundle.exportsURL, withIntermediateDirectories: true)
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
         var title = (edit.title?.isEmpty == false ? edit.title! : manifest.title)
             .components(separatedBy: CharacterSet(charactersIn: "/:\\?%*|\"<>\n\r\t")).joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if title.isEmpty { title = "Reelbird" }
         if title.count > 80 { title = String(title.prefix(80)) }
-        let base = "\(title) \(f.string(from: Date()))"
+        var base = title
+        if title.range(of: #"\d{4}-\d{2}-\d{2}"#, options: .regularExpression) == nil {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+            base = "\(title) \(f.string(from: now))"
+        }
         var url = bundle.exportsURL.appendingPathComponent("\(base).\(options.format.fileExtension)")
         var n = 2
         while FileManager.default.fileExists(atPath: url.path) {
@@ -63,6 +72,12 @@ public enum Exporter {
             n += 1
         }
         return url
+    }
+
+    /// A hidden sibling of `url` to write into; renamed over `url` only when the export succeeds, so a
+    /// failed or cancelled export never leaves a half-written file behind.
+    static func partialURL(for url: URL) -> URL {
+        url.deletingLastPathComponent().appendingPathComponent(".\(url.deletingPathExtension().lastPathComponent).\(UUID().uuidString.prefix(8)).partial.\(url.pathExtension)")
     }
 
     /// Average bitrate: ~10 Mbit/s for 1080p30 H.264, scaled by pixel count and √(fps/30). HEVC needs ~65%.
@@ -78,6 +93,8 @@ final class ExportJob: @unchecked Sendable {
     let plan: RenderPlan
     let sources: MediaSources
     let options: ExportOptions
+    /// Final destination; the job writes to `partial` and renames on success.
+    let finalURL: URL
     let url: URL
     let progress: @Sendable (Double) -> Void
     let size: PixelSize
@@ -86,7 +103,9 @@ final class ExportJob: @unchecked Sendable {
     private let ctx: MetalContext
 
     init(plan: RenderPlan, sources: MediaSources, options: ExportOptions, url: URL, progress: @escaping @Sendable (Double) -> Void) throws {
-        self.plan = plan; self.sources = sources; self.options = options; self.url = url; self.progress = progress
+        self.plan = plan; self.sources = sources; self.options = options; self.progress = progress
+        finalURL = url
+        self.url = Exporter.partialURL(for: url)
         (size, fps) = Exporter.outputGeometry(plan: plan, options: options)
         ctx = try MetalContext.shared()
     }
@@ -98,7 +117,14 @@ final class ExportJob: @unchecked Sendable {
             let t = Thread { [self] in
                 do {
                     if options.format == .gif { try runGIF() } else { try runVideo() }
-                    cont.resume(returning: url)
+                    if cancelled.isSet { throw CancellationError() }
+                    let fm = FileManager.default
+                    if fm.fileExists(atPath: finalURL.path) {
+                        _ = try fm.replaceItemAt(finalURL, withItemAt: url)
+                    } else {
+                        try fm.moveItem(at: url, to: finalURL)
+                    }
+                    cont.resume(returning: finalURL)
                 } catch {
                     try? FileManager.default.removeItem(at: url)
                     cont.resume(throwing: cancelled.isSet ? CancellationError() : error)
@@ -113,11 +139,11 @@ final class ExportJob: @unchecked Sendable {
     // MARK: Video
 
     private func videoSettings() -> [String: Any] {
-        let color: [String: Any] = [
-            AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
-            AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
-            AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
-        ]
+        // Frames hold sRGB values (screens are captured in sRGB), so the file says so: BT.709 primaries and
+        // matrix with the sRGB (IEC 61966-2-1) transfer. Tagging the transfer as BT.709 instead makes
+        // QuickTime, Safari and AVFoundation apply Apple's 1.96 video gamma and show sRGB 128 as 139 (measured):
+        // the washed-out "QuickTime gamma shift". Chrome and Firefox honour transfer 13 as well.
+        let color: [String: Any] = MediaSources.sdrColorProperties
         var s: [String: Any] = [AVVideoWidthKey: size.width, AVVideoHeightKey: size.height, AVVideoColorPropertiesKey: color]
         switch options.format {
         case .mp4H264:
@@ -194,12 +220,12 @@ final class ExportJob: @unchecked Sendable {
         // Readers: one for video tracks, one for audio, so neither stalls waiting for the other.
         let vReader: AVAssetReader
         do { vReader = try AVAssetReader(asset: comp.asset) } catch { throw RenderError.readerFailed(error.localizedDescription) }
-        let screenOut = AVAssetReaderTrackOutput(track: screenTrack, outputSettings: MediaSources.decodeSettings)
+        let screenOut = AVAssetReaderTrackOutput(track: screenTrack, outputSettings: sources.decodeSettings(for: .screen))
         screenOut.alwaysCopiesSampleData = false
         vReader.add(screenOut)
         var cameraOut: AVAssetReaderTrackOutput?
         if let ct = comp.camera {
-            let o = AVAssetReaderTrackOutput(track: ct, outputSettings: MediaSources.decodeSettings)
+            let o = AVAssetReaderTrackOutput(track: ct, outputSettings: sources.decodeSettings(for: .camera))
             o.alwaysCopiesSampleData = false
             vReader.add(o)
             cameraOut = o
@@ -358,12 +384,12 @@ final class ExportJob: @unchecked Sendable {
         guard let screenTrack = comp.screen else { throw RenderError.missingScreenTrack }
         try? FileManager.default.removeItem(at: url)
         let reader = try AVAssetReader(asset: comp.asset)
-        let screenOut = AVAssetReaderTrackOutput(track: screenTrack, outputSettings: MediaSources.decodeSettings)
+        let screenOut = AVAssetReaderTrackOutput(track: screenTrack, outputSettings: sources.decodeSettings(for: .screen))
         screenOut.alwaysCopiesSampleData = false
         reader.add(screenOut)
         var cameraOut: AVAssetReaderTrackOutput?
         if let ct = comp.camera {
-            let o = AVAssetReaderTrackOutput(track: ct, outputSettings: MediaSources.decodeSettings)
+            let o = AVAssetReaderTrackOutput(track: ct, outputSettings: sources.decodeSettings(for: .camera))
             o.alwaysCopiesSampleData = false
             reader.add(o); cameraOut = o
         }

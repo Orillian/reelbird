@@ -29,6 +29,16 @@ func inspect(_ url: URL) async throws -> MediaInfo {
     return MediaInfo(duration: duration, size: size, codec: fds.first.map(fourCC) ?? "?", audioCodec: audio, frameRate: fps)
 }
 
+/// Physical memory footprint of this process in MB (what Activity Monitor shows as Memory).
+func footprintMB() -> Double {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+    let kr = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+    }
+    return kr == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : 0
+}
+
 /// CPU seconds used by this process so far (user + system).
 func cpuSeconds() -> Double {
     var u = rusage()
@@ -116,6 +126,39 @@ func cpuSeconds() -> Double {
     let result = await task.result
     #expect(throws: CancellationError.self) { try result.get() }
     #expect(!FileManager.default.fileExists(atPath: dest.path))
+    // Nothing half-written is left next to it either.
+    let leftovers = try FileManager.default.contentsOfDirectory(atPath: dest.deletingLastPathComponent().path).filter { $0.contains(".partial.") && $0.contains("rb-cancel") }
+    #expect(leftovers.isEmpty, "\(leftovers)")
+}
+
+@Test func exportNamesDontRepeatTheDate() async throws {
+    let bundle = try await Synthetic.makeBundle()
+    defer { try? FileManager.default.removeItem(at: bundle.url) }
+    var manifest = try bundle.readManifest()
+    manifest.title = "Reelbird 2026-10-12 at 16.09.51"
+    let edit = EditDocument()
+    let a = try Exporter.destination(bundle: bundle, manifest: manifest, edit: edit, options: ExportOptions())
+    #expect(a.lastPathComponent == "Reelbird 2026-10-12 at 16.09.51.mp4")
+    try Data().write(to: a)
+    let b = try Exporter.destination(bundle: bundle, manifest: manifest, edit: edit, options: ExportOptions())
+    #expect(b.lastPathComponent == "Reelbird 2026-10-12 at 16.09.51 2.mp4")
+    manifest.title = "Launch demo"
+    let c = try Exporter.destination(bundle: bundle, manifest: manifest, edit: edit, options: ExportOptions(format: .gif),
+                                     now: Date(timeIntervalSince1970: 0))
+    #expect(c.lastPathComponent.hasPrefix("Launch demo 19") && c.pathExtension == "gif")
+    // A real export lands at the final name and leaves no partial file.
+    try FileManager.default.removeItem(at: a)
+    var m2 = try bundle.readManifest(); m2.title = "Reelbird 2026-10-12 at 16.09.51"; try bundle.writeManifest(m2)
+    let out = try await Exporter.export(bundle: bundle, edit: try bundle.readEdit(), options: ExportOptions(format: .mp4H264, height: 360)) { _ in }
+    #expect(out.lastPathComponent == "Reelbird 2026-10-12 at 16.09.51.mp4")
+    // AVFoundation removes its own scratch copy (".sb-…") a moment after finishing; allow for that.
+    var files: [String] = []
+    for _ in 0..<30 {
+        files = try FileManager.default.contentsOfDirectory(atPath: bundle.exportsURL.path)
+        if !files.contains(where: { $0.contains(".partial.") }) { break }
+        try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(!files.contains { $0.contains(".partial.") }, "\(files)")
 }
 
 @Test func posterFromSavedEdit() async throws {
@@ -125,7 +168,7 @@ func cpuSeconds() -> Double {
     #expect(img.width == 640 && img.height == 360)
 }
 
-/// 4K exports + throughput benchmark. Heavy: run with `RB_BENCH=1 research/heavy.sh scripts/test.sh --filter benchmark4K`.
+/// 4K exports + throughput benchmark. Heavy (run it on an otherwise idle machine): `RB_BENCH=1 scripts/test.sh --filter benchmark4K`.
 @Test func benchmark4K() async throws {
     guard ProcessInfo.processInfo.environment["RB_BENCH"] != nil else { return }
     var o = Synthetic.Options()
@@ -145,8 +188,8 @@ func cpuSeconds() -> Double {
         let cpu = cpuSeconds() - cpu0
         let info = try await inspect(url)
         let fps = frames / elapsed.secs
-        print(String(format: "BENCH 4K60 → %@ 3840x2160: %.2f s, %.0f fps (%.2fx realtime), CPU %.0f%% avg",
-                     format.rawValue, elapsed.secs, fps, fps / 60, cpu / elapsed.secs * 100))
+        print(String(format: "BENCH 4K60 → %@ 3840x2160: %.2f s, %.0f fps (%.2fx realtime), CPU %.0f%% avg, footprint %.0f MB",
+                     format.rawValue, elapsed.secs, fps, fps / 60, cpu / elapsed.secs * 100, footprintMB()))
         #expect(abs(info.duration - 5) < 0.1)
         #expect(info.size == CGSize(width: 3840, height: 2160))
         // Hardware ceilings measured on M4 Pro: H.264 4K ≈ 63 fps, HEVC 4K (speed priority) ≈ 107 fps.
@@ -172,4 +215,26 @@ func cpuSeconds() -> Double {
 
 extension Duration {
     var secs: Double { Double(components.seconds) + Double(components.attoseconds) / 1e18 }
+}
+
+/// Long exports must not grow memory: footprint at 90% matches footprint at 10%.
+/// Heavy (two minutes of source): `RB_BENCH=1 scripts/test.sh --filter longExportMemoryIsFlat`.
+@Test func longExportMemoryIsFlat() async throws {
+    guard ProcessInfo.processInfo.environment["RB_BENCH"] != nil else { return }
+    var o = Synthetic.Options()
+    o.width = 1920; o.height = 1080; o.fps = 30; o.seconds = 120; o.camera = true
+    let bundle = try await Synthetic.makeBundle(o)
+    defer { try? FileManager.default.removeItem(at: bundle.url) }
+    let samples = Box<[Double: Double]>([:])
+    let clock = ContinuousClock()
+    let elapsed = try await clock.measure {
+        _ = try await Exporter.export(bundle: bundle, edit: try bundle.readEdit(), options: ExportOptions(format: .mp4HEVC)) { p in
+            let k = (p * 10).rounded(.down) / 10
+            if samples.value[k] == nil { samples.value[k] = footprintMB() }
+        }
+    }
+    let early = samples.value[0.1] ?? 0, late = samples.value[0.9] ?? 0
+    print(String(format: "BENCH 120 s 1080p30 HEVC export: %.1f s (%.1fx realtime), footprint %.0f MB at 10%%, %.0f MB at 90%%",
+                 elapsed.secs, 120 / elapsed.secs, early, late))
+    #expect(late - early < 60, "memory grew \(late - early) MB")
 }

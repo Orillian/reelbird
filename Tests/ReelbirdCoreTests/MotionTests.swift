@@ -13,7 +13,26 @@ import Testing
         #expect(v >= prev)
         prev = v
     }
-    #expect(abs(Spring.zoomDuration(from: 1, to: 1.8) - (0.6 + 0.55 * log(1.8))) < 1e-12)
+    #expect(abs(Spring.zoomDuration(from: 1, to: 1.8) - (0.9 + 0.5 * log(1.8))) < 1e-12)
+}
+
+@Test func glideStartsGentlyPeaksEarlyAndLandsAtRest() {
+    #expect(Spring.glide(0) == 0 && abs(Spring.glide(1) - 1) < 1e-12)
+    let h = 1e-4
+    func speed(_ u: Double) -> Double { (Spring.glide(min(1, u + h)) - Spring.glide(max(0, u - h))) / (min(1, u + h) - max(0, u - h)) }
+    // Imperceptible start, zero speed at the end.
+    #expect(speed(0.01) < 0.15 && speed(0.999) < 0.01)
+    var peak = 0.0, at = 0.0, prev = 0.0
+    for i in 1..<1000 {
+        let u = Double(i) / 1000
+        let v = Spring.glide(u)
+        #expect(v >= prev)
+        prev = v
+        if speed(u) > peak { peak = speed(u); at = u }
+    }
+    // Peak a third of the way in, well below the fast-start spring's 3.6× average speed.
+    #expect(abs(at - 0.33) < 0.03, "peak at \(at)")
+    #expect(peak < 1.9, "peak speed \(peak)")
 }
 
 // MARK: - Cursor
@@ -125,9 +144,9 @@ private func noisyLine(seconds: Double, rate: Double = 120, seed: UInt64 = 7) ->
     let r = AutoZoomPlanner.plan(events: ev, duration: 20, intensity: 0.5)
     #expect(r.count == 1)
     let z = try #require(r.first)
-    #expect(abs(z.range.start - 4.4) < 1e-9)
+    #expect(abs(z.range.start - 4.0) < 1e-9)
     #expect(abs(z.range.end - 6.8) < 1e-9)
-    #expect(abs(z.scale - 2.0) < 1e-9)
+    #expect(abs(z.scale - 1.8) < 1e-9)
     #expect(z.source == .auto)
     #expect(z.focus == NormPoint(x: 0.5, y: 0.5))
 }
@@ -150,11 +169,24 @@ private func noisyLine(seconds: Double, rate: Double = 120, seed: UInt64 = 7) ->
                                    duration: 20, intensity: 0.5)
     #expect(two.count == 2)
     #expect(two[1].range.start - two[0].range.end > 1.2)
-    // Close in time, far apart in space: two adjacent shots (the camera pans).
-    let pan = AutoZoomPlanner.plan(events: [.down(2, NormPoint(x: 0.1, y: 0.1)), .down(3.5, NormPoint(x: 0.9, y: 0.9))],
+    // A few seconds apart, far apart in space: two adjacent shots (the camera pans), leaving 0.8 s after the
+    // first click and arriving before the second.
+    let pan = AutoZoomPlanner.plan(events: [.down(2, NormPoint(x: 0.1, y: 0.1)), .down(5, NormPoint(x: 0.9, y: 0.9))],
                                    duration: 20, intensity: 0.5)
     #expect(pan.count == 2)
-    #expect(abs(pan[0].range.end - pan[1].range.start) < 1e-9)
+    if pan.count == 2 {
+        #expect(abs(pan[0].range.end - pan[1].range.start) < 1e-9)
+        #expect(pan[0].range.end > 2.6 && pan[0].range.end < 4.5)
+    }
+    // Too close in time for a calm pan: one shot survives and the other click is still on screen.
+    let close = AutoZoomPlanner.plan(events: [.down(2, NormPoint(x: 0.1, y: 0.1)), .down(3.5, NormPoint(x: 0.9, y: 0.9))],
+                                     duration: 20, intensity: 0.5)
+    #expect(close.count == 1)
+    let cam = CameraPath(regions: close, cursor: CursorPath(events: [], smoothing: 0), duration: 20)
+    for (t, p) in [(2.0, NormPoint(x: 0.1, y: 0.1)), (3.5, NormPoint(x: 0.9, y: 0.9))] {
+        let v = cam.viewport(at: t)
+        #expect(p.x >= v.x && p.x <= v.x + v.width && p.y >= v.y && p.y <= v.y + v.height, "click at \(t) off screen: \(v)")
+    }
     // Bounding box sets depth: a wide cluster zooms less than a single click.
     #expect(one[0].scale <= 2.0)
     let wide = AutoZoomPlanner.plan(events: [.down(2, NormPoint(x: 0.3, y: 0.5)), .down(3, NormPoint(x: 0.6, y: 0.5))],
@@ -224,7 +256,7 @@ private func noisyLine(seconds: Double, rate: Double = 120, seed: UInt64 = 7) ->
         // Sample exactly on table points to avoid interpolation error in the check.
         let tq = (t * CameraPath.sampleRate).rounded() / CameraPath.sampleRate
         let (s, c) = cam.transform(at: tq)
-        let expected = Spring.ease((tq - t0) / d)
+        let expected = Spring.glide((tq - t0) / d)
         #expect(abs(log(s) / log(s1) - expected) < 1e-3)
         // The anchor point stays put on screen: (A - c)·s + 0.5 == A.
         #expect(abs((ax - c.x) * s + 0.5 - ax) < 1e-3)
@@ -266,8 +298,15 @@ private func noisyLine(seconds: Double, rate: Double = 120, seed: UInt64 = 7) ->
     let cam = CameraPath(regions: [a, b], cursor: cur, duration: 12)
     var minScale = 10.0
     for i in 0..<100 { minScale = min(minScale, cam.transform(at: 4 + Double(i) * 0.025).scale) }
-    #expect(minScale > 1.99)
+    // A long diagonal hop eases out a little mid-way (van Wijk), but never all the way back to wide.
+    #expect(minScale > 1.3 && minScale < 1.99, "min scale \(minScale)")
     #expect(abs(cam.transform(at: 7.5).center.x - 0.7) < 1e-3)
+    // A short hop at the same depth is a plain pan.
+    let c = ZoomRegion(id: "c", range: TimeRange(start: 5.5, end: 9), scale: 2, focus: NormPoint(x: 0.36, y: 0.3))
+    let near = CameraPath(regions: [a, c], cursor: cur, duration: 12)
+    var nearMin = 10.0
+    for i in 0..<100 { nearMin = min(nearMin, near.transform(at: 4 + Double(i) * 0.025).scale) }
+    #expect(nearMin > 1.95)
 }
 
 @Test func cameraFollowsCursorWithDeadZone() {
@@ -313,4 +352,71 @@ struct SplitMix {
         return z ^ (z >> 31)
     }
     mutating func unit() -> Double { Double(next() >> 11) / Double(1 << 53) }
+}
+
+// MARK: - Motion quality
+
+@Test func cursorSmoothingHasNoLag() throws {
+    // A pointer gliding at constant speed: the smoothed cursor sits on the real one (zero-phase filter).
+    var ev: [InputEvent] = []
+    for i in 0..<480 { ev.append(.move(Double(i) / 120, NormPoint(x: 0.1 + 0.2 * Double(i) / 120, y: 0.5))) }
+    let c = CursorPath(events: ev, smoothing: 1)
+    for t in [1.0, 2.0, 3.0] {
+        let p = try #require(c.position(at: t))
+        #expect(abs(p.x - (0.1 + 0.2 * t)) < 0.002, "lag at \(t): \(p.x)")
+    }
+    // A step (a jump between two rests) is smoothed symmetrically and settles exactly on both rests.
+    let step: [InputEvent] = [.move(0, NormPoint(x: 0.2, y: 0.5)), .move(2, NormPoint(x: 0.2, y: 0.5)), .move(2.01, NormPoint(x: 0.8, y: 0.5)),
+                              .move(4, NormPoint(x: 0.8, y: 0.5))]
+    let s = CursorPath(events: step, smoothing: 0.6)
+    #expect(abs(s.position(at: 1)!.x - 0.2) < 1e-4 && abs(s.position(at: 3.5)!.x - 0.8) < 1e-4)
+    let before = s.position(at: 2.005 - 0.05)!.x - 0.2, after = 0.8 - s.position(at: 2.005 + 0.05)!.x
+    #expect(abs(before - after) < 0.02, "asymmetric: \(before) vs \(after)")
+}
+
+@Test func cursorStaysOnDraggedContent() throws {
+    // Press, drag in a wobbly line, release: during the drag the cursor is the raw pointer.
+    var ev: [InputEvent] = [.down(1, NormPoint(x: 0.2, y: 0.5))]
+    for i in 0...120 {
+        let t = 1 + Double(i) / 120
+        ev.append(.move(t, NormPoint(x: 0.2 + 0.4 * Double(i) / 120, y: 0.5 + 0.01 * sin(Double(i)))))
+    }
+    ev.append(.up(2, NormPoint(x: 0.6, y: 0.5 + 0.01 * sin(120))))
+    let c = CursorPath(events: ev, smoothing: 1)
+    let raw = CursorPath(events: ev, smoothing: 0)
+    for t in stride(from: 1.05, to: 1.95, by: 0.1) {
+        let a = try #require(c.position(at: t)), b = try #require(raw.position(at: t))
+        #expect(hypot(a.x - b.x, a.y - b.y) < 1e-4, "drag drift at \(t)")
+    }
+}
+
+@Test func cursorHidesWhileTyping() {
+    var ev: [InputEvent] = [.move(0, NormPoint(x: 0.3, y: 0.3)), .move(0.5, NormPoint(x: 0.4, y: 0.3))]
+    for i in 0..<10 { ev.append(InputEvent(t: 2 + Double(i) * 0.1, type: .key, chars: "a")) }
+    ev.append(InputEvent(t: 4, type: .key, chars: "c", mods: ["⌘"]))
+    ev.append(.move(6, NormPoint(x: 0.5, y: 0.5)))
+    let c = CursorPath(events: ev, smoothing: 0.5)
+    #expect(c.opacity(at: 1.9, hideAfter: 0) == 1)
+    #expect(c.opacity(at: 3, hideAfter: 0) == 0)
+    #expect(c.opacity(at: 5.95, hideAfter: 0) > 0.5) // fading back in just before it moves
+    #expect(c.opacity(at: 6.2, hideAfter: 0) == 1)
+    // A shortcut alone doesn't hide it.
+    let shortcut = CursorPath(events: [.move(0, NormPoint(x: 0.3, y: 0.3)), InputEvent(t: 1, type: .key, chars: "s", mods: ["⌘"])], smoothing: 0.5)
+    #expect(shortcut.opacity(at: 2, hideAfter: 0) == 1)
+}
+
+@Test func croppedCameraFollowsAndStaysInFrame() {
+    // A half-width window (9:16-style crop): the un-zoomed view follows the cursor across the screen.
+    var ev: [InputEvent] = []
+    for i in 0..<600 { let t = Double(i) / 60; ev.append(.move(t, NormPoint(x: t < 3 ? 0.15 : 0.9, y: 0.5))) }
+    let cur = CursorPath(events: ev, smoothing: 0.5)
+    let cam = CameraPath(regions: [], cursor: cur, duration: 10, aspect: 1.6, base: SIMD2(0.5, 1))
+    let early = cam.viewport(at: 2.5), late = cam.viewport(at: 9)
+    #expect(abs(early.width - 0.5) < 1e-6 && abs(early.height - 1) < 1e-6)
+    #expect(early.x < 0.01, "view should sit at the left: \(early)")
+    #expect(late.x + late.width > 0.99, "view should follow right: \(late)")
+    for i in 0..<1200 {
+        let v = cam.viewport(at: Double(i) / 120)
+        #expect(v.x >= -1e-6 && v.x + v.width <= 1 + 1e-6)
+    }
 }

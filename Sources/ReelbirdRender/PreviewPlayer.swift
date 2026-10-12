@@ -211,6 +211,7 @@ public final class PreviewPlayer: @unchecked Sendable {
         let screenOut = AVPlayerItemVideoOutput(pixelBufferAttributes: attrs)
         screenOut.suppressesPlayerRendering = true
         item.add(screenOut)
+        sources.applySDRConversion(kind: .screen, to: item, asset: comp.asset)
         mainPlayer.replaceCurrentItem(with: item)
         item.audioMix = audioMix(for: plan)
 
@@ -221,6 +222,7 @@ public final class PreviewPlayer: @unchecked Sendable {
             let out = AVPlayerItemVideoOutput(pixelBufferAttributes: attrs)
             out.suppressesPlayerRendering = true
             citem.add(out)
+            sources.applySDRConversion(kind: .camera, to: citem, asset: cc.asset)
             let p = cameraPlayer ?? AVPlayer()
             p.automaticallyWaitsToMinimizeStalling = false
             p.isMuted = true

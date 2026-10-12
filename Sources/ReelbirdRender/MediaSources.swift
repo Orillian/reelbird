@@ -14,6 +14,9 @@ final class MediaSources: @unchecked Sendable {
         let fileRange: CMTimeRange
         /// Where the file's first sample sits on the recording timeline.
         let startTime: Double
+        /// HDR or wide-gamut video (PQ, HLG, linear; BT.2020 or P3 primaries) that must be converted to SDR
+        /// sRGB on decode. Screen captures are sRGB; this covers camera feeds and imported clips.
+        var needsColorConversion = false
     }
 
     let screen: Track?
@@ -31,9 +34,11 @@ final class MediaSources: @unchecked Sendable {
             let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
             do {
                 guard let t = try await asset.loadTracks(withMediaType: type).first else { return nil }
-                let range = try await t.load(.timeRange)
+                let (range, formats) = try await t.load(.timeRange, .formatDescriptions)
                 guard range.duration.seconds > 0 else { return nil }
-                return Track(kind: kind, asset: asset, track: t, fileRange: range, startTime: info.startTime)
+                var track = Track(kind: kind, asset: asset, track: t, fileRange: range, startTime: info.startTime)
+                if type == .video { track.needsColorConversion = formats.contains(where: Self.isWideOrHDR) }
+                return track
             } catch {
                 throw RenderError.unreadableMedia("\(kind.rawValue): \(error.localizedDescription)")
             }
@@ -119,6 +124,51 @@ final class MediaSources: @unchecked Sendable {
         kCVPixelBufferMetalCompatibilityKey as String: true,
         kCVPixelBufferIOSurfacePropertiesKey as String: [String: String](),
     ]
+
+    /// The colour space everything is composited in: BT.709 primaries and matrix, sRGB transfer.
+    static let sdrColorProperties: [String: String] = [
+        AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+        AVVideoTransferFunctionKey: kCVImageBufferTransferFunction_sRGB as String,
+        AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
+    ]
+
+    /// Decode settings for a track: HDR and wide-gamut video is tone-mapped to SDR sRGB by VideoToolbox
+    /// (measured: PQ greys land within 2 code values of their SDR encoding up to diffuse white); SDR video
+    /// decodes untouched, since screen captures already hold sRGB values.
+    func decodeSettings(for kind: TrackKind) -> [String: any Sendable] {
+        let t = kind == .camera ? camera : screen
+        guard t?.needsColorConversion == true else { return Self.decodeSettings }
+        var s = Self.decodeSettings
+        s[AVVideoColorPropertiesKey] = Self.sdrColorProperties
+        return s
+    }
+
+    /// For preview: an item video composition that tone-maps HDR/wide-gamut video to the SDR space export
+    /// uses, so preview and export match. `nil` when the track needs nothing.
+    func applySDRConversion(kind: TrackKind, to item: AVPlayerItem, asset: AVAsset) {
+        let t = kind == .camera ? camera : screen
+        guard t?.needsColorConversion == true else { return }
+        let props = Self.sdrColorProperties
+        AVMutableVideoComposition.videoComposition(withPropertiesOf: asset) { vc, _ in
+            guard let vc else { return }
+            vc.colorPrimaries = props[AVVideoColorPrimariesKey]
+            vc.colorTransferFunction = props[AVVideoTransferFunctionKey]
+            vc.colorYCbCrMatrix = props[AVVideoYCbCrMatrixKey]
+            let box = Unchecked((item, vc))
+            DispatchQueue.main.async { box.value.0.videoComposition = box.value.1 }
+        }
+    }
+
+    static func isWideOrHDR(_ fd: CMFormatDescription) -> Bool {
+        let ext = CMFormatDescriptionGetExtensions(fd) as? [String: Any] ?? [:]
+        let transfer = ext[kCMFormatDescriptionExtension_TransferFunction as String] as? String
+        let primaries = ext[kCMFormatDescriptionExtension_ColorPrimaries as String] as? String
+        let hdrTransfers = [kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ, kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG,
+                            kCMFormatDescriptionTransferFunction_Linear].map { $0 as String }
+        let widePrimaries = [kCMFormatDescriptionColorPrimaries_ITU_R_2020, kCMFormatDescriptionColorPrimaries_P3_D65,
+                             kCMFormatDescriptionColorPrimaries_DCI_P3].map { $0 as String }
+        return transfer.map(hdrTransfers.contains) == true || primaries.map(widePrimaries.contains) == true
+    }
 }
 
 /// Walks a video track output and returns, for increasing times, the latest frame at or before each time.
