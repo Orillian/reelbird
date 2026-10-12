@@ -18,7 +18,13 @@ enum SegmentStore {
 
     static func segmentFiles(in directory: URL) -> [URL] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
-        return names.filter { $0.hasPrefix("seg_") && $0.hasSuffix(".m4s") }.sorted().map { directory.appendingPathComponent($0) }
+        // Numeric order, so seg_100000 (past ~55 h at 2 s) still sorts after seg_99999.
+        return names.compactMap { name -> (Int, String)? in
+            guard name.hasPrefix("seg_"), name.hasSuffix(".m4s"), let n = Int(name.dropFirst(4).dropLast(4)) else { return nil }
+            return (n, name)
+        }
+        .sorted { $0.0 < $1.0 }
+        .map { directory.appendingPathComponent($0.1) }
     }
 
     /// Concatenates `init.mp4` and every complete segment (in order, stopping at the first damaged one)

@@ -63,6 +63,8 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
     /// Called when the camera writer is created (the session adds the track to the manifest).
     var onCameraStarted: (@Sendable (PixelSize) -> Void)?
     var onCameraError: (@Sendable (String) -> Void)?
+    /// A writer failed (disk full, encoder error). Called from the writer's queue.
+    var onWriterFailed: (@Sendable (TrackKind, String) -> Void)?
 
     init(format: FrameSourceFormat, screenWriter: SegmentedWriter, microphone: AudioTrackFeed?, systemAudio: AudioTrackFeed?,
          cameraDirectory: URL, shareWriter: SegmentedWriter?, composer: ShareComposer?) {
@@ -97,6 +99,12 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
         } else {
             mixer = nil
         }
+        for w in [screenWriter, microphone?.writer, systemAudio?.writer, shareWriter].compactMap({ $0 }) { watch(w) }
+    }
+
+    private func watch(_ writer: SegmentedWriter) {
+        let kind = writer.kind
+        writer.setFailureHandler { [weak self] message in self?.onWriterFailed?(kind, message) }
     }
 
     var origin: Double? { timing.withLock { $0.origin } }
@@ -233,6 +241,7 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
                     let w = try SegmentedWriter(kind: .camera, directory: cameraDirectory,
                                                 video: EncoderSettings.camera(size: size, frameRate: 30), audio: nil,
                                                 realTime: format.isRealTime)
+                    watch(w)
                     try w.start(at: 0)
                     // Hold the first picture from timeline zero so every track starts at 0.
                     if t > 0.001 { w.append(pixelBuffer: pb, at: 0) }

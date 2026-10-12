@@ -56,6 +56,9 @@ public final class RecordingSession: Sendable {
     /// Test hook: stops capture without finalizing anything, as if the app had crashed.
     func simulateCrash() async { await engine.simulateCrash() }
 
+    /// Test hook: replaces the free-disk-space probe.
+    func setFreeDiskProbe(_ probe: @escaping @Sendable () -> Int64?) async { await engine.setFreeDiskProbe(probe) }
+
     /// Test hook: pipeline metrics.
     func metrics() async -> CapturePipeline.Metrics? { await engine.pipeline?.metrics.withLock { $0 } }
 }
@@ -128,6 +131,9 @@ actor SessionEngine {
     private var freeDisk: Int64?
     private var shareFailure: String?
     private var sourceFailure: String?
+    private var trackFailures: [TrackKind: String] = [:]
+    private var diskFull = false
+    private var freeDiskProbe: @Sendable () -> Int64?
     private var stopTask: Task<ProjectBundle, any Error>?
     private var cameraSize: PixelSize?
 
@@ -138,7 +144,19 @@ actor SessionEngine {
         self.sink = sink
         self.providedSource = source
         self.broadcaster = broadcaster
+        let url = bundle.url
+        freeDiskProbe = {
+            let dir = FileManager.default.fileExists(atPath: url.path) ? url : url.deletingLastPathComponent()
+            return (try? dir.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
+                .volumeAvailableCapacityForImportantUsage
+        }
     }
+
+    func setFreeDiskProbe(_ probe: @escaping @Sendable () -> Int64?) { freeDiskProbe = probe }
+
+    /// Below this much free space the recording stops by itself, leaving room for project.json and
+    /// for the writers to close their last segments.
+    static let criticalFreeDisk: Int64 = 300_000_000
 
     // MARK: Start
 
@@ -209,6 +227,7 @@ actor SessionEngine {
                                        cameraDirectory: bundle.directory(for: .camera), shareWriter: shareWriter, composer: composer)
         pipeline.onSourceStopped = { [weak self] error in Task { await self?.sourceStopped(error) } }
         pipeline.onCameraStarted = { [weak self] size in Task { await self?.cameraStarted(size) } }
+        pipeline.onWriterFailed = { [weak self] kind, message in Task { await self?.writerFailed(kind, message) } }
         self.pipeline = pipeline
         eventLog = try EventLogWriter(url: bundle.eventsURL)
 
@@ -324,13 +343,30 @@ actor SessionEngine {
         await pump?.finish(totalDuration: endTime, timeout: 1.5)
 
         // Consolidate segments into one file per track and verify each opens with AVFoundation.
+        // A track whose segments can't be copied (disk full, I/O error) leaves the project in the
+        // `.recording` state so ProjectRecovery finishes it later; nothing on disk is removed.
         var tracks: [TrackInfo] = []
+        var deferred: (any Error)?
         for (kind, writer, _) in writers {
             var info = m.track(kind) ?? TrackInfo(kind: kind, directory: kind.rawValue, codec: "unknown")
             info.segmentCount = writer.segmentCount
             info.startTime = writer.startTime
+            let summary: SegmentStore.TrackSummary?
             do {
-                guard let summary = try SegmentStore.consolidate(directory: bundle.directory(for: kind), kind: kind) else {
+                if let free = freeDiskProbe(), free < writer.bytesWritten + 64_000_000 {
+                    let need = ByteCountFormatter.string(fromByteCount: writer.bytesWritten + 64_000_000 - free, countStyle: .file)
+                    throw CaptureError.consolidationFailed(kind, "there isn't enough free disk space to finish (about \(need) more is needed). Free up space and open the project again")
+                }
+                summary = try SegmentStore.consolidate(directory: bundle.directory(for: kind), kind: kind)
+            } catch {
+                CaptureLog.debug("consolidate \(kind): \(error)")
+                let e = (error as? CaptureError) ?? CaptureError.consolidationFailed(kind, DurableFile.isOutOfSpace(error) ? "the disk is full" : error.localizedDescription)
+                if deferred == nil || kind == .screen { deferred = e }
+                if kind == .screen { break }
+                continue
+            }
+            do {
+                guard let summary else {
                     throw CaptureError.consolidationFailed(kind, errors[kind] ?? "no segments were written")
                 }
                 let url = bundle.resolve(summary.file)
@@ -349,17 +385,23 @@ actor SessionEngine {
                 info.segmentCount = summary.segmentCount
                 tracks.append(info)
             } catch {
-                CaptureLog.debug("consolidate \(kind): \(error)")
-                if kind == .screen {
-                    // Leave status .recording so ProjectRecovery can try again on next launch.
-                    m.tracks = tracks
-                    manifest = m
-                    phase = .failed
-                    publish()
-                    broadcaster.finish()
-                    throw error
-                }
+                CaptureLog.debug("verify \(kind): \(error)")
+                if kind == .screen { deferred = error; break }
             }
+        }
+        if let deferred {
+            // Keep status .recording (every track entry, final pauses and duration) for recovery.
+            m.pauses = pipeline.pauses
+            m.duration = endTime
+            m.share = manifest?.share ?? m.share
+            manifest = m
+            try? bundle.writeManifest(m)
+            ticker?.cancel()
+            phase = .failed
+            status.warnings = failureWarnings(at: endTime)
+            publish()
+            broadcaster.finish()
+            throw deferred
         }
         m.tracks = tracks
         m.pauses = pipeline.pauses
@@ -371,6 +413,7 @@ actor SessionEngine {
 
         ticker?.cancel()
         phase = failed ? .failed : .finished
+        if failed { status.warnings = failureWarnings(at: endTime) }
         status.elapsed = max(0, endTime - pausedTotal)
         publish()
         broadcaster.finish()
@@ -429,10 +472,27 @@ actor SessionEngine {
     }
 
     private func sourceStopped(_ error: any Error) {
+        CaptureLog.debug("source stopped: \(error)")
         guard phase == .recording || phase == .paused else { return }
         sourceFailure = error.localizedDescription
-        CaptureLog.debug("source stopped: \(error)")
+        stopForFailure()
+    }
+
+    /// A writer failed. The screen track or a full disk ends the recording (finalizing what is on
+    /// disk); another track failing only stops that track and shows a warning.
+    private func writerFailed(_ kind: TrackKind, _ message: String) {
+        CaptureLog.debug("writer \(kind) failed: \(message)")
+        let outOfSpace = message == "the disk is full"
+        trackFailures[kind] = message
+        if outOfSpace { diskFull = true }
+        guard kind == .screen || outOfSpace else { return }
+        stopForFailure()
+    }
+
+    private func stopForFailure() {
+        guard phase == .recording || phase == .paused else { return }
         phase = .failed
+        status.warnings = failureWarnings(at: max(0, HostClock.now() - origin))
         publish()
         // Never lose the take: finalize what we have.
         Task { _ = try? await self.stop() }
@@ -455,9 +515,13 @@ actor SessionEngine {
                 await self?.setBacklog(b)
             }
         }
-        if n % 50 == 0 {
-            freeDisk = (try? bundle.url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
-                .volumeAvailableCapacityForImportantUsage
+        if n % 10 == 0 {
+            freeDisk = freeDiskProbe()
+            if let free = freeDisk, free < Self.criticalFreeDisk {
+                diskFull = true
+                stopForFailure()
+                return
+            }
         }
         if n % 20 == 19, var man = manifest {
             man.duration = t
@@ -491,9 +555,7 @@ actor SessionEngine {
         inputs.shareFailure = shareFailure
         if options.captureKeystrokes, Permissions.status(.inputMonitoring) != .granted { inputs.missingPermission = .inputMonitoring }
         var warnings = health.evaluate(inputs)
-        if let sourceFailure {
-            warnings.append(HealthWarning(kind: .captureStalled, message: "Capture stopped: \(sourceFailure). The recording so far is saved.", since: t))
-        }
+        warnings.append(contentsOf: failureWarnings(at: t))
 
         status.elapsed = max(0, t - pausedTotal - (pauseStartHost.map { host - $0 } ?? 0))
         status.droppedFrames = m.droppedFrames
@@ -508,6 +570,23 @@ actor SessionEngine {
     }
 
     private func setBacklog(_ b: Int) { backlog = b }
+
+    private func failureWarnings(at t: Double) -> [HealthWarning] {
+        var out: [HealthWarning] = []
+        if diskFull {
+            out.append(HealthWarning(kind: .lowDisk, message: "Recording stopped: the disk is full. Everything recorded so far is saved.", since: t))
+        }
+        if let sourceFailure {
+            out.append(HealthWarning(kind: .captureStalled, message: "Capture stopped: \(sourceFailure). The recording so far is saved.", since: t))
+        } else if let screen = trackFailures[.screen], !diskFull {
+            out.append(HealthWarning(kind: .captureStalled, message: "Recording stopped: \(screen). The recording so far is saved.", since: t))
+        }
+        let others = trackFailures.filter { $0.key != .screen && !diskFull }.keys.map(\.rawValue).sorted()
+        if !others.isEmpty, sourceFailure == nil {
+            out.append(HealthWarning(kind: .captureStalled, message: "Stopped recording \(others.joined(separator: ", ")) after an error; the screen keeps recording.", since: t))
+        }
+        return out
+    }
 
     private func publish() {
         status.phase = phase

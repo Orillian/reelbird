@@ -64,3 +64,55 @@ final class Locked<Value>: @unchecked Sendable {
         return try body(&value)
     }
 }
+
+/// Crash- and power-loss-safe small file writes for segments and playlists.
+enum DurableFile {
+    /// Writes `data` to a hidden temporary file next to `url`, flushes it to stable storage with
+    /// `F_BARRIERFSYNC` (orders the data before the rename without the cost of `F_FULLFSYNC`), then
+    /// renames it over `url`. Readers see either the old file or the complete new one, never a torn one.
+    /// Throws the POSIX error (e.g. `ENOSPC`) and leaves no temporary file behind on failure.
+    static func write(_ data: Data, to url: URL) throws {
+        let dir = url.deletingLastPathComponent()
+        let tmp = dir.appendingPathComponent(".\(url.lastPathComponent).\(UInt32.random(in: 0...UInt32.max)).tmp")
+        let fd = open(tmp.path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0o644)
+        guard fd >= 0 else { throw posixError(errno, tmp) }
+        var ok = false
+        defer {
+            if !ok { unlink(tmp.path) }
+        }
+        do {
+            try data.withUnsafeBytes { raw in
+                var offset = 0
+                while offset < raw.count {
+                    let n = Darwin.write(fd, raw.baseAddress! + offset, raw.count - offset)
+                    if n < 0 {
+                        if errno == EINTR { continue }
+                        throw posixError(errno, tmp)
+                    }
+                    offset += n
+                }
+            }
+            if fcntl(fd, F_BARRIERFSYNC) != 0 && fsync(fd) != 0 { throw posixError(errno, tmp) }
+        } catch {
+            close(fd)
+            throw error
+        }
+        guard close(fd) == 0 else { throw posixError(errno, tmp) }
+        guard rename(tmp.path, url.path) == 0 else { throw posixError(errno, url) }
+        ok = true
+    }
+
+    static func posixError(_ code: Int32, _ url: URL) -> any Error {
+        NSError(domain: NSPOSIXErrorDomain, code: Int(code),
+                userInfo: [NSLocalizedDescriptionKey: String(cString: strerror(code)), NSFilePathErrorKey: url.path])
+    }
+
+    /// Whether an error means the volume is out of space.
+    static func isOutOfSpace(_ error: any Error) -> Bool {
+        let e = error as NSError
+        if e.domain == NSPOSIXErrorDomain && (e.code == Int(ENOSPC) || e.code == Int(EDQUOT)) { return true }
+        if e.domain == NSCocoaErrorDomain && e.code == NSFileWriteOutOfSpaceError { return true }
+        if let u = e.userInfo[NSUnderlyingErrorKey] as? NSError { return isOutOfSpace(u) }
+        return false
+    }
+}
