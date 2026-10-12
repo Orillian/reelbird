@@ -1,0 +1,33 @@
+# Friendly entry points. Each target calls a script in scripts/, which does the real work.
+
+.PHONY: help build test app install icon signing clean
+
+help:
+	@echo "make build    debug build of every module"
+	@echo "make test     run the test suite"
+	@echo "make app      build build/Reelbird.app (release)"
+	@echo "make install  build the app and copy it to /Applications (asks before replacing)"
+	@echo "make icon     regenerate the app icon and menu bar glyphs from brand/*.svg"
+	@echo "make signing  create a local signing certificate so permissions survive rebuilds"
+	@echo "make clean    remove .build/ and build/"
+
+build:
+	scripts/build.sh
+
+test:
+	scripts/test.sh
+
+app:
+	scripts/build-app.sh
+
+install:
+	scripts/install.sh
+
+icon:
+	scripts/make-icon.sh
+
+signing:
+	scripts/dev-signing.sh
+
+clean:
+	rm -rf .build build
