@@ -203,7 +203,8 @@ enum Synthetic {
 }
 
 /// RGBA8 pixels of a CGImage for assertions.
-struct Pixels {
+struct Pixels: CustomStringConvertible {
+    var description: String { "Pixels(\(width)×\(height))" }
     let width: Int, height: Int
     let data: [UInt8]
     init(_ img: CGImage) {
