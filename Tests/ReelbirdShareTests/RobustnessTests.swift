@@ -89,3 +89,31 @@ import Testing
 extension LiveShareUploader {
     static var maxConcurrent: Int { UploadState.maxConcurrentSegments }
 }
+
+@Suite struct PublishChapterTests {
+    /// Chapters are stored on the recording timeline; the viewer plays the edited video, so publish
+    /// maps them through the edit (trim + cuts), dropping those inside a cut.
+    @Test func chaptersFollowCutsOntoTheOutputTimeline() async throws {
+        let server = try TestSupport.server()
+        defer { server.stop() }
+        let dir = try TestSupport.tempDir("chapters")
+        let bundle = try TestSupport.bundle(in: dir, duration: 20)
+        var edit = EditDocument()
+        edit.trim = TimeRange(start: 1, end: 20)
+        edit.cuts = [TimeRange(start: 4, end: 7)]
+        edit.chapters = [Chapter(time: 12, title: "Later"), Chapter(time: 2, title: "Intro"),
+                         Chapter(time: 5, title: "Inside the cut"), Chapter(time: 0.5, title: "Trimmed away")]
+        try bundle.writeEdit(edit)
+        let info = try await ShareService.publish(bundle: bundle, video: nil, poster: nil, captions: nil,
+                                                  destination: server.destination(), secret: server.secret,
+                                                  session: nil) { _ in }
+        let layout = try #require(ShareLayout(info: info, destination: server.destination()))
+        let m = try TestSupport.meta(server, layout)
+        #expect(m.chapters.map(\.title) == ["Intro", "Later"])
+        #expect(m.chapters.map(\.time) == [1, 8])   // 2 − 1 (trim); 12 − 1 (trim) − 3 (cut)
+        #expect(abs((m.duration ?? 0) - 16) < 1e-9)
+        // The embedded copy in the page carries the same mapped chapters.
+        let page = String(decoding: try #require(server.object(layout.pageKeys[0])).data, as: UTF8.self)
+        #expect(page.contains("Later") && !page.contains("Inside the cut"))
+    }
+}
