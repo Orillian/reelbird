@@ -98,7 +98,10 @@ struct ExportSheet: View {
             ProgressView(value: p).tint(Theme.accent)
                 .accessibilityLabel("Export progress")
             HStack {
-                Text("\(Int(p * 100))%").font(.system(size: 12).monospacedDigit()).foregroundStyle(.secondary)
+                SwiftUI.TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    Text([String(Int(p * 100)) + "%", model.exportTimeLeft(progress: p, now: ctx.date)].compactMap { $0 }.joined(separator: " · "))
+                        .font(.system(size: 12).monospacedDigit()).foregroundStyle(.secondary)
+                }
                 Spacer()
                 Text("Other recordings stay editable while this runs.").font(.system(size: 11)).foregroundStyle(.tertiary)
             }

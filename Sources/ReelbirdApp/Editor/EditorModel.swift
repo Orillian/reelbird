@@ -63,6 +63,8 @@ enum CaptionState: Equatable {
     var timelineZoom: Double = 1
 
     var exportState: ExportState = .idle
+    /// When the running export started, for the time-left estimate.
+    private(set) var exportStartedAt: Date?
     var showExport = false
     var showShare = false
     var shareState: ShareState = .idle
@@ -435,6 +437,17 @@ enum CaptionState: Equatable {
     }
 
     /// Stops a running export or upload. The recording and its edits are untouched.
+    /// "About 20 s left", once there's enough progress to estimate from.
+    func exportTimeLeft(progress p: Double, now: Date = Date()) -> String? {
+        guard let start = exportStartedAt, p > 0.04, p < 1 else { return nil }
+        let elapsed = now.timeIntervalSince(start)
+        guard elapsed > 1.5 else { return nil }
+        let left = elapsed * (1 - p) / p
+        if left < 5 { return "Almost done" }
+        if left < 60 { return "About \(Int((left / 5).rounded(.up)) * 5) s left" }
+        return "About \(Int((left / 60).rounded(.up))) min left"
+    }
+
     func cancelWork() {
         exportTask?.cancel(); exportTask = nil
         shareTask?.cancel(); shareTask = nil
@@ -444,6 +457,7 @@ enum CaptionState: Equatable {
 
     func export(_ options: ExportOptions) {
         exportState = .running(0)
+        exportStartedAt = Date()
         let services = services, bundle = bundle, edit = edit
         exportTask = Task {
             do {

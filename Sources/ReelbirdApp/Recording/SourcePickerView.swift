@@ -166,7 +166,8 @@ struct SourcePickerView: View {
                             .background(RoundedRectangle(cornerRadius: 4).fill(Theme.ink.opacity(0.06)))
                             .aspectRatio(aspect, contentMode: .fit)
                             .frame(maxWidth: 170, maxHeight: 92)
-                        Text(verbatim: "\(Int(a.rect.width * 2)) × \(Int(a.rect.height * 2))")
+                        let scale = NSScreen.screens.first { $0.displayID == a.displayID }?.backingScaleFactor ?? 2
+                        Text(verbatim: "\(Int(a.rect.width * scale)) × \(Int(a.rect.height * scale))")
                             .font(.system(size: 13, weight: .semibold).monospacedDigit())
                         Text(verbatim: "Last area · \(Int(a.rect.width)) × \(Int(a.rect.height)) pt")
                             .font(.system(size: 11)).foregroundStyle(.secondary)
