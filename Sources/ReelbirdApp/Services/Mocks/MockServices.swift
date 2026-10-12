@@ -335,6 +335,14 @@ final class MockLiveUploader: ShareSegmentSink, @unchecked Sendable {
 
 struct MockAI: AIService {
     var transcriberAvailable: Bool { true }
+    func captionsUnavailableReason() async -> String? { nil }
+    var storySupported: Bool { true }
+    var storyUnavailableReason: String? { nil }
+    func suggestStory(transcript: Transcript) async throws -> (title: String, chapters: [Chapter]) {
+        try await Task.sleep(for: .milliseconds(900))
+        return ("Checkout flow walkthrough", [Chapter(time: 0, title: "The cart"), Chapter(time: 14, title: "Shipping details"),
+                                               Chapter(time: 31, title: "Paying and the receipt")])
+    }
     func transcribe(audio: URL, locale: Locale?) async throws -> Transcript {
         try await Task.sleep(for: .milliseconds(1400))
         return MockData.transcript

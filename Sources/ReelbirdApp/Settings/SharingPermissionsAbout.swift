@@ -88,7 +88,7 @@ struct SharingSettings: View {
                             step(1, "In Cloudflare, open R2 and create a bucket, e.g. “reelbird”.")
                             step(2, "In the bucket's Settings, turn on the public r2.dev URL (or connect your own domain) and copy it.")
                             step(3, "Create an R2 API token with Object Read & Write for that bucket. Copy the keys; the secret is shown once.")
-                            step(4, "Paste everything below, then Test connection.")
+                            step(4, "Paste everything below, then click Test Connection.")
                             Link("Full guide", destination: URL(string: ReelbirdInfo.repositoryURL + "/blob/main/docs/SHARING.md")!)
                                 .font(.system(size: 12)).foregroundStyle(Theme.accentText).padding(.top, 2)
                         }
@@ -119,9 +119,9 @@ struct SharingSettings: View {
                     testResult
                     Spacer()
                     if model.hasSaved {
-                        Button("Remove", role: .destructive) { model.remove() }
+                        Button("Remove…", role: .destructive) { confirmRemove() }
                     }
-                    Button("Test connection") { model.runTest() }
+                    Button("Test Connection") { model.runTest() }
                         .disabled(!model.complete || model.test == .testing)
                     Button(model.saved ? "Saved" : "Save") { model.save() }
                         .buttonStyle(PrimaryButtonStyle())
@@ -130,6 +130,16 @@ struct SharingSettings: View {
             }
         }
         .onChange(of: model.destination) { _, _ in model.saved = false; if model.test != .testing { model.test = .idle } }
+    }
+
+    private func confirmRemove() {
+        let alert = NSAlert()
+        alert.messageText = "Remove this bucket from Reelbird?"
+        alert.informativeText = "Reelbird forgets these settings and deletes the secret from your Keychain. Links you already shared keep working; nothing in the bucket is deleted."
+        alert.addButton(withTitle: "Remove")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        if alert.runModal() == .alertFirstButtonReturn { model.remove() }
     }
 
     @ViewBuilder private var testResult: some View {
@@ -176,7 +186,7 @@ struct SharingSettings: View {
     func stopPolling() { timer?.invalidate(); timer = nil }
 
     func request(_ p: Permission) {
-        if states[p] == .notDetermined && p != .screen && p != .accessibility {
+        if states[p] == .notDetermined && p != .screen {
             Task { _ = await services.permissions.request(p); refresh() }
         } else {
             if p == .screen && states[p] == .notDetermined { Task { _ = await services.permissions.request(.screen); refresh() } }
@@ -196,7 +206,7 @@ struct PermissionInfo {
         .init(permission: .screen, title: "Screen Recording", detail: "To record your screen or a window.", symbol: "rectangle.dashed.badge.record", required: true),
         .init(permission: .microphone, title: "Microphone", detail: "To record your voice.", symbol: "mic", required: false),
         .init(permission: .camera, title: "Camera", detail: "To show your face in a bubble.", symbol: "video", required: false),
-        .init(permission: .accessibility, title: "Accessibility", detail: "To show keystrokes and follow the focused field when zooming.", symbol: "keyboard", required: false),
+        .init(permission: .inputMonitoring, title: "Input Monitoring", detail: "To show the keys you press, if you turn on keystrokes.", symbol: "keyboard", required: false),
     ]
 }
 
@@ -241,7 +251,7 @@ struct PermissionRow: View {
             Spacer()
             badge
             if state != .granted {
-                Button(state == .notDetermined && info.permission != .accessibility ? "Allow…" : "Open Settings", action: action)
+                Button(state == .notDetermined ? "Allow…" : "Open Settings", action: action)
             }
         }
         .padding(.vertical, 2)

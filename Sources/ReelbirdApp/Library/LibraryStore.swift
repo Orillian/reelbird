@@ -20,6 +20,8 @@ struct LibraryItem: Identifiable, Equatable {
     private(set) var posters: [URL: CGImage] = [:]
     var query = ""
     var gridLayout = true
+    /// The highlighted recording (click to select, Return to open, ⌘⌫ to trash).
+    var selection: URL?
 
     @ObservationIgnored private let services: Services
     @ObservationIgnored private let prefs: Preferences
@@ -137,12 +139,27 @@ struct LibraryItem: Identifiable, Equatable {
     func moveToTrash(_ item: LibraryItem) {
         do {
             try FileManager.default.trashItem(at: item.bundle.url, resultingItemURL: nil)
+            if selection == item.id {
+                let list = filtered
+                let i = list.firstIndex { $0.id == item.id } ?? 0
+                selection = list.indices.contains(i + 1) ? list[i + 1].id : (i > 0 ? list[i - 1].id : nil)
+            }
             items.removeAll { $0.id == item.id }
             posters[item.id] = nil
         } catch {
             NSSound.beep()
         }
     }
+
+    /// Moves the selection by `delta` places in the visible list.
+    func moveSelection(_ delta: Int) {
+        let list = filtered
+        guard !list.isEmpty else { return }
+        let i = list.firstIndex { $0.id == selection } ?? (delta > 0 ? -1 : list.count)
+        selection = list[min(max(0, i + delta), list.count - 1)].id
+    }
+
+    var selectedItem: LibraryItem? { filtered.first { $0.id == selection } }
 
     func copyLink(_ item: LibraryItem) {
         guard let url = item.shareURL else { return }

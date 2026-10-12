@@ -18,7 +18,6 @@
 	<key>NSMicrophoneUsageDescription</key><string>Reelbird records your voice with your screen.</string>
 	<key>NSCameraUsageDescription</key><string>Reelbird can show your camera next to your screen recording.</string>
 	<key>NSSpeechRecognitionUsageDescription</key><string>Reelbird turns your narration into captions on this Mac.</string>
-	<key>NSAppleEventsUsageDescription</key><string>Reelbird uses this to know which window is in front.</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

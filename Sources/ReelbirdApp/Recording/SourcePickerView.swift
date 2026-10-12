@@ -26,12 +26,17 @@ struct SourcePickerView: View {
                 .padding(.horizontal, Theme.Space.l)
                 .padding(.vertical, Theme.Space.s)
             Divider()
+            if model.lowDiskBytes != nil {
+                diskWarning
+                    .padding(.horizontal, Theme.Space.l)
+                    .padding(.top, Theme.Space.m)
+            }
             footer
                 .padding(.horizontal, Theme.Space.l)
                 .padding(.vertical, Theme.Space.m)
         }
         .frame(width: 452)
-        .floatingSurface(cornerRadius: 16, snapshot: snapshot)
+        .floatingSurface(cornerRadius: 16, snapshot: snapshot, glass: false)
     }
 
     // MARK: Header
@@ -108,11 +113,13 @@ struct SourcePickerView: View {
         HStack(alignment: .top, spacing: Theme.Space.m) {
             ForEach(model.displays) { d in
                 SourceTile(source: d, selected: model.selectedDisplayID == d.id, large: true)
+                    .frame(maxWidth: model.displays.count == 1 ? 280 : .infinity)
                     .onTapGesture { model.selectedDisplayID = d.id }
-                    .onTapGesture(count: 2) { model.selectedDisplayID = d.id; controller?.startFromPicker() }
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { controller?.startFromPicker() })
+                    .accessibilityAction { model.selectedDisplayID = d.id }
             }
-            if model.displays.count == 1 { Spacer(minLength: 0) }
         }
+        .frame(maxWidth: .infinity)
         .frame(maxHeight: .infinity, alignment: .top)
         .padding(.top, 2)
     }
@@ -133,7 +140,8 @@ struct SourcePickerView: View {
                     ForEach(model.windows) { w in
                         SourceTile(source: w, selected: model.selectedWindowID == w.id, large: false)
                             .onTapGesture { model.selectedWindowID = w.id }
-                            .onTapGesture(count: 2) { model.selectedWindowID = w.id; controller?.startFromPicker() }
+                            .simultaneousGesture(TapGesture(count: 2).onEnded { controller?.startFromPicker() })
+                            .accessibilityAction { model.selectedWindowID = w.id }
                     }
                 }
                 .padding(2)
@@ -158,7 +166,8 @@ struct SourcePickerView: View {
                             .background(RoundedRectangle(cornerRadius: 4).fill(Theme.ink.opacity(0.06)))
                             .aspectRatio(aspect, contentMode: .fit)
                             .frame(maxWidth: 170, maxHeight: 92)
-                        Text(verbatim: "\(Int(a.rect.width * 2)) × \(Int(a.rect.height * 2))")
+                        let scale = NSScreen.screens.first { $0.displayID == a.displayID }?.backingScaleFactor ?? 2
+                        Text(verbatim: "\(Int(a.rect.width * scale)) × \(Int(a.rect.height * scale))")
                             .font(.system(size: 13, weight: .semibold).monospacedDigit())
                         Text(verbatim: "Last area · \(Int(a.rect.width)) × \(Int(a.rect.height)) pt")
                             .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -186,8 +195,12 @@ struct SourcePickerView: View {
         VStack(spacing: 2) {
             InputRow(symbol: prefs.microphoneEnabled ? "mic.fill" : "mic.slash", title: "Microphone", isOn: $prefs.microphoneEnabled) {
                 if prefs.microphoneEnabled {
-                    LevelMeter(level: model.micLevel, segments: 10, height: 5).frame(width: 52)
-                    DeviceMenu(devices: model.microphones, selection: $prefs.microphoneID)
+                    if model.microphoneAccess != .granted {
+                        allowButton("Allow Microphone…", .microphone)
+                    } else {
+                        LevelMeter(level: model.micLevel, segments: 10, height: 5).frame(width: 52)
+                        DeviceMenu(devices: model.microphones, selection: $prefs.microphoneID)
+                    }
                 }
             }
             .onChange(of: prefs.microphoneEnabled) { _, on in on ? model.startMeters() : model.stopMeters() }
@@ -195,7 +208,11 @@ struct SourcePickerView: View {
 
             InputRow(symbol: prefs.cameraEnabled ? "video.fill" : "video.slash", title: "Camera", isOn: $prefs.cameraEnabled) {
                 if prefs.cameraEnabled {
-                    DeviceMenu(devices: model.cameras, selection: Binding(get: { prefs.cameraID ?? "" }, set: { prefs.cameraID = $0 }))
+                    if model.cameraAccess != .granted {
+                        allowButton("Allow Camera…", .camera)
+                    } else {
+                        DeviceMenu(devices: model.cameras, selection: Binding(get: { prefs.cameraID ?? "" }, set: { prefs.cameraID = $0 }))
+                    }
                 }
             }
             .onChange(of: prefs.cameraEnabled) { _, _ in controller?.syncCameraBubble() }
@@ -209,10 +226,9 @@ struct SourcePickerView: View {
                      isOn: Binding(get: { prefs.shareWhileRecording && model.shareAvailable }, set: { prefs.shareWhileRecording = $0 }),
                      enabled: model.shareAvailable) {
                 if !model.shareAvailable {
-                    Button("Set up…", action: onSetUpSharing)
-                        .buttonStyle(.link)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.accentText)
+                    Button("Set Up…", action: onSetUpSharing)
+                        .buttonStyle(SecondaryButtonStyle(small: true))
+                        .help("Links upload to your own storage bucket. Set it up once in Settings.")
                 } else if prefs.shareWhileRecording {
                     Text("Link copied when you stop").font(.system(size: 11)).foregroundStyle(.tertiary)
                 }
@@ -220,7 +236,24 @@ struct SourcePickerView: View {
         }
     }
 
+    private func allowButton(_ title: String, _ p: Permission) -> some View {
+        // Neutral, not coral: the record button is the one coral thing on this panel.
+        Button(title) { model.requestAccess(p) }
+            .buttonStyle(SecondaryButtonStyle(small: true))
+            .help(p == .microphone
+                  ? "Reelbird can't hear your mic yet, so the take would be silent."
+                  : "Reelbird can't see your camera yet.")
+    }
+
     // MARK: Footer
+
+    @ViewBuilder private var diskWarning: some View {
+        if let free = model.lowDiskBytes {
+            StatusLine(tone: .warning,
+                       text: "Only \(ByteCountFormatter.string(fromByteCount: free, countStyle: .file)) free. A long take may not fit.")
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
 
     private var footer: some View {
         HStack(spacing: Theme.Space.s) {

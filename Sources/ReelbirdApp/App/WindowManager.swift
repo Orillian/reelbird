@@ -13,6 +13,19 @@ import SwiftUI
 
     init(app: AppModel) { self.app = app }
 
+    /// The editor in front, if the key window is one.
+    var keyEditor: EditorWindowController? {
+        guard let w = NSApp.keyWindow else { return nil }
+        return editors.values.first { $0.window === w }
+    }
+
+    /// Editors with an export or upload still running.
+    var busyEditors: [EditorWindowController] { editors.values.filter { $0.model.isBusy } }
+
+    func saveAllEditors() { editors.values.forEach { $0.model.saveNow() } }
+
+    var libraryIsKey: Bool { library != nil && NSApp.keyWindow === library }
+
     var hasRegularWindows: Bool {
         !editors.isEmpty || library?.isVisible == true || settings?.window?.isVisible == true || onboarding?.isVisible == true
     }
@@ -23,6 +36,10 @@ import SwiftUI
         do {
             let controller = try EditorWindowController(bundle: bundle, app: app)
             controller.window?.delegate = self
+            // A second editor cascades instead of landing exactly on the first one's saved frame.
+            if let front = editors.values.compactMap(\.window).first(where: \.isVisible), let w = controller.window {
+                w.setFrameTopLeftPoint(w.cascadeTopLeft(from: NSPoint(x: front.frame.minX, y: front.frame.maxY)))
+            }
             editors[key] = controller
             bring(controller.window)
             app.library.noteRecent(bundle)
@@ -87,6 +104,28 @@ import SwiftUI
         NSApp.setActivationPolicy(.regular)
         w.makeKeyAndOrderFront(nil)
         NSApp.activate()
+    }
+
+    /// Closing an editor mid-export asks first: the export stops with the window.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard let editor = editors.values.first(where: { $0.window === sender }), editor.model.isBusy else { return true }
+        let exporting: Bool = if case .running = editor.model.exportState { true } else { false }
+        let alert = NSAlert()
+        alert.messageText = exporting ? "Stop exporting and close?" : "Stop uploading and close?"
+        alert.informativeText = exporting
+            ? "The export isn't finished. Your recording and edits are safe; you can export again any time."
+            : "The link isn't finished uploading. Your recording and edits are safe; you can share again any time."
+        alert.addButton(withTitle: exporting ? "Keep Exporting" : "Keep Uploading")
+        alert.addButton(withTitle: "Stop and Close")
+        alert.buttons.last?.hasDestructiveAction = true
+        alert.beginSheetModal(for: sender) { response in
+            guard response == .alertSecondButtonReturn else { return }
+            MainActor.assumeIsolated {
+                editor.model.cancelWork()
+                sender.close()
+            }
+        }
+        return false
     }
 
     func windowWillClose(_ notification: Notification) {

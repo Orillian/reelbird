@@ -51,10 +51,15 @@ struct InspectorView: View {
                     Image(systemName: s.symbol)
                         .font(.system(size: 13, weight: .medium))
                         .frame(maxWidth: .infinity)
-                        .frame(height: 30)
+                        .frame(height: 28)
                         .foregroundStyle(model.section == s ? Theme.ink : Color.secondary)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(model.section == s ? Theme.fieldFill : .clear))
+                        .background {
+                            if model.section == s {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Theme.raised)
+                                    .shadow(color: .black.opacity(0.12), radius: 1.5, y: 0.5)
+                            }
+                        }
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -63,8 +68,10 @@ struct InspectorView: View {
                 .accessibilityAddTraits(model.section == s ? .isSelected : [])
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.fieldFill))
+        .padding(.horizontal, Theme.Space.m)
+        .padding(.vertical, 10)
     }
 }
 
@@ -351,7 +358,7 @@ struct CameraSection: View {
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("\(c)")
+                            .accessibilityLabel(cornerName(c))
                             .accessibilityAddTraits(selected ? .isSelected : [])
                         }
                     }
@@ -359,6 +366,10 @@ struct CameraSection: View {
             }
         }
         .frame(width: 84, height: 54)
+    }
+
+    private func cornerName(_ c: CameraLayout.Corner) -> String {
+        switch c { case .topLeft: "Top left"; case .topRight: "Top right"; case .bottomLeft: "Bottom left"; case .bottomRight: "Bottom right" }
     }
 
     private func alignment(_ c: CameraLayout.Corner) -> Alignment {
@@ -443,8 +454,6 @@ struct AudioSection: View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             if model.hasMicrophone {
                 track(title: "Microphone", symbol: "mic.fill", gain: \.audio.microphoneGainDB, muted: \.audio.microphoneMuted)
-                Toggle("Remove background noise", isOn: model.binding(\.audio.denoise, "Noise Removal"))
-                    .toggleStyle(.brand).font(.system(size: 12))
             }
             if model.hasSystemAudio {
                 if model.hasMicrophone { Divider().padding(.vertical, 2) }
@@ -480,6 +489,7 @@ struct AudioSection: View {
             ValueSlider(value: model.binding(gain, "\(title) Volume"), range: -24...12) { v in
                 v == 0 ? "0 dB" : String(format: "%+.0f dB", v)
             }
+            .environment(\.fieldLabel, "\(title) volume")
             .disabled(isMuted)
             .opacity(isMuted ? 0.5 : 1)
         }
@@ -496,20 +506,21 @@ struct CaptionsSection: View {
             if model.edit.captions.file == nil {
                 Text("Turn your narration into captions on this Mac. Nothing is uploaded.")
                     .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                switch model.captionState {
-                case .working:
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Listening to your recording…").font(.system(size: 12)).foregroundStyle(.secondary)
+                if let reason = model.captionsUnavailableReason ?? (model.transcriberAvailable ? nil : "On-device captions aren't available on this Mac.") {
+                    StatusLine(tone: .info, text: reason)
+                } else {
+                    switch model.captionState {
+                    case .working:
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Listening to your recording…").font(.system(size: 12)).foregroundStyle(.secondary)
+                        }
+                    case .failed(let msg):
+                        StatusLine(tone: .error, text: msg)
+                        generateButton
+                    case .idle:
+                        generateButton
                     }
-                case .failed(let msg):
-                    StatusLine(tone: .error, text: msg)
-                    generateButton
-                case .idle:
-                    generateButton
-                }
-                if !model.transcriberAvailable {
-                    StatusLine(tone: .info, text: "On-device captions need macOS 26 or later.")
                 }
             } else {
                 HStack {
@@ -522,35 +533,89 @@ struct CaptionsSection: View {
                     .toggleStyle(.brand).font(.system(size: 12))
                 Text("Shared links always offer captions as a track viewers can turn on.")
                     .font(.system(size: 11)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
-                if let t = model.transcript {
-                    Divider().padding(.vertical, 2)
-                    SectionLabel(text: "Transcript")
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(t.segments.enumerated()), id: \.offset) { _, s in
-                            Button { model.seek(source: s.range.start) } label: {
-                                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                    Text(TimeFormat.clock(s.range.start))
-                                        .font(.system(size: 10.5).monospacedDigit())
-                                        .foregroundStyle(.tertiary)
-                                        .frame(width: 30, alignment: .leading)
-                                    Text(s.text).font(.system(size: 12))
-                                        .foregroundStyle(s.range.contains(model.playhead) ? Theme.ink : .secondary)
-                                        .multilineTextAlignment(.leading)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                                .contentShape(Rectangle())
+            }
+            if model.storySupported { story }
+            if model.edit.captions.file != nil, let t = model.transcript {
+                Divider().padding(.vertical, 2)
+                SectionLabel(text: "Transcript")
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(t.segments.enumerated()), id: \.offset) { _, s in
+                        Button { model.seek(source: s.range.start) } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(TimeFormat.clock(s.range.start))
+                                    .font(.system(size: 10.5).monospacedDigit())
+                                    .foregroundStyle(.tertiary)
+                                    .frame(width: 30, alignment: .leading)
+                                Text(s.text).font(.system(size: 12))
+                                    .foregroundStyle(s.range.contains(model.playhead) ? Theme.ink : .secondary)
+                                    .multilineTextAlignment(.leading)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
-                            .buttonStyle(.plain)
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(TimeFormat.clock(s.range.start)), \(s.text)")
+                        .accessibilityHint("Moves the playhead here")
                     }
                 }
             }
         }
+        .onAppear { model.checkCaptionsAvailability() }
+    }
+
+    /// Title and chapters from Apple Intelligence (macOS 26+ only; hidden before that).
+    @ViewBuilder private var story: some View {
+        Divider().padding(.vertical, 2)
+        SectionLabel(text: "Title & chapters")
+        if let reason = model.storyUnavailableReason {
+            StatusLine(tone: .info, text: reason)
+        } else if model.transcript == nil {
+            Text("Generate captions first. Reelbird suggests a title and chapters from what you said, on this Mac.")
+                .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        } else {
+            switch model.storyState {
+            case .working:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Reading your transcript…").font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+            case .failed(let msg):
+                StatusLine(tone: .error, text: msg)
+                suggestButton
+            case .idle:
+                suggestButton
+            }
+            if !model.edit.chapters.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(model.edit.chapters.enumerated()), id: \.offset) { _, c in
+                        Button { model.seek(source: c.time) } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(TimeFormat.clock(c.time)).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(.tertiary)
+                                    .frame(width: 30, alignment: .leading)
+                                Text(c.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Chapter at \(TimeFormat.clock(c.time)), \(c.title)")
+                    }
+                }
+                Button("Clear Chapters") { model.clearChapters() }
+                    .buttonStyle(.link).font(.system(size: 12)).foregroundStyle(Theme.accentText)
+            }
+        }
+    }
+
+    private var suggestButton: some View {
+        Button { model.suggestStory() } label: {
+            Label(model.edit.chapters.isEmpty ? "Suggest Title & Chapters" : "Suggest Again", systemImage: "list.bullet.rectangle")
+        }
+        .buttonStyle(SecondaryButtonStyle())
+        .help("Uses Apple Intelligence on this Mac. Replaces the title and chapters; Undo brings them back.")
     }
 
     private var generateButton: some View {
         Button { model.generateCaptions() } label: { Label("Generate Captions", systemImage: "captions.bubble") }
             .buttonStyle(SecondaryButtonStyle())
-            .disabled(!model.transcriberAvailable)
     }
 }

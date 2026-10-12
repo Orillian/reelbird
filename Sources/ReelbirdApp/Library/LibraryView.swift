@@ -17,10 +17,17 @@ struct LibraryView: View {
                 Text("No recordings match “\(store.query)”")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if store.gridLayout {
-                grid
             } else {
-                list
+                Group { if store.gridLayout { grid } else { list } }
+                    .focusable()
+                    .focusEffectDisabled()
+                    .onKeyPress(.return) { open(store.selectedItem); return .handled }
+                    .onKeyPress(keys: [.delete]) { press in
+                        guard press.modifiers.contains(.command), let item = store.selectedItem else { return .ignored }
+                        store.moveToTrash(item); return .handled
+                    }
+                    .onKeyPress(keys: [.leftArrow, .upArrow]) { _ in store.moveSelection(-1); return .handled }
+                    .onKeyPress(keys: [.rightArrow, .downArrow]) { _ in store.moveSelection(1); return .handled }
             }
         }
         .background(Theme.panel)
@@ -86,8 +93,10 @@ struct LibraryView: View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 224, maximum: 320), spacing: 22, alignment: .top)], spacing: 26) {
                 ForEach(store.filtered) { item in
-                    LibraryTile(item: item, poster: store.posters[item.id])
-                        .onTapGesture(count: 2) { app?.open(bundle: item.bundle) }
+                    LibraryTile(item: item, poster: store.posters[item.id], selected: store.selection == item.id)
+                        .onTapGesture { store.selection = item.id }
+                        .simultaneousGesture(TapGesture(count: 2).onEnded { open(item) })
+                        .accessibilityAction { open(item) }
                         .contextMenu { menu(item) }
                 }
             }
@@ -99,8 +108,10 @@ struct LibraryView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(store.filtered) { item in
-                    LibraryRow(item: item, poster: store.posters[item.id])
-                        .onTapGesture(count: 2) { app?.open(bundle: item.bundle) }
+                    LibraryRow(item: item, poster: store.posters[item.id], selected: store.selection == item.id)
+                        .onTapGesture { store.selection = item.id }
+                        .simultaneousGesture(TapGesture(count: 2).onEnded { open(item) })
+                        .accessibilityAction { open(item) }
                         .contextMenu { menu(item) }
                     Divider().padding(.leading, 120)
                 }
@@ -108,6 +119,11 @@ struct LibraryView: View {
             .padding(.horizontal, Theme.Space.l)
             .padding(.vertical, Theme.Space.s)
         }
+    }
+
+    private func open(_ item: LibraryItem?) {
+        guard let item else { return }
+        app?.open(bundle: item.bundle)
     }
 
     @ViewBuilder private func menu(_ item: LibraryItem) -> some View {
@@ -123,7 +139,9 @@ struct LibraryView: View {
 struct LibraryTile: View {
     let item: LibraryItem
     let poster: CGImage?
+    var selected = false
     @ViewState private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -132,6 +150,9 @@ struct LibraryTile: View {
                     .aspectRatio(16 / 10, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+                    .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .strokeBorder(selected ? Theme.accent : .clear, lineWidth: 2.5)
+                        .padding(-4))
                     .shadow(color: .black.opacity(hovering ? 0.16 : 0.07), radius: hovering ? 10 : 4, y: hovering ? 5 : 2)
                 Text(TimeFormat.clock(item.duration))
                     .font(.system(size: 11, weight: .semibold).monospacedDigit())
@@ -140,7 +161,7 @@ struct LibraryTile: View {
                     .background(Capsule().fill(.black.opacity(0.62)))
                     .padding(8)
             }
-            .scaleEffect(hovering ? 1.01 : 1)
+            .scaleEffect(hovering && !reduceMotion ? 1.01 : 1)
             .animation(Theme.snappy, value: hovering)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -164,7 +185,7 @@ struct LibraryTile: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityHint("Double-click to open")
     }
 }
@@ -172,6 +193,7 @@ struct LibraryTile: View {
 struct LibraryRow: View {
     let item: LibraryItem
     let poster: CGImage?
+    var selected = false
     var body: some View {
         HStack(spacing: Theme.Space.m) {
             PosterView(poster: poster)
@@ -188,7 +210,11 @@ struct LibraryRow: View {
                 .frame(width: 50, alignment: .trailing)
         }
         .padding(.vertical, 8)
+        .padding(.horizontal, 8)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(selected ? Theme.accentSoft : .clear))
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
 

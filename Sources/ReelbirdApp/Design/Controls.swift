@@ -69,14 +69,16 @@ struct PrimaryButtonStyle: ButtonStyle {
 /// Neutral filled button for secondary actions.
 struct SecondaryButtonStyle: ButtonStyle {
     var large = false
+    /// Inline in a row (picker inputs): 22 pt tall.
+    var small = false
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: large ? 14 : 13, weight: .medium))
+            .font(.system(size: large ? 14 : small ? 11.5 : 13, weight: .medium))
             .foregroundStyle(Color.primary.opacity(isEnabled ? 0.9 : 0.4))
-            .padding(.horizontal, large ? 16 : 11)
-            .frame(height: large ? 36 : 28)
+            .padding(.horizontal, large ? 16 : small ? 8 : 11)
+            .frame(height: large ? 36 : small ? 22 : 28)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                     .fill(Color.primary.opacity(configuration.isPressed ? 0.12 : 0.07))
@@ -178,8 +180,19 @@ struct FieldRow<Content: View>: View {
                 .foregroundStyle(.secondary)
                 .frame(width: labelWidth, alignment: .leading)
             content.frame(maxWidth: .infinity, alignment: .leading)
+                .environment(\.fieldLabel, label)
         }
         .frame(minHeight: 26)
+    }
+}
+
+private struct FieldLabelKey: EnvironmentKey { static let defaultValue = "" }
+extension EnvironmentValues {
+    /// The label of the enclosing `FieldRow`, so unlabelled controls inside it (sliders) can name
+    /// themselves for VoiceOver.
+    var fieldLabel: String {
+        get { self[FieldLabelKey.self] }
+        set { self[FieldLabelKey.self] = newValue }
     }
 }
 
@@ -189,13 +202,17 @@ struct ValueSlider: View {
     var range: ClosedRange<Double>
     var format: (Double) -> String
     var onEditingChanged: (Bool) -> Void = { _ in }
+    @Environment(\.fieldLabel) private var label
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
             Slider(value: $value, in: range, onEditingChanged: onEditingChanged)
                 .controlSize(.small)
                 .tint(Theme.accent)
+                .accessibilityLabel(label)
+                .accessibilityValue(format(value))
             Text(format(value))
+                .accessibilityHidden(true)
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 38, alignment: .trailing)

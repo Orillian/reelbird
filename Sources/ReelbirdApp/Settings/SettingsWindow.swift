@@ -1,4 +1,5 @@
 import AppKit
+import ReelbirdCapture
 import ReelbirdCore
 import ServiceManagement
 import SwiftUI
@@ -200,6 +201,7 @@ struct HotKeyField: View {
 struct RecordingSettings: View {
     let app: AppModel?
     @Bindable var prefs: Preferences
+    @ViewState private var keystrokeAccess: PermissionState = .notDetermined
 
     var body: some View {
         SettingsForm {
@@ -228,19 +230,27 @@ struct RecordingSettings: View {
                     Text("None").tag(ReelbirdClickEffect.none)
                 }
                 Toggle("Record keystrokes for the keystroke overlay", isOn: $prefs.captureKeystrokes).toggleStyle(.brand)
-                if prefs.captureKeystrokes, let app, app.services.permissions.status(.accessibility) != .granted {
+                    .onChange(of: prefs.captureKeystrokes) { _, on in
+                        guard on, let app, app.services.permissions.status(.inputMonitoring) == .notDetermined else { return }
+                        Task { _ = await app.services.permissions.request(.inputMonitoring); keystrokeAccess = app.services.permissions.status(.inputMonitoring) }
+                    }
+                if prefs.captureKeystrokes, let app, keystrokeAccess != .granted {
                     HStack {
-                        StatusLine(tone: .warning, text: "Needs Accessibility access.")
+                        StatusLine(tone: .warning, text: "Needs Input Monitoring access, or no keys are recorded.")
                         Spacer()
-                        Button("Open Settings") { app.services.permissions.openSettings(for: .accessibility) }
+                        Button("Open Settings") { app.services.permissions.openSettings(for: .inputMonitoring) }
                     }
                 }
             } header: {
-                Text("Cursor")
+                Text("Cursor and keys")
             } footer: {
-                Text("Reelbird records the cursor separately, so you can change all of this after recording.")
+                Text("Reelbird records the cursor separately, so you can change all of this after recording. Keys are recorded only while you record.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
+        }
+        .onAppear { keystrokeAccess = app?.services.permissions.status(.inputMonitoring) ?? .notDetermined }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            keystrokeAccess = app?.services.permissions.status(.inputMonitoring) ?? .notDetermined
         }
     }
 }
