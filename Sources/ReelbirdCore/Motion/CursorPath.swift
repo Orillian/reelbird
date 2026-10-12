@@ -2,13 +2,23 @@ import Foundation
 
 /// The smoothed cursor track, computed once from the event log so preview and export draw the same path.
 ///
-/// Raw pointer samples are resampled to a fixed rate and run through a critically damped spring (with
-/// look-ahead so the smoothed cursor does not trail the video), then pinned back onto the raw position
-/// around clicks so clicks land exactly where they happened. The result is a flat table: sampling is O(1),
-/// click and cursor-image lookups are O(log n). A one-hour recording builds in well under a second.
+/// Raw pointer samples are resampled to a fixed rate and smoothed with a *zero-phase* filter: a critically
+/// damped spring run forwards and then backwards over the whole track. The two passes cancel each other's
+/// lag exactly, so the rendered cursor never trails (or leads) the real one; only jitter, tremor and the
+/// little corrective jumps at the end of a reach are smoothed away, leaving the gliding arc. Around clicks
+/// and during drags the path blends back onto the raw pointer, so clicks land exactly where they happened
+/// and dragged content stays attached to the cursor. The result is a flat table: sampling is O(1), click
+/// and cursor-image lookups are O(log n). A one-hour recording builds in well under a second.
 public struct CursorPath: Sendable {
     /// Table rate in samples per second.
     public static let sampleRate: Double = 120
+
+    /// Width (standard deviation, seconds) of the smoothing kernel for a smoothing amount.
+    ///
+    /// `0.14·s^1.2`: the default 0.6 gives 76 ms, which merges a reach's corrective submovement into one
+    /// glide while keeping the error on a fast minimum-jerk reach under ~2% of its length; 1.0 gives 140 ms
+    /// (floaty); 0.3 gives 33 ms (just removes jitter).
+    public static func kernelWidth(smoothing s: Double) -> Double { 0.14 * pow(min(1, max(0, s)), 1.2) }
 
     /// The smoothing amount the path was built with (0 = raw, 1 = very smooth).
     public let smoothing: Double
@@ -22,6 +32,10 @@ public struct CursorPath: Sendable {
     /// Intervals in which the pointer moved or clicked (merged when closer than 0.1 s).
     let activeStarts: [Double]
     let activeEnds: [Double]
+    /// Intervals in which macOS hides the pointer because the user is typing (from a key press to the next
+    /// pointer activity).
+    let typingStarts: [Double]
+    let typingEnds: [Double]
     let imageTimes: [Double]
     let imageIDs: [String]
 
@@ -31,12 +45,19 @@ public struct CursorPath: Sendable {
         var raw: [(t: Double, x: Double, y: Double)] = []
         raw.reserveCapacity(events.count)
         var clicks: [InputEvent] = []
+        var ups: [InputEvent] = []
+        var keys: [Double] = []
         var images: [(Double, String)] = []
         for e in events {
             switch e.type {
             case .move, .down, .up, .scroll:
                 if let x = e.x, let y = e.y, x.isFinite, y.isFinite, e.t.isFinite { raw.append((e.t, x, y)) }
                 if e.type == .down, e.x != nil, e.y != nil { clicks.append(e) }
+                if e.type == .up, e.x != nil, e.y != nil { ups.append(e) }
+            case .key:
+                // Plain typing hides the pointer (NSCursor.setHiddenUntilMouseMoves); shortcuts don't.
+                let mods = e.mods ?? []
+                if e.t.isFinite, !mods.contains(where: { ["⌘", "⌃", "cmd", "ctrl"].contains($0) }) { keys.append(e.t) }
             case .cursor:
                 if let id = e.image { images.append((e.t, id)) }
             default:
@@ -47,6 +68,8 @@ public struct CursorPath: Sendable {
         for i in raw.indices.dropFirst() where raw[i].t < raw[i - 1].t { rawSorted = false; break }
         if !rawSorted { raw.sort { $0.t < $1.t } }
         clicks.sort { $0.t < $1.t }
+        ups.sort { $0.t < $1.t }
+        keys.sort()
         images.sort { $0.0 < $1.0 }
         clickEvents = clicks
         clickTimes = clicks.map(\.t)
@@ -73,6 +96,19 @@ public struct CursorPath: Sendable {
         activeStarts = aStarts
         activeEnds = aEnds
 
+        // Typing hides the pointer from the key press until the pointer next moves or clicks.
+        var tStarts: [Double] = [], tEnds: [Double] = []
+        for k in keys {
+            if let e = tEnds.last, k <= e { continue }
+            let i = upperBound(aStarts, k)
+            // The pointer is moving right now: macOS shows it again at once.
+            if i > 0, aEnds[i - 1] >= k - 0.02 { continue }
+            let next = i < aStarts.count ? aStarts[i] : Double.infinity
+            tStarts.append(k); tEnds.append(next)
+        }
+        typingStarts = tStarts
+        typingEnds = tEnds
+
         guard let first = raw.first, let last = raw.last else {
             start = 0; table = []; return
         }
@@ -81,11 +117,7 @@ public struct CursorPath: Sendable {
         let dt = 1 / rate
         let tail = 1.5
         let count = Int(((last.t - first.t + tail) * rate).rounded(.up)) + 1
-        let s = self.smoothing
-        // Spring natural frequency: ~40 rad/s (barely smoothed) down to ~7 rad/s (very smooth).
-        let omega = 40 * pow(7.0 / 40.0, s)
-        let lead = s < 0.01 ? 0 : min(0.25, 2 / omega)
-        let decay = exp(-omega * dt)
+        let sigma = Self.kernelWidth(smoothing: self.smoothing)
 
         var out = [SIMD2<Float>](repeating: .zero, count: count)
         raw.withUnsafeBufferPointer { r in
@@ -105,42 +137,79 @@ public struct CursorPath: Sendable {
                     let u = (t - t0) / (b.t - t0)
                     return (a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u)
                 }
-                if s < 0.01 {
-                    for i in 0..<count {
-                        let p = rawAt(first.t + Double(i) * dt)
-                        o[i] = SIMD2(Float(p.0), Float(p.1))
-                    }
+                var rx = [Double](repeating: 0, count: count), ry = [Double](repeating: 0, count: count)
+                for i in 0..<count {
+                    let p = rawAt(first.t + Double(i) * dt)
+                    rx[i] = p.0; ry[i] = p.1
+                }
+                guard sigma > 0.004 else {
+                    for i in 0..<count { o[i] = SIMD2(Float(rx[i]), Float(ry[i])) }
                     return
                 }
-                var x = first.x, y = first.y, vx = 0.0, vy = 0.0
+                // Forward then backward critically damped spring: each pass has variance 2/ω², so ω = 2/σ
+                // gives a symmetric kernel of standard deviation σ with zero delay.
+                let omega = 2 / sigma
+                let decay = exp(-omega * dt)
+                var sx = rx, sy = ry
+                var x = rx[0], y = ry[0], vx = 0.0, vy = 0.0
                 for i in 0..<count {
-                    let p = rawAt(first.t + Double(i) * dt + lead)
-                    Spring.step(x: &x, v: &vx, target: p.0, omega: omega, dt: dt, decay: decay)
-                    Spring.step(x: &y, v: &vy, target: p.1, omega: omega, dt: dt, decay: decay)
-                    o[i] = SIMD2(Float(x), Float(y))
+                    Spring.step(x: &x, v: &vx, target: rx[i], omega: omega, dt: dt, decay: decay)
+                    Spring.step(x: &y, v: &vy, target: ry[i], omega: omega, dt: dt, decay: decay)
+                    sx[i] = x; sy[i] = y
                 }
-                // Pin to the raw position around clicks so they land exactly on target.
-                j = 0
-                let pinHold = 0.04, pinFade = 0.22
-                for c in clicks {
-                    guard let cx = c.x, let cy = c.y else { continue }
-                    let lo = max(0, Int(((c.t - pinHold - pinFade - first.t) * rate).rounded(.down)))
-                    let hi = min(count - 1, Int(((c.t + pinHold + pinFade - first.t) * rate).rounded(.up)))
-                    if lo > hi { continue }
+                x = sx[count - 1]; y = sy[count - 1]; vx = 0; vy = 0
+                for i in stride(from: count - 1, through: 0, by: -1) {
+                    Spring.step(x: &x, v: &vx, target: sx[i], omega: omega, dt: dt, decay: decay)
+                    Spring.step(x: &y, v: &vy, target: sy[i], omega: omega, dt: dt, decay: decay)
+                    sx[i] = x; sy[i] = y
+                }
+                // Blend weights toward the raw pointer: 1 at clicks (±40 ms) and through drags, fading over
+                // 180 ms (smoothstep) so the hand-off is invisible.
+                var w = [Float](repeating: 0, count: count)
+                let pinHold = 0.04, pinFade = 0.18
+                func pin(_ a: Double, _ b: Double) {
+                    let lo = max(0, Int(((a - pinHold - pinFade - first.t) * rate).rounded(.down)))
+                    let hi = min(count - 1, Int(((b + pinHold + pinFade - first.t) * rate).rounded(.up)))
+                    guard lo <= hi else { return }
                     for i in lo...hi {
                         let t = first.t + Double(i) * dt
-                        let d = abs(t - c.t)
-                        let w: Double
-                        if d <= pinHold { w = 1 } else {
+                        let d = t < a ? a - t : (t > b ? t - b : 0)
+                        let v: Double
+                        if d <= pinHold { v = 1 } else {
                             let u = min(1, (d - pinHold) / pinFade)
-                            w = 1 - u * u * (3 - 2 * u)
+                            v = 1 - u * u * (3 - 2 * u)
                         }
-                        if w <= 0 { continue }
-                        let cur = o[i]
-                        let px = Double(cur.x) + (cx - Double(cur.x)) * w
-                        let py = Double(cur.y) + (cy - Double(cur.y)) * w
-                        o[i] = SIMD2(Float(px), Float(py))
+                        w[i] = max(w[i], Float(v))
                     }
+                }
+                var u = 0
+                for c in clicks {
+                    // A drag: the pointer moved while the button was held. Pin the whole way.
+                    while u < ups.count, ups[u].t < c.t { u += 1 }
+                    var endT = c.t
+                    if u < ups.count, ups[u].t - c.t < 30, let ux = ups[u].x, let uy = ups[u].y, let cx = c.x, let cy = c.y {
+                        var moved = abs(ux - cx) + abs(uy - cy) > 0.004
+                        if !moved {
+                            let k0 = max(0, Int(((c.t - first.t) * rate).rounded())), k1 = min(count - 1, Int(((ups[u].t - first.t) * rate).rounded()))
+                            if k0 <= k1 { for k in k0...k1 where abs(rx[k] - cx) + abs(ry[k] - cy) > 0.004 { moved = true; break } }
+                        }
+                        if moved { endT = ups[u].t }
+                    }
+                    pin(c.t, endT)
+                }
+                for i in 0..<count {
+                    let k = Double(w[i])
+                    var px = sx[i] + (rx[i] - sx[i]) * k, py = sy[i] + (ry[i] - sy[i]) * k
+                    // Clicks land exactly where they happened (the raw track holds the click position there).
+                    if k >= 1 { px = rx[i]; py = ry[i] }
+                    o[i] = SIMD2(Float(px), Float(py))
+                }
+                // Exact positions at the click instants (the table may not sample them exactly).
+                for c in clicks {
+                    guard let cx = c.x, let cy = c.y else { continue }
+                    let f = (c.t - first.t) * rate
+                    let i0 = Int(f.rounded(.down))
+                    for i in [i0, i0 + 1] where i >= 0 && i < count && w[i] >= 1 { o[i] = SIMD2(Float(cx), Float(cy)) }
                 }
             }
         }
@@ -193,15 +262,21 @@ public struct CursorPath: Sendable {
         return imageIDs[max(0, i)]
     }
 
-    /// Cursor opacity at `t` when hiding after `hideAfter` seconds of no movement (0 = never hide).
-    /// Fades out over 0.3 s and back in just before the pointer moves again.
+    /// Cursor opacity at `t`: hidden while typing (as macOS does), and after `hideAfter` seconds of no
+    /// movement (0 = never). Fades out over 0.3 s (0.15 s for typing) and back in just before the pointer
+    /// moves again.
     public func opacity(at t: Double, hideAfter: Double) -> Double {
-        guard hideAfter > 0 else { return 1 }
+        var o = 1.0
         let i = upperBound(activeStarts, t) - 1
-        let lastActive = i >= 0 ? min(t, activeEnds[i]) : 0
-        let idle = t - lastActive
-        var o = 1 - smoothstep(hideAfter, hideAfter + 0.3, idle)
         let next = i + 1 < activeStarts.count ? activeStarts[i + 1] : Double.infinity
+        if hideAfter > 0 {
+            let lastActive = i >= 0 ? min(t, activeEnds[i]) : 0
+            o = 1 - smoothstep(hideAfter, hideAfter + 0.3, t - lastActive)
+        }
+        let k = upperBound(typingStarts, t) - 1
+        if k >= 0, t < typingEnds[k] {
+            o = min(o, 1 - smoothstep(typingStarts[k], typingStarts[k] + 0.15, t))
+        }
         if next - t < 0.15 { o = max(o, 1 - (next - t) / 0.15) }
         return o
     }
