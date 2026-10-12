@@ -11,7 +11,10 @@ import SwiftUI
     init(bundle: ProjectBundle, app: AppModel) throws {
         self.app = app
         if try app.services.recorder.recoverIfNeeded(bundle) { app.library.reload() }
-        model = try EditorModel(bundle: bundle, services: app.services)
+        var cursor = CursorSettings()
+        cursor.visible = app.prefs.showCursorDefault
+        cursor.clickEffect = app.prefs.clickEffectDefault
+        model = try EditorModel(bundle: bundle, services: app.services, cursorDefaults: cursor)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1320, height: 840),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                          backing: .buffered, defer: false)

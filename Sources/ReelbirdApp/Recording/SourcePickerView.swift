@@ -180,7 +180,7 @@ struct SourcePickerView: View {
                     Button("Set up…", action: onSetUpSharing)
                         .buttonStyle(.link)
                         .font(.system(size: 12))
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(Theme.accentText)
                 } else if prefs.shareWhileRecording {
                     Text("Link copied when you stop").font(.system(size: 11)).foregroundStyle(.tertiary)
                 }
@@ -221,7 +221,7 @@ struct SourcePickerView: View {
                 controller?.startFromPicker()
             } label: {
                 HStack(spacing: 7) {
-                    Circle().fill(.white).frame(width: 9, height: 9)
+                    Circle().fill(Theme.onAccent).frame(width: 9, height: 9)
                     Text(prefs.sourceTab == .area && model.area == nil ? "Select Area" : "Start Recording")
                     Text(prefs.recordHotKey.display)
                         .font(.system(size: 11, weight: .medium, design: .rounded))

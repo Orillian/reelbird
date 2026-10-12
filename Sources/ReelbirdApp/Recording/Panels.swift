@@ -54,7 +54,7 @@ class FloatingPanel: NSPanel {
         }
     }
 
-    func fadeOut(then: (() -> Void)? = nil) {
+    func fadeOut(then: (@MainActor @Sendable () -> Void)? = nil) {
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.14
             animator().alphaValue = 0

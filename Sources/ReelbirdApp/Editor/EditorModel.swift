@@ -77,16 +77,22 @@ enum CaptionState: Equatable {
     @ObservationIgnored private var coalesceKey: String?
     @ObservationIgnored private var coalesceUntil = Date.distantPast
 
-    init(bundle: ProjectBundle, services: Services) throws {
+    /// `cursorDefaults` apply only to a recording opened for the first time (no edit.json yet).
+    init(bundle: ProjectBundle, services: Services, cursorDefaults: CursorSettings? = nil) throws {
         self.bundle = bundle
         self.services = services
-        manifest = try bundle.readManifest()
-        events = (try? bundle.readEvents()) ?? []
-        edit = (try? bundle.readEdit()) ?? EditDocument.initial(for: manifest)
+        let manifest = try bundle.readManifest()
+        let events = (try? bundle.readEvents()) ?? []
+        let fresh = !FileManager.default.fileExists(atPath: bundle.editURL.path)
+        var edit = (try? bundle.readEdit()) ?? EditDocument.initial(for: manifest)
+        if fresh, let cursorDefaults { edit.cursor = cursorDefaults }
         if edit.title == nil { edit.title = manifest.title }
         if edit.zoom.mode == .auto && !edit.zoom.regions.contains(where: { $0.source == .auto }) {
             edit.zoom.regions += services.render.autoZoomPlan(events: events, duration: manifest.duration, intensity: edit.zoom.intensity)
         }
+        self.manifest = manifest
+        self.events = events
+        self.edit = edit
         if let file = edit.captions.file, FileManager.default.fileExists(atPath: bundle.resolve(file).path) {
             transcript = MockData.transcript // INTEGRATION: parse captions.vtt or keep transcript.json from ReelbirdAI
         }
@@ -435,6 +441,25 @@ enum CaptionState: Equatable {
                 shareState = .idle
                 copyLink()
                 Toast.show(title: "Link copied", detail: info.polished ? "Your link now plays the edited video" : nil, symbol: "link")
+            } catch {
+                shareState = .failed((error as? any LocalizedError)?.errorDescription ?? error.localizedDescription)
+            }
+        }
+    }
+
+    /// Deletes the uploaded share; the link stops working.
+    func unpublish() {
+        guard let info = shareInfo, let dest = services.share.loadDestination(), let secret = services.share.secret() else { return }
+        shareState = .working("Removing", 0.5)
+        let services = services
+        Task {
+            do {
+                try await services.share.unpublish(info, destination: dest, secret: secret)
+                var m = manifest
+                m.share = nil
+                try? bundle.writeManifest(m)
+                manifest = m
+                shareState = .idle
             } catch {
                 shareState = .failed((error as? any LocalizedError)?.errorDescription ?? error.localizedDescription)
             }

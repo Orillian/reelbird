@@ -200,7 +200,7 @@ struct ControlBarView: View {
 
             Button { controller?.stop() } label: {
                 HStack(spacing: 6) {
-                    RoundedRectangle(cornerRadius: 2.5).fill(.white).frame(width: 10, height: 10)
+                    RoundedRectangle(cornerRadius: 2.5).fill(Theme.onAccent).frame(width: 10, height: 10)
                     Text("Stop")
                 }
             }
@@ -226,7 +226,7 @@ struct ControlBarView: View {
                 }
                 .buttonStyle(.link)
                 .font(.system(size: 12))
-                .foregroundStyle(Theme.accent)
+                .foregroundStyle(Theme.accentText)
             }
         }
         .padding(.horizontal, 12)
@@ -399,7 +399,7 @@ struct ToastView: View {
         HStack(spacing: 10) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.accent)
+                .foregroundStyle(Theme.accentText)
                 .frame(width: 26, height: 26)
                 .background(Circle().fill(Theme.accentSoft))
             VStack(alignment: .leading, spacing: 1) {

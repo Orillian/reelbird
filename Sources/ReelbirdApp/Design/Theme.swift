@@ -1,16 +1,24 @@
 import AppKit
 import SwiftUI
 
-/// Reelbird's palette: neutral ink base, one warm accent (coral), amber for secondary highlights.
-/// 70/30/10: system neutrals carry the UI, ink and text the structure, coral only marks the one
-/// thing to press or the live state.
+/// Reelbird's palette (brand/colors.md). 70% system neutrals, 30% ink/paper and muted text,
+/// 10% coral. Coral is the only accent and always means "recording", "live" or "press this".
 enum Theme {
+    /// Coral #FF5A36: record button, live state, the one primary action. Never decoration.
     static let accent = Color(nsColor: .rbAccent)
-    static let accentSoft = Color(nsColor: .rbAccent).opacity(0.14)
-    static let amber = Color(nsColor: .rbAmber)
-    static let recording = Color(nsColor: .rbRecording)
+    /// Coral as text or links: #C93A1E on light surfaces (4.7:1), coral on dark.
+    static let accentText = Color(nsColor: .rbAccentText)
+    static let accentSoft = Color(nsColor: .rbAccent).opacity(0.13)
+    static let recording = Color(nsColor: .rbAccent)
+    /// Text and glyphs on coral: always ink (white on coral is only 3.1:1).
+    static let onAccent = Color(nsColor: .rbInkFixed)
+    /// Ink in light mode, paper in dark mode: primary brand text and the bird.
     static let ink = Color(nsColor: .rbInk)
-    /// The dark stage behind the video preview, in both appearances.
+    static let inkFixed = Color(nsColor: .rbInkFixed)
+    static let paper = Color(nsColor: .rbPaper)
+    /// Neutral highlight for secondary timeline items (auto zooms), deliberately not coral.
+    static let neutralMark = Color(nsColor: .rbNeutralMark)
+    /// The dark stage behind the video preview.
     static let stage = Color(nsColor: .rbStage)
     static let hairline = Color(nsColor: .separatorColor)
     static let panel = Color(nsColor: .rbPanel)
@@ -48,16 +56,20 @@ extension NSColor {
                   blue: CGFloat(hex & 0xff) / 255, alpha: alpha)
     }
 
-    static let rbAccent = dynamic(light: NSColor(hex: 0xE45A33), dark: NSColor(hex: 0xFF7A4D))
-    static let rbAmber = dynamic(light: NSColor(hex: 0xE59A2F), dark: NSColor(hex: 0xF5B04A))
-    static let rbRecording = dynamic(light: NSColor(hex: 0xE5372B), dark: NSColor(hex: 0xFF4B3E))
-    static let rbInk = dynamic(light: NSColor(hex: 0x1C1A19), dark: NSColor(hex: 0xF4F1EE))
-    static let rbStage = dynamic(light: NSColor(hex: 0xE9E6E3), dark: NSColor(hex: 0x111010))
-    static let rbPanel = dynamic(light: NSColor(hex: 0xFBFAF9), dark: NSColor(hex: 0x1E1D1C))
-    static let rbRaised = dynamic(light: NSColor(hex: 0xFFFFFF), dark: NSColor(hex: 0x2A2928))
-    static let rbField = dynamic(light: NSColor(hex: 0x000000, alpha: 0.045), dark: NSColor(hex: 0xFFFFFF, alpha: 0.07))
-    static let rbSuccess = dynamic(light: NSColor(hex: 0x2E9B5F), dark: NSColor(hex: 0x4CC983))
-    static let rbWarning = dynamic(light: NSColor(hex: 0xC27A00), dark: NSColor(hex: 0xF2B544))
+    static let rbAccent = NSColor(hex: 0xFF5A36)
+    static let rbAccentPressed = NSColor(hex: 0xE5432B)
+    static let rbAccentText = dynamic(light: NSColor(hex: 0xC93A1E), dark: NSColor(hex: 0xFF6E4D))
+    static let rbRecording = rbAccent
+    static let rbInkFixed = NSColor(hex: 0x1A1512)
+    static let rbPaper = NSColor(hex: 0xFFF4E8)
+    static let rbInk = dynamic(light: NSColor(hex: 0x1A1512), dark: NSColor(hex: 0xFFF4E8))
+    static let rbNeutralMark = dynamic(light: NSColor(hex: 0x6E645C), dark: NSColor(hex: 0xA69C93))
+    static let rbStage = dynamic(light: NSColor(hex: 0xECE7E2), dark: NSColor(hex: 0x110D0B))
+    static let rbPanel = dynamic(light: NSColor(hex: 0xFCFAF8), dark: NSColor(hex: 0x1F1A17))
+    static let rbRaised = dynamic(light: NSColor(hex: 0xFFFFFF), dark: NSColor(hex: 0x2A2320))
+    static let rbField = dynamic(light: NSColor(hex: 0x1A1512, alpha: 0.05), dark: NSColor(hex: 0xFFF4E8, alpha: 0.07))
+    static let rbSuccess = dynamic(light: NSColor(hex: 0x2E8A57), dark: NSColor(hex: 0x56C68A))
+    static let rbWarning = dynamic(light: NSColor(hex: 0xA86A00), dark: NSColor(hex: 0xF2B544))
 }
 
 /// Set by the snapshot renderer: effects the compositor draws (Liquid Glass) are swapped for

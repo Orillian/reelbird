@@ -232,7 +232,7 @@ struct AreaBar: View {
                 .foregroundStyle(.white.opacity(0.8))
             Button(action: onRecord) {
                 HStack(spacing: 6) {
-                    Circle().fill(.white).frame(width: 7, height: 7)
+                    Circle().fill(Theme.onAccent).frame(width: 7, height: 7)
                     Text("Record")
                 }
             }

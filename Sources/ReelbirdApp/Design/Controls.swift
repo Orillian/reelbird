@@ -44,15 +44,13 @@ struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: large ? 14 : 13, weight: .semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(Theme.onAccent.opacity(isEnabled ? 1 : 0.6))
             .padding(.horizontal, large ? 18 : 12)
             .frame(height: large ? 36 : 28)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                    .fill(tint.opacity(isEnabled ? 1 : 0.4))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                        .fill(.black.opacity(configuration.isPressed ? 0.12 : 0)))
-                    .shadow(color: tint.opacity(isEnabled ? 0.28 : 0), radius: 6, y: 2)
+                    .fill(configuration.isPressed ? Color(nsColor: .rbAccentPressed) : tint)
+                    .opacity(isEnabled ? 1 : 0.4)
             )
             .contentShape(Rectangle())
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
@@ -89,7 +87,7 @@ struct IconButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: size * 0.5, weight: .medium))
             .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(active ? Theme.accent : Color.primary.opacity(0.82))
+            .foregroundStyle(active ? Theme.accentText : Color.primary.opacity(0.82))
             .frame(width: size, height: size)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous)
@@ -143,7 +141,7 @@ struct LevelMeter: View {
     private func color(for i: Int) -> Color {
         let f = Double(i) / Double(segments)
         if f > 0.86 { return Theme.recording }
-        if f > 0.68 { return Theme.amber }
+        if f > 0.68 { return Theme.warning }
         return Theme.success
     }
 }

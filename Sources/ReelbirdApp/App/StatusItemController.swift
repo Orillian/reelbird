@@ -11,7 +11,7 @@ import ReelbirdCore
     init(app: AppModel) {
         self.app = app
         super.init()
-        item.button?.image = .birdGlyph()
+        item.button?.image = BrandImage.menuBar(recording: false)
         item.button?.imagePosition = .imageLeading
         item.button?.toolTip = "Reelbird"
         menu.delegate = self
@@ -38,16 +38,15 @@ import ReelbirdCore
         let rec = app.recording
         switch rec.phase {
         case .recording, .paused:
-            button.image = nil
-            let dotColor: NSColor = rec.phase == .paused ? .secondaryLabelColor : .rbRecording
-            let s = NSMutableAttributedString(string: rec.phase == .paused ? "❚❚ " : "● ",
-                                              attributes: [.foregroundColor: dotColor, .font: NSFont.systemFont(ofSize: rec.phase == .paused ? 9 : 11)])
-            s.append(NSAttributedString(string: TimeFormat.clock(rec.status.elapsed),
-                                        attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 12.5, weight: .medium)]))
-            button.attributedTitle = s
+            button.image = rec.phase == .paused
+                ? NSImage(systemSymbolName: "pause.circle", accessibilityDescription: "Reelbird, paused")
+                : BrandImage.menuBar(recording: true)
+            button.attributedTitle = NSAttributedString(
+                string: " " + TimeFormat.clock(rec.status.elapsed),
+                attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 12.5, weight: .medium)])
         default:
             button.title = ""
-            button.image = .birdGlyph()
+            button.image = BrandImage.menuBar(recording: false)
         }
     }
 

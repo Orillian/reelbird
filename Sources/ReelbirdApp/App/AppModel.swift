@@ -6,8 +6,10 @@ import ReelbirdCore
 @MainActor @Observable final class AppModel {
     let services: Services
     let prefs: Preferences
-    @ObservationIgnored private(set) var windows: WindowManager!
-    @ObservationIgnored private(set) var recording: RecordingController!
+    @ObservationIgnored private var _windows: WindowManager?
+    @ObservationIgnored private var _recording: RecordingController?
+    var windows: WindowManager { _windows! }
+    var recording: RecordingController { _recording! }
     let library: LibraryStore
 
     /// Whether a share destination with a secret is configured.
@@ -17,8 +19,8 @@ import ReelbirdCore
         self.services = services
         self.prefs = prefs
         self.library = LibraryStore(services: services, prefs: prefs)
-        self.windows = WindowManager(app: self)
-        self.recording = RecordingController(app: self)
+        self._windows = WindowManager(app: self)
+        self._recording = RecordingController(app: self)
         refreshShareState()
     }
 
