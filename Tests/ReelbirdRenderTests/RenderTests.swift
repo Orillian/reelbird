@@ -58,6 +58,25 @@ private func render(_ bundle: ProjectBundle, _ edit: EditDocument, at t: Double,
     #expect(br.b > 240 && br.r < 15)
 }
 
+@Test func imageBackgroundAspectFills() async throws {
+    let bundle = try await Synthetic.makeBundle()
+    defer { try? FileManager.default.removeItem(at: bundle.url) }
+    // A 100×100 image: left half green, right half magenta. Aspect-fill on 16:9 crops top and bottom.
+    let ctx = CGContext(data: nil, width: 100, height: 100, bitsPerComponent: 8, bytesPerRow: 400,
+                        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    ctx.setFillColor(CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: 50, height: 100))
+    ctx.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 1, alpha: 1)); ctx.fill(CGRect(x: 50, y: 0, width: 50, height: 100))
+    let dest = CGImageDestinationCreateWithURL(bundle.url.appendingPathComponent("bg.png") as CFURL, "public.png" as CFString, 1, nil)!
+    CGImageDestinationAddImage(dest, ctx.makeImage()!, nil)
+    CGImageDestinationFinalize(dest)
+    var e = plainEdit(try bundle.readManifest())
+    e.background.kind = .image
+    e.background.imagePath = "bg.png"
+    let px = try await render(bundle, e, at: 1)
+    #expect(px.near(5, 5, (0, 255, 0), tol: 6), "left \(px[5, 5])")
+    #expect(px.near(954, 534, (255, 0, 255), tol: 6), "right \(px[954, 534])")
+}
+
 @Test func cursorDrawnAtExpectedPosition() async throws {
     var o = Synthetic.Options()
     o.redCursor = true

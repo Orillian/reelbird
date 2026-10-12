@@ -142,7 +142,7 @@ fragment float4 composite_fragment(VOut in [[stage_in]],
                 acc += sampleScreen(screen0, screen1, lin, mix(uv, uvPrev, k), u).rgb;
             }
             sc = acc / float(taps);
-        } else if (u.screenInfo.w > 1.3) {
+        } else if (u.screenInfo.w / s > 1.3) {
             // Downscaling: 4 rotated-grid taps so text does not shimmer.
             float2 d = u.screenInfo.w / u.screenInfo.xy / s;
             sc = (sampleScreen(screen0, screen1, lin, uv + d * float2(-0.125, -0.375), u).rgb +

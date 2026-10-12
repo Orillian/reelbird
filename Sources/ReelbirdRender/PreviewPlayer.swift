@@ -19,7 +19,7 @@ public final class PreviewPlayer: @unchecked Sendable {
     /// Called once media is loaded and the first frame can show, or with the error that stopped it.
     public var onReady: (@MainActor ((any Error)?) -> Void)?
 
-    private let events: [InputEvent]
+    private var events: [InputEvent] = []
     private let state: SharedState
     private let loop: RenderLoop
     private var sources: MediaSources?
@@ -37,8 +37,8 @@ public final class PreviewPlayer: @unchecked Sendable {
     public init(bundle: ProjectBundle) throws {
         self.bundle = bundle
         manifest = try bundle.readManifest()
-        events = try bundle.readEvents()
-        let plan = try RenderPlan(bundle: bundle, manifest: manifest, edit: try bundle.readEdit(), events: events, reusing: nil)
+        // The plan starts without events (instant); the event log loads off the main thread below.
+        let plan = try RenderPlan(bundle: bundle, manifest: manifest, edit: try bundle.readEdit(), events: [], reusing: nil)
         let ctx = try MetalContext.shared()
         state = SharedState(plan: plan)
         loop = try RenderLoop(context: ctx, state: state)
@@ -46,7 +46,13 @@ public final class PreviewPlayer: @unchecked Sendable {
         loadTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let s = try await MediaSources.load(bundle: bundle, manifest: self.manifest)
+                let manifest = self.manifest
+                async let loadedEvents = Task.detached(priority: .userInitiated) { try bundle.readEvents() }.value
+                let s = try await MediaSources.load(bundle: bundle, manifest: manifest)
+                let ev = try await loadedEvents
+                self.events = ev
+                let current = self.state.plan
+                self.state.plan = try RenderPlan(bundle: bundle, manifest: manifest, edit: current.edit, events: ev, reusing: nil)
                 guard s.screen != nil else { throw RenderError.missingScreenTrack }
                 self.sources = s
                 try self.rebuildItems(keepingSourceTime: nil)

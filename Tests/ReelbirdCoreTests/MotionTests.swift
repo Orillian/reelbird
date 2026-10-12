@@ -90,6 +90,19 @@ private func noisyLine(seconds: Double, rate: Double = 120, seed: UInt64 = 7) ->
     #expect(CursorPath(events: [], smoothing: 0.5).position(at: 1) == nil)
 }
 
+@Test func eventLogReadSpeed() throws {
+    guard ProcessInfo.processInfo.environment["RB_BENCH"] != nil else { return }
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("rb-ev-\(UUID().uuidString).jsonl")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let w = try EventLogWriter(url: url)
+    for e in noisyLine(seconds: 3600, rate: 120) { w.append(e) }
+    w.close()
+    let clock = ContinuousClock()
+    var n = 0
+    let d = try clock.measure { n = try EventLog.read(url).count }
+    print("EventLog.read 1 h @120 Hz (\(n) lines): \(d)")
+}
+
 @Test func cursorOneHourBuildsFast() {
     let ev = noisyLine(seconds: 3600, rate: 120)
     let clock = ContinuousClock()
