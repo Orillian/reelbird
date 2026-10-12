@@ -36,10 +36,6 @@ import ReelbirdCore
 
     func showPicker() {
         guard phase == .idle || phase == .picking else { return }
-        if app.services.permissions.status(.screen) != .granted && !app.services.isMock {
-            app.showOnboarding()
-            return
-        }
         phase = .picking
         picker.shareAvailable = app.shareConfigured
         picker.load()
@@ -53,6 +49,7 @@ import ReelbirdCore
     func closePicker() {
         pickerPanel?.dismiss()
         picker.stopMeters()
+        picker.cancelThumbnails()
         if phase == .picking { phase = .idle; cameraBubble.hide() }
     }
 
@@ -66,7 +63,7 @@ import ReelbirdCore
     }
 
     func startFromPicker() {
-        guard phase == .picking else { return }
+        guard phase == .picking, picker.canRecord else { return }
         if app.prefs.sourceTab == .area && picker.area == nil {
             beginAreaSelection()
             return

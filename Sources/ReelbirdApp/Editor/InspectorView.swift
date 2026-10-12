@@ -1,4 +1,5 @@
 import AppKit
+import ReelbirdAI
 import ReelbirdCore
 import SwiftUI
 

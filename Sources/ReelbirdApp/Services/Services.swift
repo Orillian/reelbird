@@ -1,10 +1,13 @@
 import AppKit
 import Foundation
+import ReelbirdAI
+import ReelbirdCapture
 import ReelbirdCore
+import ReelbirdRender
 
 // The app talks to the engine modules only through these protocols. Each one mirrors a module's
 // public contract (REELBIRD-BRIEF.md) one to one, turning its static API into instance methods
-// so mocks can stand in. A live adapter is a few lines per method: forward to the module.
+// so mocks can stand in for snapshots and `--mock`. The live adapters are in Services/Live.
 
 /// `ReelbirdCapture.Permissions`
 protocol PermissionsService: Sendable {
@@ -16,6 +19,8 @@ protocol PermissionsService: Sendable {
 /// `ReelbirdCapture.CaptureSources` and `ReelbirdCapture.Devices`
 protocol CaptureSourceService: Sendable {
     func list() async throws -> [AvailableSource]
+    /// A preview of `source`, or `nil` when it can't be captured.
+    func thumbnail(for source: AvailableSource, maxPixelWidth: Int) async -> CGImage?
     func microphones() -> [MediaDevice]
     func cameras() -> [MediaDevice]
 }
@@ -46,6 +51,8 @@ protocol RecorderService: Sendable {
     var currentTime: Double { get }
     var duration: Double { get }
     var onTimeChange: (@MainActor (Double) -> Void)? { get set }
+    /// Called once media has loaded (`nil`) or failed to load.
+    var onReady: (@MainActor ((any Error)?) -> Void)? { get set }
 }
 
 /// `ReelbirdRender` (PreviewPlayer, Exporter, Thumbnailer) and `ReelbirdCore.Motion.AutoZoomPlanner`.
@@ -79,7 +86,7 @@ protocol AIService: Sendable {
 }
 
 /// Live input monitoring for the source picker (microphone meter, camera preview). App-owned:
-/// the brief's `CameraPreview` covers the camera; the meter is a small AVCaptureSession here.
+/// `ReelbirdCapture.CameraPreview` draws the camera; the meter is a small AVCaptureSession.
 @MainActor protocol InputPreviewService: AnyObject {
     /// Starts metering `deviceID` ("default" = system default). Levels 0...1 arrive on the main actor.
     func startMicrophoneMeter(deviceID: String, onLevel: @escaping @MainActor (Double) -> Void)
@@ -97,7 +104,7 @@ protocol AIService: Sendable {
     let share: any ShareServiceProtocol
     let ai: any AIService
     let inputs: any InputPreviewService
-    /// True when everything is simulated (no engine modules wired yet, or `--mock`).
+    /// True when the engine is simulated (`--mock`, snapshots, `--selftest`).
     let isMock: Bool
 
     init(permissions: any PermissionsService, capture: any CaptureSourceService, recorder: any RecorderService,
@@ -107,10 +114,9 @@ protocol AIService: Sendable {
         self.render = render; self.share = share; self.ai = ai; self.inputs = inputs; self.isMock = isMock
     }
 
-    /// Simulated engine with real system permission checks. INTEGRATION: add `static func live()`
-    /// that wraps ReelbirdCapture/Render/Share/AI and switch `AppDelegate` to it.
+    /// Simulated engine with real system permission checks (`--mock`, snapshots, `--selftest`).
     static func mock(permissions: (any PermissionsService)? = nil) -> Services {
-        Services(permissions: permissions ?? SystemPermissions(),
+        Services(permissions: permissions ?? LivePermissions(),
                  capture: MockCaptureSources(),
                  recorder: MockRecorder(),
                  render: MockRender(),

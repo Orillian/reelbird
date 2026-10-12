@@ -72,17 +72,26 @@ struct LibraryItem: Identifiable, Equatable {
         }
     }
 
-    /// Rebuilds recordings the app was writing when it last quit or crashed.
+    /// Rebuilds recordings the app was writing when it last quit or crashed. Consolidating segments
+    /// can take a moment for long takes, so it runs off the main thread.
     func recoverInterruptedRecordings() {
-        var any = false
-        for b in prefs.library.list() {
-            guard let m = try? b.readManifest(), m.status == .recording else { continue }
-            if (try? services.recorder.recoverIfNeeded(b)) == true { any = true }
-        }
-        reload()
-        if any {
-            Toast.show(title: "Recording recovered", detail: "Reelbird rebuilt a recording that was cut short. It's in your Library.",
-                       symbol: "arrow.clockwise.circle.fill", duration: 6)
+        let recorder = services.recorder
+        let bundles = prefs.library.list()
+        Task {
+            let recovered = await Task.detached(priority: .userInitiated) { () -> Int in
+                var count = 0
+                for b in bundles {
+                    guard let m = try? b.readManifest(), m.status == .recording else { continue }
+                    if (try? recorder.recoverIfNeeded(b)) == true { count += 1 }
+                }
+                return count
+            }.value
+            if recovered > 0 {
+                reload()
+                Toast.show(title: recovered == 1 ? "Recording recovered" : "\(recovered) recordings recovered",
+                           detail: "Reelbird rebuilt what was cut short when it last quit. It's in your Library.",
+                           symbol: "arrow.clockwise.circle.fill", duration: 6)
+            }
         }
     }
 

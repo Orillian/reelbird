@@ -1,4 +1,5 @@
 import AppKit
+import ReelbirdCapture
 import ReelbirdCore
 import SwiftUI
 
@@ -54,7 +55,9 @@ struct SourcePickerView: View {
     // MARK: Sources
 
     @ViewBuilder private var sourceArea: some View {
-        if let error = model.loadError {
+        if model.needsScreenPermission {
+            screenPermission
+        } else if let error = model.loadError {
             VStack(spacing: Theme.Space.s) {
                 Image(systemName: "eye.slash").font(.system(size: 22)).foregroundStyle(.secondary)
                 Text(error).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -70,6 +73,35 @@ struct SourcePickerView: View {
             case .area: areaTab
             }
         }
+    }
+
+    /// Shown instead of the sources until Screen Recording is allowed.
+    private var screenPermission: some View {
+        VStack(spacing: Theme.Space.s) {
+            Image(systemName: "rectangle.dashed.badge.record")
+                .font(.system(size: 26, weight: .light))
+                .foregroundStyle(Theme.accentText)
+                .padding(.bottom, 2)
+            Text("Allow screen recording")
+                .font(.system(size: 14, weight: .semibold))
+            Text("macOS asks before any app can record your screen. Turn on Reelbird in System Settings, then reopen Reelbird.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 330)
+            HStack(spacing: Theme.Space.m) {
+                Button("Open System Settings") { model.requestScreenPermission() }
+                    .buttonStyle(SecondaryButtonStyle())
+                Button("Quit & Reopen") { model.relaunch() }
+                    .buttonStyle(.link)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.accentText)
+            }
+            .padding(.top, Theme.Space.xs)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
     }
 
     private var displays: some View {
@@ -353,7 +385,7 @@ struct DeviceMenu: View {
                 }
             }
         } label: {
-            Text(devices.first(where: { $0.id == selection })?.name ?? devices.first?.name ?? "None")
+            Text(devices.first(where: { $0.id == selection })?.name ?? devices.first(where: \.isDefault)?.name ?? devices.first?.name ?? "None")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

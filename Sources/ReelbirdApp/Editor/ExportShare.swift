@@ -1,5 +1,6 @@
 import AppKit
 import ReelbirdCore
+import ReelbirdRender
 import SwiftUI
 
 // MARK: Export sheet

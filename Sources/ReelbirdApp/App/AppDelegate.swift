@@ -7,8 +7,9 @@ import ReelbirdCore
     private var pendingOpen: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let mock = CommandLine.arguments.contains("--mock") || true // INTEGRATION: `Services.live()` when modules land
-        let services = mock ? Services.mock() : Services.mock()
+        // `--mock` simulates the engine; `--synthetic` records generated frames instead of the screen.
+        let args = CommandLine.arguments
+        let services = args.contains("--mock") ? Services.mock() : Services.live(synthetic: args.contains("--synthetic"))
         model = AppModel(services: services, prefs: Preferences())
         NSApp.mainMenu = MainMenu.build(target: self, prefs: model.prefs)
         statusItem = StatusItemController(app: model)

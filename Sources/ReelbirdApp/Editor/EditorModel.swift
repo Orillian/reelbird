@@ -1,6 +1,8 @@
 import AppKit
 import Observation
+import ReelbirdAI
 import ReelbirdCore
+import ReelbirdRender
 
 enum InspectorSection: String, CaseIterable, Identifiable {
     case background, cursor, zoom, camera, canvas, audio, captions
@@ -95,9 +97,18 @@ enum CaptionState: Equatable {
         self.manifest = manifest
         self.events = events
         self.edit = edit
-        if let file = edit.captions.file, FileManager.default.fileExists(atPath: bundle.resolve(file).path) {
-            transcript = MockData.transcript // INTEGRATION: parse captions.vtt or keep transcript.json from ReelbirdAI
-        }
+        transcript = Self.loadTranscript(bundle: bundle, edit: edit)
+    }
+
+    /// The word-timed `transcript.json` when present, else the cues of the edit's captions file.
+    static func loadTranscript(bundle: ProjectBundle, edit: EditDocument) -> Transcript? {
+        if let data = try? Data(contentsOf: bundle.transcriptURL),
+           let t = try? JSONCoding.decoder.decode(Transcript.self, from: data) { return t }
+        guard let file = edit.captions.file,
+              let text = try? String(contentsOf: bundle.resolve(file), encoding: .utf8) else { return nil }
+        let cues = WebVTT.parse(text)
+        return Transcript(segments: cues.map { Transcript.Segment(range: $0.range, text: $0.text.replacingOccurrences(of: "\n", with: " ")) },
+                          locale: "")
     }
 
     /// Creates the preview player and loads the timeline media. Call once the window exists.
@@ -106,6 +117,9 @@ enum CaptionState: Equatable {
         do {
             let p = try services.render.makePreviewPlayer(bundle: bundle)
             p.onTimeChange = { [weak self] output in self?.playerTimeChanged(output) }
+            p.onReady = { [weak self] error in
+                if let error { self?.saveError = "The preview couldn't load: \(error.localizedDescription)" }
+            }
             p.update(edit: edit)
             player = p
         } catch {
@@ -115,13 +129,11 @@ enum CaptionState: Equatable {
     }
 
     func loadTimelineMedia() {
-        let micURL = bundle.mediaURL(for: .microphone, in: manifest)
+        let audioURL = bundle.mediaURL(for: .microphone, in: manifest) ?? bundle.mediaURL(for: .systemAudio, in: manifest)
         let duration = manifest.duration
         Task {
-            if let micURL, let w = await WaveformLoader.load(url: micURL, buckets: 600) {
+            if let audioURL, let w = await WaveformLoader.load(url: audioURL, buckets: 600) {
                 waveform = w
-            } else {
-                waveform = MockArt.waveform(count: 600, seed: abs(manifest.id.hashValue % 97))
             }
             var frames: [CGImage] = []
             for i in 0..<12 {
@@ -303,9 +315,14 @@ enum CaptionState: Equatable {
     }
 
     func removeSilences() {
-        guard let mic = bundle.mediaURL(for: .microphone, in: manifest) else { return }
-        guard let ranges = try? services.ai.silentRanges(audio: mic), !ranges.isEmpty else { return }
-        change("Remove Silences") { e in e.cuts = Self.merged(e.cuts + ranges) }
+        guard let mic = bundle.mediaURL(for: .microphone, in: manifest),
+              let silences = try? services.ai.silentRanges(audio: mic) else { return }
+        let offset = manifest.track(.microphone)?.startTime ?? 0
+        let shifted = silences.map { TimeRange(start: $0.start + offset, end: $0.end + offset) }
+        // Keep a little air next to speech, like `reelbird silences --apply`.
+        let cuts = SilenceDetector.trimCuts(silences: shifted, duration: duration)
+        guard !cuts.isEmpty else { return }
+        change("Remove Silences") { e in e.cuts = Self.merged(e.cuts + cuts) }
     }
 
     static func merged(_ ranges: [TimeRange]) -> [TimeRange] {
@@ -493,17 +510,21 @@ enum CaptionState: Equatable {
     var transcriberAvailable: Bool { services.ai.transcriberAvailable }
 
     func generateCaptions() {
-        guard let mic = bundle.mediaURL(for: .microphone, in: manifest) ?? bundle.mediaURL(for: .systemAudio, in: manifest) else {
+        guard let kind = [TrackKind.microphone, .systemAudio].first(where: { bundle.mediaURL(for: $0, in: manifest) != nil }),
+              let audio = bundle.mediaURL(for: kind, in: manifest) else {
             captionState = .failed("This recording has no audio to caption.")
             return
         }
         captionState = .working
         let services = services, bundle = bundle
+        let offset = manifest.track(kind)?.startTime ?? 0
         Task {
             do {
-                let t = try await services.ai.transcribe(audio: mic, locale: nil)
+                // Transcript times are relative to the audio file; the editor works on the recording's timeline.
+                let t = try await services.ai.transcribe(audio: audio, locale: nil).shifted(by: offset)
                 let vtt = services.ai.webVTT(t)
                 try vtt.write(to: bundle.captionsURL, atomically: true, encoding: .utf8)
+                try JSONCoding.writeAtomically(t, to: bundle.transcriptURL)
                 transcript = t
                 captionState = .idle
                 change("Generate Captions") { $0.captions.file = "captions.vtt" }

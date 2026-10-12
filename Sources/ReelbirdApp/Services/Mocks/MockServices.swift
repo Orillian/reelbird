@@ -1,9 +1,12 @@
 import AppKit
 import Foundation
+import ReelbirdAI
+import ReelbirdCapture
 import ReelbirdCore
+import ReelbirdRender
 
-// Simulated engine used until the real modules are wired in. Behaviour is deliberately
-// realistic (timing, progress, warnings) so the UI can be exercised end to end.
+// Simulated engine for snapshots, `--selftest` and `--mock`. Behaviour is deliberately
+// realistic (timing, progress, warnings) so the UI can be exercised without permissions.
 
 struct MockCaptureSources: CaptureSourceService {
     func list() async throws -> [AvailableSource] {
@@ -16,32 +19,34 @@ struct MockCaptureSources: CaptureSourceService {
             withThumbnails ? MockArt.image(width: w, height: h, variant: v, dark: dark) : nil
         }
         return [
-            AvailableSource(id: "display-1", kind: .display, title: "Built-in Retina Display",
-                            pixelSize: PixelSize(width: 3456, height: 2234),
+            AvailableSource(id: "display-1", kind: .display, title: "Built-in Retina Display", appName: nil,
+                            pixelSize: PixelSize(width: 3456, height: 2234), frame: CGRect(x: 0, y: 0, width: 1728, height: 1117),
                             source: .display(id: 1, name: "Built-in Retina Display"), thumbnail: thumb(480, 310, .docs)),
-            AvailableSource(id: "display-2", kind: .display, title: "Studio Display",
-                            pixelSize: PixelSize(width: 5120, height: 2880),
+            AvailableSource(id: "display-2", kind: .display, title: "Studio Display", appName: nil,
+                            pixelSize: PixelSize(width: 5120, height: 2880), frame: CGRect(x: 0, y: 0, width: 2560, height: 1440),
                             source: .display(id: 2, name: "Studio Display"), thumbnail: thumb(480, 270, .code, dark: true)),
             AvailableSource(id: "win-101", kind: .window, title: "Pull request #482 — Checkout flow", appName: "Safari",
-                            pixelSize: PixelSize(width: 2880, height: 1800),
+                            pixelSize: PixelSize(width: 2880, height: 1800), frame: CGRect(x: 80, y: 60, width: 1440, height: 900),
                             source: .window(id: 101, app: "Safari", title: "Pull request #482"), thumbnail: thumb(320, 200, .browser)),
             AvailableSource(id: "win-102", kind: .window, title: "CheckoutView.swift", appName: "Xcode",
-                            pixelSize: PixelSize(width: 3024, height: 1890),
+                            pixelSize: PixelSize(width: 3024, height: 1890), frame: CGRect(x: 80, y: 60, width: 1512, height: 945),
                             source: .window(id: 102, app: "Xcode", title: "CheckoutView.swift"), thumbnail: thumb(320, 200, .code, dark: true)),
             AvailableSource(id: "win-103", kind: .window, title: "Onboarding v3", appName: "Figma",
-                            pixelSize: PixelSize(width: 2560, height: 1600),
+                            pixelSize: PixelSize(width: 2560, height: 1600), frame: CGRect(x: 80, y: 60, width: 1280, height: 800),
                             source: .window(id: 103, app: "Figma", title: "Onboarding v3"), thumbnail: thumb(320, 200, .design)),
             AvailableSource(id: "win-104", kind: .window, title: "Q4 launch plan", appName: "Notion",
-                            pixelSize: PixelSize(width: 2400, height: 1560),
+                            pixelSize: PixelSize(width: 2400, height: 1560), frame: CGRect(x: 80, y: 60, width: 1200, height: 780),
                             source: .window(id: 104, app: "Notion", title: "Q4 launch plan"), thumbnail: thumb(320, 208, .docs)),
             AvailableSource(id: "win-105", kind: .window, title: "#design-review", appName: "Slack",
-                            pixelSize: PixelSize(width: 2200, height: 1500),
+                            pixelSize: PixelSize(width: 2200, height: 1500), frame: CGRect(x: 80, y: 60, width: 1100, height: 750),
                             source: .window(id: 105, app: "Slack", title: "#design-review"), thumbnail: thumb(320, 218, .chat, dark: true)),
             AvailableSource(id: "win-106", kind: .window, title: "Terminal — zsh", appName: "Terminal",
-                            pixelSize: PixelSize(width: 1800, height: 1100),
+                            pixelSize: PixelSize(width: 1800, height: 1100), frame: CGRect(x: 80, y: 60, width: 900, height: 550),
                             source: .window(id: 106, app: "Terminal", title: "zsh"), thumbnail: thumb(320, 196, .code, dark: true)),
         ]
     }
+
+    func thumbnail(for source: AvailableSource, maxPixelWidth: Int) async -> CGImage? { source.thumbnail }
 
     func microphones() -> [MediaDevice] {
         [MediaDevice(id: "default", name: "MacBook Pro Microphone", isDefault: true),
@@ -257,7 +262,7 @@ struct MockRender: RenderService {
     }
 
     func autoZoomPlan(events: [InputEvent], duration: Double, intensity: Double) -> [ZoomRegion] {
-        MockData.autoZoom(events: events, duration: duration, intensity: intensity)
+        AutoZoomPlanner.plan(events: events, duration: duration, intensity: intensity)
     }
 }
 
@@ -333,12 +338,7 @@ struct MockAI: AIService {
         try await Task.sleep(for: .milliseconds(1400))
         return MockData.transcript
     }
-    func webVTT(_ t: Transcript) -> String {
-        func ts(_ s: Double) -> String {
-            String(format: "%02d:%02d:%02d.%03d", Int(s) / 3600, Int(s) / 60 % 60, Int(s) % 60, Int((s - floor(s)) * 1000))
-        }
-        return "WEBVTT\n\n" + t.segments.map { "\(ts($0.range.start)) --> \(ts($0.range.end))\n\($0.text)\n" }.joined(separator: "\n")
-    }
+    func webVTT(_ t: Transcript) -> String { Captions.webVTT(t) }
     func silentRanges(audio: URL) throws -> [TimeRange] { [TimeRange(start: 9, end: 15)] }
 }
 

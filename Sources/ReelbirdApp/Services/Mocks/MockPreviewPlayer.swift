@@ -13,6 +13,7 @@ import ReelbirdCore
     private var lastTick: CFTimeInterval = 0
     private(set) var currentTime: Double = 0
     var onTimeChange: (@MainActor (Double) -> Void)?
+    var onReady: (@MainActor ((any Error)?) -> Void)?
     let sourceDuration: Double
 
     init(duration: Double, events: [InputEvent], sourceSize: PixelSize, hasCamera: Bool) {

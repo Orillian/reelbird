@@ -1,7 +1,8 @@
 import AppKit
 import Foundation
 
-// Entry point. `--snapshot <dir> [filter]` renders the UI to PNGs (design review) and exits.
+// Entry point. `--snapshot <dir> [filter]` renders the UI to PNGs (design review) and exits;
+// `--selftest` / `--selftest-live` drive the app's models against mock / real services and exit.
 let args = CommandLine.arguments
 if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
     let dir = URL(fileURLWithPath: args[i + 1], isDirectory: true)
@@ -13,10 +14,11 @@ if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
     exit(0)
 }
 
-if args.contains("--selftest") {
+if args.contains("--selftest") || args.contains("--selftest-live") {
+    let live = args.contains("--selftest-live")
     MainActor.assumeIsolated {
         _ = NSApplication.shared
-        Task { @MainActor in exit(await SelfTest.run() ? 0 : 1) }
+        Task { @MainActor in exit(await (live ? LiveSelfTest.run() : SelfTest.run()) ? 0 : 1) }
     }
     RunLoop.main.run()
 }

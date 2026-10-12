@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import ReelbirdCapture
 import ReelbirdCore
 
 struct AreaSelection: Equatable {
@@ -13,6 +14,8 @@ struct AreaSelection: Equatable {
     private(set) var sources: [AvailableSource] = []
     private(set) var loading = false
     private(set) var loadError: String?
+    /// Screen Recording isn't allowed yet: the picker asks for it instead of listing sources.
+    private(set) var needsScreenPermission = false
     private(set) var microphones: [MediaDevice] = []
     private(set) var cameras: [MediaDevice] = []
     private(set) var micLevel: Double = 0
@@ -24,11 +27,28 @@ struct AreaSelection: Equatable {
 
     @ObservationIgnored private let services: Services
     @ObservationIgnored private let prefs: Preferences
+    @ObservationIgnored private var thumbnailTask: Task<Void, Never>?
 
     init(services: Services, prefs: Preferences) {
         self.services = services
         self.prefs = prefs
-        if let a = prefs.lastArea { area = AreaSelection(rect: a, displayID: 0) }
+        if let a = prefs.lastArea { area = AreaSelection(rect: a, displayID: Self.display(containing: a)) }
+        // Coming back from System Settings: pick up a permission that took effect without a relaunch.
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.needsScreenPermission, self.services.permissions.status(.screen) == .granted else { return }
+                self.load()
+            }
+        }
+    }
+
+    /// The display under the rectangle's centre (global points, top-left origin), else the main display.
+    static func display(containing rect: CGRect) -> UInt32 {
+        var id: CGDirectDisplayID = 0
+        var count: UInt32 = 0
+        let p = CGPoint(x: rect.midX, y: rect.midY)
+        guard CGGetDisplaysWithPoint(p, 1, &id, &count) == .success, count > 0 else { return CGMainDisplayID() }
+        return id
     }
 
     var displays: [AvailableSource] { sources.filter { $0.kind == .display } }
@@ -43,17 +63,65 @@ struct AreaSelection: Equatable {
         microphones = services.capture.microphones()
         cameras = services.capture.cameras()
         if prefs.cameraID == nil { prefs.cameraID = cameras.first(where: \.isDefault)?.id ?? cameras.first?.id }
-        loading = sources.isEmpty
         loadError = nil
+        needsScreenPermission = services.permissions.status(.screen) != .granted
+        guard !needsScreenPermission else { loading = false; return }
+        loading = sources.isEmpty
         Task {
             do {
                 let list = try await services.capture.list()
                 apply(list)
+                loadThumbnails()
+            } catch CaptureError.permissionDenied {
+                needsScreenPermission = true
             } catch {
-                loadError = "Reelbird can't see your screen yet. Allow Screen Recording in System Settings, then reopen Reelbird."
+                loadError = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
             }
             loading = false
         }
+    }
+
+    /// Asks for Screen Recording (the system prompt appears once) and opens System Settings when it
+    /// was already refused. macOS applies the grant after Reelbird is reopened.
+    func requestScreenPermission() {
+        Task {
+            if await services.permissions.request(.screen) == .granted {
+                load()
+            } else {
+                services.permissions.openSettings(for: .screen)
+            }
+        }
+    }
+
+    /// Screen Recording usually takes effect only after the app restarts.
+    func relaunch() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = ["-n", Bundle.main.bundleURL.path]
+        try? task.run()
+        NSApp.terminate(nil)
+    }
+
+    /// Fills in previews for sources listed without one, displays first.
+    private func loadThumbnails() {
+        thumbnailTask?.cancel()
+        let pending = sources.filter { $0.thumbnail == nil }.sorted { $0.kind == .display && $1.kind != .display }
+        guard !pending.isEmpty else { return }
+        let capture = services.capture
+        thumbnailTask = Task { [weak self] in
+            for source in pending {
+                guard !Task.isCancelled else { return }
+                let width = source.kind == .display ? 480 : 320
+                guard let img = await capture.thumbnail(for: source, maxPixelWidth: width) else { continue }
+                guard let self, let i = self.sources.firstIndex(where: { $0.id == source.id }) else { continue }
+                self.sources[i].thumbnail = img
+            }
+        }
+    }
+
+    func cancelThumbnails() {
+        thumbnailTask?.cancel()
+        thumbnailTask = nil
     }
 
     /// Sets sources directly (snapshots).
@@ -102,7 +170,8 @@ struct AreaSelection: Equatable {
     }
 
     var canRecord: Bool {
-        switch prefs.sourceTab {
+        if needsScreenPermission { return false }
+        return switch prefs.sourceTab {
         case .display: selectedDisplayID != nil
         case .window: selectedWindowID != nil
         case .area: true // opens the area selector when no area yet
