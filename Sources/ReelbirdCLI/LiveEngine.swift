@@ -1,3 +1,4 @@
+import AppKit
 @preconcurrency import AVFoundation
 import CoreGraphics
 import Foundation
@@ -17,14 +18,25 @@ struct LiveEngine: Engine {
     // MARK: Capture
 
     func sources() async throws -> [SourceInfo] {
-        let screens = try await screenSources()
         let main = String(CGMainDisplayID())
-        // Main display first, so `--display 1` is the main display.
-        let ordered = screens.filter { Self.numericID($0.source) == main } + screens.filter { Self.numericID($0.source) != main }
-        var out = ordered.map { s in
-            SourceInfo(kind: s.kind == .display ? .display : .window, id: Self.numericID(s.source), name: s.title,
-                       detail: s.appName, isDefault: s.kind == .display && Self.numericID(s.source) == main,
-                       width: s.pixelSize.width, height: s.pixelSize.height)
+        var out: [SourceInfo]
+        if Permissions.status(.screen) == .granted {
+            let screens = try await screenSources()
+            // Main display first, so `--display 1` is the main display.
+            let ordered = screens.filter { Self.numericID($0.source) == main } + screens.filter { Self.numericID($0.source) != main }
+            out = ordered.map { s in
+                SourceInfo(kind: s.kind == .display ? .display : .window, id: Self.numericID(s.source), name: s.title,
+                           detail: s.appName, isDefault: s.kind == .display && Self.numericID(s.source) == main,
+                           width: s.pixelSize.width, height: s.pixelSize.height)
+            }
+        } else {
+            // Without Screen Recording, windows can't be listed, but displays and devices still can.
+            out = try await displays().map { d in
+                SourceInfo(kind: .display, id: String(d.id), name: d.name,
+                           detail: "Allow Screen Recording to list windows", isDefault: String(d.id) == main,
+                           width: CGDisplayPixelsWide(d.id) * Int(Self.backingScale(d.id)),
+                           height: CGDisplayPixelsHigh(d.id) * Int(Self.backingScale(d.id)))
+            }
         }
         out += Devices.microphones().map { SourceInfo(kind: .microphone, id: $0.id, name: $0.name, isDefault: $0.isDefault) }
         out += Devices.cameras().map { SourceInfo(kind: .camera, id: $0.id, name: $0.name, isDefault: $0.isDefault) }
@@ -204,6 +216,11 @@ struct LiveEngine: Engine {
 
     // MARK: Helpers
 
+    private static func backingScale(_ id: CGDirectDisplayID) -> Double {
+        guard let mode = CGDisplayCopyDisplayMode(id), mode.width > 0 else { return 1 }
+        return Double(mode.pixelWidth) / Double(mode.width)
+    }
+
     /// Displays and windows. Checks the permission first: asking ScreenCaptureKit without it can
     /// put up a system prompt and wait for it, which would hang a script or an MCP client.
     private func screenSources() async throws -> [AvailableSource] {
@@ -224,7 +241,10 @@ struct LiveEngine: Engine {
         var ids = [CGDirectDisplayID](repeating: 0, count: 16)
         var count: UInt32 = 0
         guard CGGetActiveDisplayList(16, &ids, &count) == .success else { return [] }
-        let all = ids.prefix(Int(count)).map { (id: $0, name: "Display \($0)") }
+        let names: [CGDirectDisplayID: String] = Dictionary(uniqueKeysWithValues: NSScreen.screens.compactMap { screen in
+            (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber).map { ($0.uint32Value, screen.localizedName) }
+        })
+        let all = ids.prefix(Int(count)).map { (id: $0, name: names[$0] ?? "Display \($0)") }
         return all.filter { $0.id == main } + all.filter { $0.id != main }
     }
 
