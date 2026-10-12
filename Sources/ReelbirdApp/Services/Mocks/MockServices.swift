@@ -287,6 +287,7 @@ final class MockShare: ShareServiceProtocol, @unchecked Sendable {
     func makeLiveUploader(destination: ShareDestination, secret: String) -> any ShareSegmentSink {
         MockLiveUploader(destination: destination)
     }
+    func resumeIfNeeded(bundle: ProjectBundle) async throws -> ShareInfo? { nil }
     func testConnection(_ d: ShareDestination, secret: String) async throws {
         try await Task.sleep(for: .milliseconds(700))
         guard d.endpoint.hasPrefix("https://"), !d.bucket.isEmpty, !d.accessKeyID.isEmpty, !secret.isEmpty else {

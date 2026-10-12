@@ -179,7 +179,7 @@ enum CLI {
             defer { bar.finish() }
             return try await ops.share(project, polished: a.has("polished"), progress: { bar.update($0) })
         case "unshare": return try await ops.unshare(project)
-        case "recover": return try ops.recover(project)
+        case "recover": return try await ops.recover(project)
         case "config show": return ops.configShow()
         case "config share": return try await configShare(a, ops: ops)
         case "mcp":

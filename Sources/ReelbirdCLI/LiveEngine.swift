@@ -1,23 +1,23 @@
 @preconcurrency import AVFoundation
 import CoreGraphics
 import Foundation
+import ReelbirdAI
 import ReelbirdCapture
 import ReelbirdCore
 import ReelbirdRender
+import ReelbirdShare
 import Synchronization
 
-/// The real engine: ReelbirdCapture for sources and recording, ReelbirdRender for export.
-/// Sharing stays unavailable until ReelbirdShare is wired in.
+/// The real engine: ReelbirdCapture for sources and recording, ReelbirdRender for export,
+/// ReelbirdShare for links (settings from `REELBIRD_S3_*` or share.json + Keychain).
 struct LiveEngine: Engine {
     /// Speech (or any audio file) to play as the synthetic microphone (`record --synthetic --synthetic-mic FILE`).
     var syntheticMicrophone: URL?
-    private let fallback = UnavailableEngine()
 
     // MARK: Capture
 
     func sources() async throws -> [SourceInfo] {
-        let screens: [AvailableSource]
-        do { screens = try await CaptureSources.list() } catch { throw Self.cliError(error) }
+        let screens = try await screenSources()
         let main = String(CGMainDisplayID())
         // Main display first, so `--display 1` is the main display.
         let ordered = screens.filter { Self.numericID($0.source) == main } + screens.filter { Self.numericID($0.source) != main }
@@ -49,8 +49,7 @@ struct LiveEngine: Engine {
             }
             return .display(id: d.id, name: d.name)
         case .window(let key):
-            let screens: [AvailableSource]
-            do { screens = try await CaptureSources.list() } catch { throw Self.cliError(error) }
+            let screens = try await screenSources()
             guard let w = screens.first(where: { $0.kind == .window && Self.numericID($0.source) == key }) else {
                 throw CLIError("No on-screen window with ID \(key).", code: .noInput, hint: "Run `reelbird sources` for window IDs.")
             }
@@ -81,11 +80,12 @@ struct LiveEngine: Engine {
             throw CLIError("Screen Recording permission is off for this terminal.", code: .unavailable,
                            hint: "Turn it on in System Settings › Privacy & Security › Screen & System Audio Recording, then restart the terminal.")
         }
+        var sink: LiveShareUploader?
         if options.shareWhileRecording {
-            throw CLIError("Sharing while recording isn't available in this build yet.", code: .unavailable,
-                           hint: "Record without --share; share links arrive with the ReelbirdShare module.")
+            let (destination, secret) = try configuredShare()
+            sink = LiveShareUploader(destination: destination, secret: secret)
         }
-        let session = RecordingSession(options: options, bundleURL: bundleURL, frameSource: frameSource)
+        let session = RecordingSession(options: options, bundleURL: bundleURL, shareSink: sink, frameSource: frameSource)
         do { try await session.start() } catch {
             await session.discard()
             throw Self.cliError(error)
@@ -93,10 +93,20 @@ struct LiveEngine: Engine {
         return LiveRecording(session: session)
     }
 
-    func recover(bundle: ProjectBundle) throws -> Bool {
-        do { return try ProjectRecovery.recoverIfNeeded(bundle) } catch {
+    func recover(bundle: ProjectBundle) async throws -> Bool {
+        let recovered: Bool
+        do { recovered = try ProjectRecovery.recoverIfNeeded(bundle) } catch {
             throw CLIError("Couldn't recover \(Format.path(bundle.url)): \(error.localizedDescription)")
         }
+        // Finish a live share upload the crash cut short, so the link plays to the end.
+        var resumed = false
+        if let m = try? bundle.readManifest(), m.share != nil, m.track(.share) != nil,
+           let d = ShareSettings.load(), let secret = ShareSettings.secret() {
+            do { resumed = try await LiveShareUploader(destination: d, secret: secret).resumeIfNeeded(bundle: bundle) != nil } catch {
+                throw CLIError("Recovered the project, but finishing its share upload failed: \(Self.shareMessage(error))")
+            }
+        }
+        return recovered || resumed
     }
 
     // MARK: Render
@@ -122,27 +132,88 @@ struct LiveEngine: Engine {
         }
     }
 
-    // MARK: Share (pending ReelbirdShare)
+    // MARK: Share
 
+    /// Renders the current edit (1080p H.264), then publishes it with a poster and output-timeline
+    /// captions. Updates the existing link in place when the project already has one.
     func share(bundle: ProjectBundle, edit: EditDocument, polished: Bool,
                progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo {
-        try await fallback.share(bundle: bundle, edit: edit, polished: polished, progress: progress)
+        let (destination, secret) = try configuredShare()
+        let manifest = try bundle.readManifest()
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("reelbird-share-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let video = try await export(bundle: bundle, edit: edit,
+                                     request: ExportRequest(format: .mp4, height: 1080, destination: tmp.appendingPathComponent("video.mp4")),
+                                     progress: { progress($0 * 0.6) })
+        let poster = try? await Thumbnailer.poster(bundle: bundle, at: 0, maxWidth: 1280)
+        var captions: URL?
+        if edit.captions.file != nil, let transcript = Self.transcript(bundle: bundle) {
+            let url = tmp.appendingPathComponent("captions.vtt")
+            try Data(Captions.webVTT(transcript.remapped(to: EditTimeline(manifest: manifest, edit: edit))).utf8).write(to: url)
+            captions = url
+        }
+        do {
+            return try await ShareService.publish(bundle: bundle, video: video, poster: poster, captions: captions,
+                                                  destination: destination, secret: secret) { progress(0.6 + $0 * 0.4) }
+        } catch { throw CLIError("Sharing failed: \(Self.shareMessage(error))") }
     }
-    func unshare(bundle: ProjectBundle, info: ShareInfo) async throws { try await fallback.unshare(bundle: bundle, info: info) }
-    func shareDestination() -> ShareDestination? { nil }
-    func hasShareSecret() -> Bool { false }
+
+    func unshare(bundle: ProjectBundle, info: ShareInfo) async throws {
+        let (destination, secret) = try configuredShare()
+        do { try await ShareService.unpublish(info, destination: destination, secret: secret) } catch {
+            throw CLIError("Couldn't remove the share: \(Self.shareMessage(error))")
+        }
+    }
+
+    func shareDestination() -> ShareDestination? { ShareSettings.load() }
+    func hasShareSecret() -> Bool { ShareSettings.secret() != nil }
+
     func saveShareDestination(_ destination: ShareDestination, secret: String) throws {
-        try fallback.saveShareDestination(destination, secret: secret)
+        do { try ShareSettings.save(destination, secret: secret) } catch {
+            throw CLIError(Self.shareMessage(error), code: .usage)
+        }
     }
+
     func testShareConnection(_ destination: ShareDestination, secret: String) async throws {
-        try await fallback.testShareConnection(destination, secret: secret)
+        do { try await ShareService.testConnection(ShareSettings.normalized(destination), secret: secret) } catch {
+            throw CLIError("Connection test failed: \(Self.shareMessage(error))")
+        }
+    }
+
+    private func configuredShare() throws -> (ShareDestination, String) {
+        guard let d = ShareSettings.load() else {
+            throw CLIError("Sharing isn't set up.", code: .unavailable,
+                           hint: "Run `reelbird config share --endpoint URL --bucket NAME --access-key ID --public-base URL --secret-stdin`, or set REELBIRD_S3_* variables.")
+        }
+        guard let secret = ShareSettings.secret() else {
+            throw CLIError("The share secret access key is missing from the Keychain.", code: .unavailable,
+                           hint: "Run `reelbird config share … --secret-stdin` again, or set REELBIRD_S3_SECRET_ACCESS_KEY.")
+        }
+        return (d, secret)
+    }
+
+    private static func transcript(bundle: ProjectBundle) -> Transcript? {
+        guard let data = try? Data(contentsOf: bundle.transcriptURL) else { return nil }
+        return try? JSONCoding.decoder.decode(Transcript.self, from: data)
+    }
+
+    static func shareMessage(_ error: any Error) -> String {
+        (error as? ShareError)?.message ?? error.localizedDescription
     }
 
     // MARK: Helpers
 
+    /// Displays and windows. Checks the permission first: asking ScreenCaptureKit without it can
+    /// put up a system prompt and wait for it, which would hang a script or an MCP client.
+    private func screenSources() async throws -> [AvailableSource] {
+        guard Permissions.status(.screen) == .granted else { throw Self.cliError(CaptureError.permissionDenied(.screen)) }
+        do { return try await CaptureSources.list() } catch { throw Self.cliError(error) }
+    }
+
     private func displays() async throws -> [(id: CGDirectDisplayID, name: String)] {
         let main = CGMainDisplayID()
-        if let list = try? await CaptureSources.list() {
+        if Permissions.status(.screen) == .granted, let list = try? await CaptureSources.list() {
             let all: [(id: CGDirectDisplayID, name: String)] = list.compactMap { s in
                 if case .display(let id, let name) = s.source { return (id, name) }
                 return nil

@@ -3,6 +3,7 @@ import ReelbirdAI
 import ReelbirdCapture
 import ReelbirdCore
 import ReelbirdRender
+import ReelbirdShare
 
 // Thin adapters from the service protocols to the engine modules. No logic lives here beyond
 // forwarding; behaviour belongs in the modules so the CLI and the app share it.
@@ -93,28 +94,29 @@ struct LiveAI: AIService {
     func silentRanges(audio: URL) throws -> [TimeRange] { try SilenceDetector.silentRanges(audio: audio) }
 }
 
-/// Sharing until ReelbirdShare is wired in: nothing is configured and every upload explains why.
-struct PendingShare: ShareServiceProtocol {
-    struct Unavailable: LocalizedError {
-        var errorDescription: String? { "Sharing isn't available in this build yet." }
+/// `ReelbirdShare`: settings (JSON + Keychain), the live uploader and publish/unpublish.
+struct LiveShare: ShareServiceProtocol {
+    func loadDestination() -> ShareDestination? { ShareSettings.load() }
+    func saveDestination(_ d: ShareDestination, secret: String) throws { try ShareSettings.save(d, secret: secret) }
+    func secret() -> String? { ShareSettings.secret() }
+    func clearDestination() { ShareSettings.clear() }
+    func makeLiveUploader(destination: ShareDestination, secret: String) -> any ShareSegmentSink {
+        LiveShareUploader(destination: destination, secret: secret)
     }
-    func loadDestination() -> ShareDestination? { nil }
-    func saveDestination(_ d: ShareDestination, secret: String) throws { throw Unavailable() }
-    func secret() -> String? { nil }
-    func clearDestination() {}
-    func makeLiveUploader(destination: ShareDestination, secret: String) -> any ShareSegmentSink { NoShareSink() }
-    func testConnection(_ d: ShareDestination, secret: String) async throws { throw Unavailable() }
+    func resumeIfNeeded(bundle: ProjectBundle) async throws -> ShareInfo? {
+        guard let d = ShareSettings.load(), let secret = ShareSettings.secret() else { return nil }
+        return try await LiveShareUploader(destination: d, secret: secret).resumeIfNeeded(bundle: bundle)
+    }
+    func testConnection(_ d: ShareDestination, secret: String) async throws {
+        try await ShareService.testConnection(d, secret: secret)
+    }
     func publish(bundle: ProjectBundle, video: URL?, poster: CGImage?, captions: URL?, destination: ShareDestination,
-                 secret: String, progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo { throw Unavailable() }
-    func unpublish(_ info: ShareInfo, destination: ShareDestination, secret: String) async throws { throw Unavailable() }
-
-    private final class NoShareSink: ShareSegmentSink {
-        func begin(recordingID: String, title: String) async throws -> ShareInfo { throw Unavailable() }
-        func initSegment(_ data: Data) async {}
-        func mediaSegment(index: Int, data: Data, duration: Double) async {}
-        func finish(totalDuration: Double, timeout: Double) async {}
-        func cancel() async {}
-        var backlog: Int { get async { 0 } }
+                 secret: String, progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo {
+        try await ShareService.publish(bundle: bundle, video: video, poster: poster, captions: captions,
+                                       destination: destination, secret: secret, progress: progress)
+    }
+    func unpublish(_ info: ShareInfo, destination: ShareDestination, secret: String) async throws {
+        try await ShareService.unpublish(info, destination: destination, secret: secret)
     }
 }
 
@@ -125,7 +127,7 @@ extension Services {
                  capture: LiveCaptureSources(),
                  recorder: LiveRecorder(synthetic: synthetic),
                  render: LiveRender(),
-                 share: PendingShare(),
+                 share: LiveShare(),
                  ai: LiveAI(),
                  inputs: LiveInputPreview(),
                  isMock: false)

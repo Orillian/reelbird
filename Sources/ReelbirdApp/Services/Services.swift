@@ -71,6 +71,9 @@ protocol ShareServiceProtocol: Sendable {
     func secret() -> String?
     func clearDestination()
     func makeLiveUploader(destination: ShareDestination, secret: String) -> any ShareSegmentSink
+    /// Finishes a live upload cut short by a crash or quit (uploads what's left of `share/`).
+    /// Returns the share when there was work to do.
+    func resumeIfNeeded(bundle: ProjectBundle) async throws -> ShareInfo?
     func testConnection(_ d: ShareDestination, secret: String) async throws
     func publish(bundle: ProjectBundle, video: URL?, poster: CGImage?, captions: URL?, destination: ShareDestination,
                  secret: String, progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo

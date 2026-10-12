@@ -72,10 +72,11 @@ struct LibraryItem: Identifiable, Equatable {
         }
     }
 
-    /// Rebuilds recordings the app was writing when it last quit or crashed. Consolidating segments
-    /// can take a moment for long takes, so it runs off the main thread.
+    /// Rebuilds recordings the app was writing when it last quit or crashed (consolidating segments
+    /// can take a moment for long takes, so it runs off the main thread), then resumes their uploads.
     func recoverInterruptedRecordings() {
         let recorder = services.recorder
+        let share = services.share
         let bundles = prefs.library.list()
         Task {
             let recovered = await Task.detached(priority: .userInitiated) { () -> Int in
@@ -91,6 +92,12 @@ struct LibraryItem: Identifiable, Equatable {
                 Toast.show(title: recovered == 1 ? "Recording recovered" : "\(recovered) recordings recovered",
                            detail: "Reelbird rebuilt what was cut short when it last quit. It's in your Library.",
                            symbol: "arrow.clockwise.circle.fill", duration: 6)
+            }
+            // Finish live share uploads that were cut short, so their links play to the end.
+            let recent = Date().addingTimeInterval(-7 * 86_400)
+            for b in bundles {
+                guard let m = try? b.readManifest(), m.share != nil, m.track(.share) != nil, m.createdAt > recent else { continue }
+                _ = try? await share.resumeIfNeeded(bundle: b) // same link; the manifest already has it
             }
         }
     }

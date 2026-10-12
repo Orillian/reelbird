@@ -69,7 +69,7 @@ protocol Engine: Sendable {
     /// Starts recording into a new bundle at `bundleURL` (first frame as soon as possible; no countdown).
     func startRecording(options: RecordingOptions, bundleURL: URL) async throws -> any RecordingControl
     /// Rebuilds a bundle left in `recording` state by a crash. Returns false if it didn't need recovery.
-    func recover(bundle: ProjectBundle) throws -> Bool
+    func recover(bundle: ProjectBundle) async throws -> Bool
 
     // Render (ReelbirdRender)
     func export(bundle: ProjectBundle, edit: EditDocument, request: ExportRequest,

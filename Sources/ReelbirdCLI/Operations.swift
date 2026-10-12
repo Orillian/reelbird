@@ -125,9 +125,9 @@ struct Operations: Sendable {
 
     func list(limit: Int? = nil) -> Report { ProjectSummary.list(locator, limit: limit) }
 
-    func recover(_ project: String) throws -> Report {
+    func recover(_ project: String) async throws -> Report {
         let bundle = try locator.resolve(project)
-        let did = try engine.recover(bundle: bundle)
+        let did = try await engine.recover(bundle: bundle)
         return Report(json: ["bundle": .string(bundle.url.path), "recovered": .bool(did)],
                       text: did ? "Recovered \(Format.path(bundle.url))." : "\(Format.path(bundle.url)) didn't need recovery.")
     }
@@ -374,7 +374,7 @@ struct Operations: Sendable {
           Bucket       \(d.bucket)  (region \(d.region), prefix \(d.prefix)/)
           Access key   \(d.accessKeyID)
           Public URL   \(d.publicBaseURL)
-          Secret       \(secret ? "stored in Keychain" : "missing")
+          Secret       \(secret ? (ProcessInfo.processInfo.environment["REELBIRD_S3_SECRET_ACCESS_KEY"] != nil ? "from REELBIRD_S3_SECRET_ACCESS_KEY" : "stored in Keychain") : "missing")
         """)
     }
 

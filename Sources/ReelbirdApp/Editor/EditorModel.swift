@@ -448,21 +448,31 @@ enum CaptionState: Equatable {
     func publish() {
         guard let dest = services.share.loadDestination(), let secret = services.share.secret() else { return }
         shareState = .working("Rendering", 0)
+        saveNow() // the share service reads title and chapters from edit.json
         let services = services, bundle = bundle, edit = edit
+        // Viewers see the edited video, so captions go on the output timeline.
+        let captionsVTT = edit.captions.file == nil ? nil : transcript.map { services.ai.webVTT($0.remapped(to: timeline)) }
         Task {
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("reelbird-share-\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: tmp) }
             do {
-                let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("reelbird-share-\(UUID().uuidString)", isDirectory: true)
+                try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
                 let video = try await services.render.export(bundle: bundle, edit: edit,
-                                                             options: ExportOptions(format: .mp4H264, height: 1080, destination: tmp)) { p in
+                                                             options: ExportOptions(format: .mp4H264, height: 1080,
+                                                                                    destination: tmp.appendingPathComponent("video.mp4"))) { p in
                     Task { @MainActor [weak self] in self?.shareState = .working("Rendering", p * 0.6) }
                 }
                 let poster = try? await services.render.poster(bundle: bundle, at: 0, maxWidth: 1280)
-                let captions = edit.captions.file.map { bundle.resolve($0) }
+                var captions: URL?
+                if let captionsVTT {
+                    let url = tmp.appendingPathComponent("captions.vtt")
+                    try captionsVTT.write(to: url, atomically: true, encoding: .utf8)
+                    captions = url
+                }
                 let info = try await services.share.publish(bundle: bundle, video: video, poster: poster, captions: captions,
                                                             destination: dest, secret: secret) { p in
                     Task { @MainActor [weak self] in self?.shareState = .working("Uploading", 0.6 + p * 0.4) }
                 }
-                try? FileManager.default.removeItem(at: tmp)
                 var m = manifest
                 m.share = info
                 try? bundle.writeManifest(m)
