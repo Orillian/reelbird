@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import Foundation
 import ReelbirdCore
@@ -98,6 +99,21 @@ actor Media {
         #expect(s.segments.count >= 3)
         #expect(abs(s.totalDuration - 6) < 0.6)
         for seg in s.segments.dropLast() { #expect(abs(seg.duration - 2) < 0.2) }
+    }
+
+    /// The viewer's HLS-only Download joins init + segments; that must be a playable MP4.
+    @Test func joinedSegmentsArePlayableMP4() async throws {
+        let s = try await Media.shared.cmaf()
+        var joined = s.initSegment
+        for seg in s.segments { joined.append(seg.data) }
+        let url = try TestSupport.tempDir("joined").appendingPathComponent("joined.mp4")
+        try joined.write(to: url)
+        let asset = AVURLAsset(url: url)
+        let duration = CMTimeGetSeconds(try await asset.load(.duration))
+        #expect(abs(duration - s.totalDuration) < 0.3)
+        #expect(try await asset.load(.isPlayable))
+        #expect(try await asset.loadTracks(withMediaType: .video).count == 1)
+        #expect(try await asset.loadTracks(withMediaType: .audio).count == 1)
     }
 }
 

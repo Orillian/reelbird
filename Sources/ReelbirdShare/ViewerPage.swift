@@ -130,6 +130,7 @@ body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 -apple-system
 main{width:100%;max-width:1120px;margin:0 auto;padding:clamp(16px,4vw,40px) clamp(16px,3vw,32px) 24px;flex:1}
 .stage{position:relative;width:min(100%,calc(76vh * {{RATIO_N}}));aspect-ratio:{{RATIO}};margin:0 auto;background:var(--stage);border-radius:14px;overflow:hidden;box-shadow:var(--ring),var(--lift)}
 video{display:block;width:100%;height:100%;object-fit:contain;background:var(--stage)}
+video::cue{background:rgba(12,10,9,.78);color:#f7f2eb;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.35}
 .veil{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:6px;padding:24px;text-align:center;color:#f4eee6;background:radial-gradient(120% 90% at 18% 0%,rgba(255,141,77,.13),transparent 55%),var(--stage)}
 .veil[hidden]{display:none}
 .veil h2{margin:10px 0 0;font-size:17px;font-weight:600;letter-spacing:-.01em}
@@ -183,8 +184,10 @@ kbd{min-width:22px;height:22px;padding:0 6px;display:inline-grid;place-items:cen
 main{padding:0 0 16px}
 .stage{width:100%;border-radius:0;box-shadow:none}
 .bar,.chapters{padding:0 16px;margin-top:16px}
-.actions{width:100%}
-.actions .btn.grow{flex:1}
+.actions{width:100%;flex-wrap:nowrap}
+.actions .btn{flex:none;padding:0 12px}
+.actions .btn.grow{flex:1 1 0;min-width:0}
+#cc span{display:none}
 .foot{padding-top:20px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -208,7 +211,7 @@ main{padding:0 0 16px}
 </div>
 <div class="actions">
 <button class="btn speed" id="speed" type="button" title="Playback speed (&lt; and &gt;)" aria-label="Playback speed 1×">1×</button>
-<button class="btn" id="cc" type="button" aria-pressed="false" title="Captions (C)" hidden><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="3" width="13" height="10" rx="2.2"/><path d="M7 6.7a1.9 1.9 0 1 0 0 2.6M11.6 6.7a1.9 1.9 0 1 0 0 2.6" stroke-linecap="round"/></svg>Captions</button>
+<button class="btn" id="cc" type="button" aria-pressed="false" title="Captions (C)" aria-label="Captions" hidden><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="3" width="13" height="10" rx="2.2"/><path d="M7 6.7a1.9 1.9 0 1 0 0 2.6M11.6 6.7a1.9 1.9 0 1 0 0 2.6" stroke-linecap="round"/></svg><span>Captions</span></button>
 <button class="btn grow" id="copy" type="button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6.6 9.4a2.6 2.6 0 0 0 3.7 0l2.4-2.4a2.6 2.6 0 0 0-3.7-3.7l-.6.6"/><path d="M9.4 6.6a2.6 2.6 0 0 0-3.7 0L3.3 9a2.6 2.6 0 0 0 3.7 3.7l.6-.6"/></svg><span>Copy link</span></button>
 <button class="btn primary grow" id="download" type="button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M4.8 7.6 8 10.8l3.2-3.2M3 13.5h10"/></svg><span>Download</span></button>
 </div>
@@ -460,7 +463,7 @@ $("copy").addEventListener("click", async () => {
 });
 
 // Download: the polished MP4, or the share stream joined into one fragmented MP4.
-const fileName = () => (meta.title || "Reelbird recording").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 120) + ".mp4";
+const fileName = () => (meta.title || "Reelbird recording").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) + ".mp4";
 function save(href) {
   const a = document.createElement("a");
   a.href = href; a.download = fileName(); a.rel = "noopener";
