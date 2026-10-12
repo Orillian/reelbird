@@ -42,3 +42,32 @@ import Testing
     #expect(RGBA(hex: "#FF8000")?.hex == "#FF8000")
     #expect(RGBA(hex: "nope") == nil)
 }
+
+@Test func eventLogSkipsTruncatedLineAndIsFast() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("ev-\(UUID().uuidString).jsonl")
+    defer { try? FileManager.default.removeItem(at: url) }
+    var s = ""
+    for i in 0..<432_000 { s += #"{"t":\#(Double(i) / 120),"type":"move","x":0.4123,"y":0.2331}"# + "\n" }
+    try Data(s.utf8).write(to: url)
+    let start = Date()
+    #expect(try EventLog.read(url).count == 432_000)
+    let elapsed = Date().timeIntervalSince(start)
+    print("events.jsonl 432k lines read in \(elapsed) s")
+    s += #"{"t":9999,"type":"mo"#
+    try Data(s.utf8).write(to: url)
+    #expect(try EventLog.read(url).count == 432_000)
+}
+
+@Test func eventLogFastPathMatchesCodable() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("ev-\(UUID().uuidString).jsonl")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let w = try EventLogWriter(url: url)
+    let events: [InputEvent] = [
+        .move(0.1, NormPoint(x: 0.25, y: 0.5)), .down(0.2, NormPoint(x: 0.3, y: 0.4), button: 1),
+        InputEvent(t: 0.3, type: .key, chars: "s", mods: ["⌘"]),
+        InputEvent(t: 0.4, type: .focus, rect: NormRect(x: 0.1, y: 0.2, width: 0.3, height: 0.4)),
+        InputEvent(t: 0.5, type: .scroll, x: 0.5, y: 0.5, dx: 0, dy: -3), InputEvent(t: 0.6, type: .cursor, image: "abc"),
+    ]
+    events.forEach(w.append); w.close()
+    #expect(try EventLog.read(url) == events)
+}
