@@ -570,7 +570,8 @@ actor SessionEngine {
         inputs.freeDiskBytes = freeDisk
         inputs.uploadBacklog = backlog
         inputs.shareFailure = shareFailure
-        if options.captureKeystrokes, Permissions.status(.inputMonitoring) != .granted { inputs.missingPermission = .inputMonitoring }
+        // The tap can only be created with Input Monitoring; warn whenever it isn't running.
+        if options.captureKeystrokes, fmt.isRealTime, recorder?.keystrokesActive != true { inputs.missingPermission = .inputMonitoring }
         var warnings = health.evaluate(inputs)
         warnings.append(contentsOf: failureWarnings(at: t))
 

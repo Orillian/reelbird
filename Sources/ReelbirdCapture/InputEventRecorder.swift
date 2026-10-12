@@ -47,6 +47,9 @@ final class InputEventRecorder: @unchecked Sendable {
     /// Host time of the last click, scroll or key press (for stall detection).
     var lastActivityHost: Double { state.withLock { $0.lastActivityHost } }
     var eventCount: Int { state.withLock { $0.count } }
+    /// Whether the keystroke tap is running (needs Input Monitoring; see `Permission.inputMonitoring`).
+    var keystrokesActive: Bool { keyTapRunning.withLock { $0 } }
+    private let keyTapRunning = Mutex(false)
 
     func start(origin: Double, isPaused: @escaping @Sendable (Double) -> Bool) {
         state.withLock { $0.origin = origin; $0.running = true; $0.paused = isPaused }
@@ -66,7 +69,10 @@ final class InputEventRecorder: @unchecked Sendable {
         }
         if config.captureKeystrokes, Permissions.status(.inputMonitoring) == .granted {
             let tap = KeyTap { [weak self] chars, mods in self?.recordKey(chars: chars, mods: mods) }
-            if tap.start() { keyTap = tap }
+            if tap.start() {
+                keyTap = tap
+                keyTapRunning.withLock { $0 = true }
+            }
         }
     }
 
@@ -77,6 +83,7 @@ final class InputEventRecorder: @unchecked Sendable {
         state.withLock { $0.running = false }
         keyTap?.stop()
         keyTap = nil
+        keyTapRunning.withLock { $0 = false }
         if let input = mainInput.withLock({ m in defer { m = nil }; return m }) {
             DispatchQueue.main.async { MainActor.assumeIsolated { input.stop() } }
         }

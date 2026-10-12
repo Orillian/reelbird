@@ -13,7 +13,9 @@ public enum Permission: String, CaseIterable, Codable, Hashable, Sendable {
     case camera
     /// Accessibility (focused-element tracking for zoom-to-typing).
     case accessibility
-    /// Input Monitoring (keystroke capture for the keystroke overlay).
+    /// Input Monitoring (keystroke capture for the keystroke overlay). This is the TCC "listen
+    /// event" privilege that a listen-only `CGEventTap` for key events needs; Reelbird does not
+    /// need Accessibility for keystrokes. Mouse clicks and scrolls need no permission.
     case inputMonitoring
 
     public var displayName: String {
@@ -61,6 +63,9 @@ public enum Permissions {
         case .accessibility:
             return AXIsProcessTrusted() ? .granted : .notDetermined
         case .inputMonitoring:
+            // CGPreflightListenEventAccess is the check paired with event taps; IOHIDCheckAccess
+            // (same privilege) additionally tells "denied" from "never asked".
+            if CGPreflightListenEventAccess() { return .granted }
             switch IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) {
             case kIOHIDAccessTypeGranted: return .granted
             case kIOHIDAccessTypeDenied: return .denied
@@ -92,6 +97,9 @@ public enum Permissions {
             let key = "AXTrustedCheckOptionPrompt" // kAXTrustedCheckOptionPrompt
             return AXIsProcessTrustedWithOptions([key: true] as CFDictionary) ? .granted : .notDetermined
         case .inputMonitoring:
+            // Prompts once per install; afterwards the person must switch it on in System Settings
+            // (openSettings(for: .inputMonitoring)), and the app may need a relaunch.
+            if CGRequestListenEventAccess() { return .granted }
             if IOHIDRequestAccess(kIOHIDRequestTypeListenEvent) { return .granted }
             return status(.inputMonitoring)
         }
