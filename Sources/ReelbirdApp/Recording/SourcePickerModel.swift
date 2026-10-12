@@ -24,10 +24,15 @@ struct AreaSelection: Equatable {
     var area: AreaSelection?
     var shareAvailable = false
     var windowQuery = ""
+    private(set) var microphoneAccess: PermissionState = .granted
+    private(set) var cameraAccess: PermissionState = .granted
+    /// Free space where recordings are saved, when it's low enough to mention.
+    private(set) var lowDiskBytes: Int64?
 
     @ObservationIgnored private let services: Services
     @ObservationIgnored private let prefs: Preferences
     @ObservationIgnored private var thumbnailTask: Task<Void, Never>?
+    @ObservationIgnored private var metering = false
 
     init(services: Services, prefs: Preferences) {
         self.services = services
@@ -36,7 +41,9 @@ struct AreaSelection: Equatable {
         // Coming back from System Settings: pick up a permission that took effect without a relaunch.
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.needsScreenPermission, self.services.permissions.status(.screen) == .granted else { return }
+                guard let self else { return }
+                self.refreshInputAccess()
+                guard self.needsScreenPermission, self.services.permissions.status(.screen) == .granted else { return }
                 self.load()
             }
         }
@@ -59,7 +66,39 @@ struct AreaSelection: Equatable {
         return all.filter { $0.title.localizedCaseInsensitiveContains(q) || ($0.appName ?? "").localizedCaseInsensitiveContains(q) }
     }
 
+    /// Under this much free space the picker warns before you start (the control bar warns at 2 GB).
+    static let lowDiskThreshold: Int64 = 5_000_000_000
+
+    func refreshInputAccess() {
+        let mic = services.permissions.status(.microphone)
+        let changed = mic != microphoneAccess
+        microphoneAccess = mic
+        cameraAccess = services.permissions.status(.camera)
+        if changed && mic == .granted && metering { startMeters() }
+    }
+
+    /// Asks for microphone or camera access the first time; afterwards macOS only allows it in
+    /// System Settings, so open the right pane.
+    func requestAccess(_ p: Permission) {
+        let state = services.permissions.status(p)
+        guard state != .granted else { return }
+        if state == .notDetermined {
+            Task {
+                _ = await services.permissions.request(p)
+                refreshInputAccess()
+                if p == .microphone && metering { startMeters() }
+            }
+        } else {
+            services.permissions.openSettings(for: p)
+        }
+    }
+
     func load() {
+        refreshInputAccess()
+        let root = prefs.library.root
+        let probe = FileManager.default.fileExists(atPath: root.path) ? root : root.deletingLastPathComponent()
+        let free = (try? probe.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage
+        lowDiskBytes = free.flatMap { $0 < Self.lowDiskThreshold ? $0 : nil }
         microphones = services.capture.microphones()
         cameras = services.capture.cameras()
         if prefs.cameraID == nil { prefs.cameraID = cameras.first(where: \.isDefault)?.id ?? cameras.first?.id }
@@ -139,6 +178,7 @@ struct AreaSelection: Equatable {
     }
 
     func startMeters() {
+        metering = true
         guard prefs.microphoneEnabled else { micLevel = 0; return }
         services.inputs.startMicrophoneMeter(deviceID: prefs.microphoneID) { [weak self] level in
             self?.micLevel = level
@@ -146,11 +186,17 @@ struct AreaSelection: Equatable {
     }
 
     func stopMeters() {
+        metering = false
         services.inputs.stopMicrophoneMeter()
         micLevel = 0
     }
 
     func setMicLevelForSnapshot(_ v: Double) { micLevel = v }
+    func setAccessForSnapshot(microphone: PermissionState, camera: PermissionState, lowDisk: Int64? = nil) {
+        microphoneAccess = microphone
+        cameraAccess = camera
+        lowDiskBytes = lowDisk
+    }
 
     /// The capture source for the current tab and selection.
     func captureSource() -> CaptureSource? {

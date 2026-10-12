@@ -1,4 +1,5 @@
 import AppKit
+import ReelbirdCapture
 import ReelbirdCore
 import SwiftUI
 
@@ -39,24 +40,40 @@ final class CountdownKeyView: NSView {
 struct CountdownView: View {
     let controller: RecordingController
     @Environment(\.isSnapshot) private var snapshot
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var value: Int? = nil
+    /// Fraction of the current second already elapsed (snapshots).
+    var sweep: Double? = nil
+    @ViewState private var progress: Double = 0
 
     var body: some View {
         let n = value ?? controller.countdownValue
         VStack(spacing: 18) {
             ZStack {
                 Circle()
-                    .fill(Color.black.opacity(0.55))
+                    .fill(Color.black.opacity(0.6))
                     .frame(width: 168, height: 168)
                 Circle()
-                    .trim(from: 0, to: 1)
-                    .stroke(Color.white.opacity(0.18), lineWidth: 3)
-                    .frame(width: 150, height: 150)
+                    .stroke(Color.white.opacity(0.14), lineWidth: 4)
+                    .frame(width: 148, height: 148)
+                // One sweep per second, so the ring says "about to start" without pulsing.
+                Circle()
+                    .trim(from: 0, to: reduceMotion ? 1 : (sweep ?? progress))
+                    .stroke(Theme.recording, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 148, height: 148)
                 Text("\(n)")
                     .font(.system(size: 84, weight: .semibold, design: .rounded).monospacedDigit())
                     .foregroundStyle(.white)
-                    .contentTransition(.numericText(countsDown: true))
-                    .animation(Theme.gentle, value: n)
+                    .contentTransition(reduceMotion ? .identity : .numericText(countsDown: true))
+                    .animation(reduceMotion ? nil : Theme.gentle, value: n)
+            }
+            .accessibilityElement()
+            .accessibilityLabel("Recording starts in \(n)")
+            .onChange(of: n, initial: true) { _, _ in
+                guard !reduceMotion, sweep == nil else { return }
+                progress = 0
+                withAnimation(.linear(duration: 0.95)) { progress = 1 }
             }
             HStack(spacing: 14) {
                 hint("Space", "start now")
@@ -103,10 +120,10 @@ struct KeyCatcher: NSViewRepresentable {
     static let size = NSSize(width: 520, height: 140)
 
     init(controller: RecordingController, app: AppModel) {
-        panel = FloatingPanel(size: Self.size, level: .statusBar)
-        let view = ControlBarView(controller: controller, prefs: app.prefs)
+        panel = FloatingPanel(size: Self.size, level: .statusBar, allowsKey: false)
+        let view = ControlBarView(controller: controller, prefs: app.prefs, permissions: app.services.permissions)
             .frame(width: Self.size.width, height: Self.size.height, alignment: .bottom)
-        let hosting = NSHostingView(rootView: view)
+        let hosting = FirstMouseHostingView(rootView: view)
         panel.contentView = hosting
         panel.setContentSize(Self.size)
     }
@@ -125,6 +142,7 @@ struct KeyCatcher: NSViewRepresentable {
 struct ControlBarView: View {
     let controller: RecordingController?
     @Bindable var prefs: Preferences
+    var permissions: (any PermissionsService)? = nil
     var status: RecorderStatus? = nil
     var phase: RecordingController.Phase? = nil
     @Environment(\.isSnapshot) private var snapshot
@@ -164,9 +182,21 @@ struct ControlBarView: View {
             .accessibilityLabel(ph == .paused ? "Paused at \(TimeFormat.clock(st.elapsed))" : "Recording, \(TimeFormat.clock(st.elapsed))")
 
             if prefs.microphoneEnabled {
-                Image(systemName: "mic.fill").font(.system(size: 11)).foregroundStyle(.secondary)
-                LevelMeter(level: st.microphoneLevel, segments: 8, height: 5, active: ph == .recording)
-                    .frame(width: 40)
+                if let permissions, permissions.status(.microphone) != .granted {
+                    // A flat meter would look like a quiet room; say why there's no sound instead.
+                    Button { permissions.openSettings(for: .microphone) } label: {
+                        Label("No mic access", systemImage: "mic.slash.fill")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Theme.warning)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Microphone access is off, so this take has no voice. Click to open System Settings.")
+                } else {
+                    Image(systemName: "mic.fill").font(.system(size: 11)).foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    LevelMeter(level: st.microphoneLevel, segments: 8, height: 5, active: ph == .recording)
+                        .frame(width: 40)
+                }
             }
             if let _ = st.shareURL {
                 HStack(spacing: 4) {
@@ -177,6 +207,8 @@ struct ControlBarView: View {
                 .foregroundStyle(st.uploadBacklog > 3 ? Theme.warning : Color.secondary)
                 .padding(.leading, 4)
                 .help("Your link is uploading while you record")
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(st.uploadBacklog > 0 ? "Link uploading, \(st.uploadBacklog) segments queued" : "Link is live")
             }
 
             Divider().frame(height: 18).padding(.horizontal, 4)
@@ -190,12 +222,12 @@ struct ControlBarView: View {
 
             Button { controller?.restart() } label: { Image(systemName: "arrow.counterclockwise") }
                 .buttonStyle(IconButtonStyle(size: 30))
-                .help("Restart")
-                .accessibilityLabel("Restart")
+                .help("Start over (discards this take)")
+                .accessibilityLabel("Start over")
 
             Button { confirmingDiscard = true } label: { Image(systemName: "trash") }
                 .buttonStyle(IconButtonStyle(size: 30))
-                .help("Discard")
+                .help("Discard this take")
                 .accessibilityLabel("Discard")
 
             Button { controller?.stop() } label: {
@@ -205,7 +237,8 @@ struct ControlBarView: View {
                 }
             }
             .buttonStyle(PrimaryButtonStyle(tint: Theme.recording))
-            .help("Stop (\(prefs.recordHotKey.display))")
+            .help("Stop and save (\(prefs.recordHotKey.display))")
+            .accessibilityLabel("Stop recording")
             .padding(.leading, 2)
         }
         .padding(6)
@@ -280,12 +313,12 @@ struct ControlBarView: View {
         hide()
         self.deviceID = deviceID
         let d = prefs.cameraBubbleSize.points
-        let p = FloatingPanel(size: NSSize(width: d, height: d), level: .statusBar)
-        // The bubble is part of the take when recording a display, so leave it capturable.
-        p.sharingType = .readOnly
+        // Never key: dragging the bubble mustn't take focus from the app being recorded. It stays
+        // out of the screen capture too: the camera is its own track, composited in the editor.
+        let p = FloatingPanel(size: NSSize(width: d, height: d), level: .statusBar, allowsKey: false)
         let view = CameraBubbleView(camera: services.inputs.makeCameraView(deviceID: deviceID),
                                     size: prefs.cameraBubbleSize) { [weak self] size in self?.resize(size) }
-        p.contentView = NSHostingView(rootView: view)
+        p.contentView = FirstMouseHostingView(rootView: view)
         let screen = NSScreen.withMouse.visibleFrame
         p.setFrameOrigin(NSPoint(x: screen.minX + 32, y: screen.minY + 32))
         p.fadeIn()
@@ -299,10 +332,9 @@ struct ControlBarView: View {
         let d = size.points
         f.origin.y += f.height - d
         f.size = NSSize(width: d, height: d)
-        p.setFrame(f, display: true, animate: true)
-        if let id = deviceID, let hosting = p.contentView as? NSHostingView<CameraBubbleView> {
+        p.setFrame(f, display: true, animate: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        if let hosting = p.contentView as? FirstMouseHostingView<CameraBubbleView> {
             hosting.rootView = CameraBubbleView(camera: hosting.rootView.camera, size: size) { [weak self] s in self?.resize(s) }
-            _ = id
         }
     }
 
@@ -369,7 +401,7 @@ struct ViewHost: NSViewRepresentable {
     static func show(title: String, detail: String? = nil, symbol: String = "checkmark.circle.fill", duration: Double = 3.5) {
         panel?.orderOut(nil)
         let view = ToastView(title: title, detail: detail, symbol: symbol).padding(20)
-        let p = FloatingPanel(size: .zero, level: .statusBar)
+        let p = FloatingPanel(size: .zero, level: .statusBar, allowsKey: false)
         p.ignoresMouseEvents = true
         let hosting = NSHostingView(rootView: view)
         p.contentView = hosting

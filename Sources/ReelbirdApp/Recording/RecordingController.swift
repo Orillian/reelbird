@@ -22,11 +22,46 @@ import ReelbirdCore
     @ObservationIgnored private var countdown: CountdownOverlay?
     @ObservationIgnored private var controlBar: ControlBarPanel?
     @ObservationIgnored let cameraBubble: CameraBubbleController
+    /// The app that was frontmost when the picker opened; it gets focus back when capture starts.
+    @ObservationIgnored private var previousApp: NSRunningApplication?
+    /// The app that owns the window being recorded, brought forward when capture starts.
+    @ObservationIgnored private var recordedAppName: String?
+    @ObservationIgnored private var pausedForSleep = false
+    @ObservationIgnored private var observers: [any NSObjectProtocol] = []
 
     init(app: AppModel) {
         self.app = app
         picker = SourcePickerModel(services: app.services, prefs: app.prefs)
         cameraBubble = CameraBubbleController(services: app.services, prefs: app.prefs)
+        observeSleep()
+    }
+
+    /// A sleeping Mac stops delivering frames and audio. Pause the take before sleep so the
+    /// recording has no frozen gap, and tell the user on wake instead of resuming behind their back.
+    private func observeSleep() {
+        let nc = NSWorkspace.shared.notificationCenter
+        observers.append(nc.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.systemWillSleep() }
+        })
+        observers.append(nc.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.systemDidWake() }
+        })
+    }
+
+    func systemWillSleep() {
+        switch phase {
+        case .countdown: cancelCountdown(); closePicker()
+        case .recording: togglePause(); pausedForSleep = true
+        default: break
+        }
+    }
+
+    func systemDidWake() {
+        guard pausedForSleep, phase == .paused else { pausedForSleep = false; return }
+        pausedForSleep = false
+        Toast.show(title: "Recording paused while your Mac slept",
+                   detail: "Press \(app.prefs.pauseHotKey.display) or Resume on the control bar to carry on.",
+                   symbol: "pause.circle.fill", duration: 8)
     }
 
     var isActive: Bool { phase == .recording || phase == .paused || phase == .countdown }
@@ -36,6 +71,10 @@ import ReelbirdCore
 
     func showPicker() {
         guard phase == .idle || phase == .picking else { return }
+        if phase == .idle, let front = NSWorkspace.shared.frontmostApplication,
+           front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            previousApp = front
+        }
         phase = .picking
         picker.shareAvailable = app.shareConfigured
         picker.load()
@@ -69,6 +108,7 @@ import ReelbirdCore
             return
         }
         guard let source = picker.captureSource() else { NSSound.beep(); return }
+        if case .window(_, let appName, _) = source { recordedAppName = appName } else { recordedAppName = nil }
         pickerPanel?.dismiss()
         picker.stopMeters()
         start(options: makeOptions(source: source))
@@ -174,6 +214,7 @@ import ReelbirdCore
         guard let session else { return }
         phase = .recording
         showControlBar()
+        handFocusBack()
         Task {
             do {
                 try await session.start()
@@ -181,6 +222,18 @@ import ReelbirdCore
                 self.teardown()
                 self.app.present(error, title: "Recording couldn't start")
             }
+        }
+    }
+
+    /// Recording a window brings its app forward; otherwise the app you were in gets focus back
+    /// (Reelbird may have activated for the area selector or the Library window).
+    private func handFocusBack() {
+        let me = ProcessInfo.processInfo.processIdentifier
+        if let name = recordedAppName,
+           let target = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name && $0.processIdentifier != me }) {
+            target.activate()
+        } else if NSApp.isActive, let previousApp, !previousApp.isTerminated {
+            previousApp.activate()
         }
     }
 
@@ -262,10 +315,13 @@ import ReelbirdCore
         if alert.runModal() == .alertFirstButtonReturn { discard() }
     }
 
-    func discard() {
+    func discard(completion: (() -> Void)? = nil) {
         let s = session
         teardown()
-        Task { await s?.discard() }
+        Task {
+            await s?.discard()
+            completion?()
+        }
     }
 
     private func showControlBar() {
@@ -282,6 +338,9 @@ import ReelbirdCore
         session = nil
         phase = .idle
         status = RecorderStatus()
+        pausedForSleep = false
+        recordedAppName = nil
+        previousApp = nil
         cameraBubble.hide()
     }
 }
