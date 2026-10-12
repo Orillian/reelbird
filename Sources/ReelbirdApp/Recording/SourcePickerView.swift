@@ -225,10 +225,9 @@ struct SourcePickerView: View {
                      isOn: Binding(get: { prefs.shareWhileRecording && model.shareAvailable }, set: { prefs.shareWhileRecording = $0 }),
                      enabled: model.shareAvailable) {
                 if !model.shareAvailable {
-                    Button("Set up…", action: onSetUpSharing)
-                        .buttonStyle(.link)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.accentText)
+                    Button("Set Up…", action: onSetUpSharing)
+                        .buttonStyle(SecondaryButtonStyle(small: true))
+                        .help("Links upload to your own storage bucket. Set it up once in Settings.")
                 } else if prefs.shareWhileRecording {
                     Text("Link copied when you stop").font(.system(size: 11)).foregroundStyle(.tertiary)
                 }
@@ -237,10 +236,9 @@ struct SourcePickerView: View {
     }
 
     private func allowButton(_ title: String, _ p: Permission) -> some View {
+        // Neutral, not coral: the record button is the one coral thing on this panel.
         Button(title) { model.requestAccess(p) }
-            .buttonStyle(.link)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(Theme.accentText)
+            .buttonStyle(SecondaryButtonStyle(small: true))
             .help(p == .microphone
                   ? "Reelbird can't hear your mic yet, so the take would be silent."
                   : "Reelbird can't see your camera yet.")

@@ -51,10 +51,15 @@ struct InspectorView: View {
                     Image(systemName: s.symbol)
                         .font(.system(size: 13, weight: .medium))
                         .frame(maxWidth: .infinity)
-                        .frame(height: 30)
+                        .frame(height: 28)
                         .foregroundStyle(model.section == s ? Theme.ink : Color.secondary)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(model.section == s ? Theme.fieldFill : .clear))
+                        .background {
+                            if model.section == s {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Theme.raised)
+                                    .shadow(color: .black.opacity(0.12), radius: 1.5, y: 0.5)
+                            }
+                        }
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -63,8 +68,10 @@ struct InspectorView: View {
                 .accessibilityAddTraits(model.section == s ? .isSelected : [])
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.fieldFill))
+        .padding(.horizontal, Theme.Space.m)
+        .padding(.vertical, 10)
     }
 }
 

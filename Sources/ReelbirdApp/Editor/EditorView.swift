@@ -168,6 +168,21 @@ struct TransportBar: View {
     @Bindable var model: EditorModel
 
     var body: some View {
+        // Edit tools sit dead centre under the preview, whatever the side groups' widths.
+        ZStack {
+            tools
+            HStack(spacing: Theme.Space.s) {
+                playback
+                Spacer()
+                timelineZoom
+            }
+        }
+        .padding(.horizontal, Theme.Space.m)
+        .frame(height: 44)
+        .background(Theme.panel)
+    }
+
+    private var playback: some View {
         HStack(spacing: Theme.Space.s) {
             HStack(spacing: 2) {
                 Button { model.seek(source: 0) } label: { Image(systemName: "backward.end.fill") }
@@ -188,9 +203,10 @@ struct TransportBar: View {
             }
             .font(.system(size: 12, weight: .medium).monospacedDigit())
             .accessibilityElement(children: .combine)
+        }
+    }
 
-            Spacer()
-
+    private var tools: some View {
             HStack(spacing: 4) {
                 ToolButton(symbol: "scissors", title: "Split", key: "S") { model.splitAtPlayhead() }
                 ToolButton(symbol: "plus.magnifyingglass", title: "Zoom", key: "Z") { model.addZoomAtPlayhead() }
@@ -201,9 +217,9 @@ struct TransportBar: View {
                 }
             }
             .animation(Theme.snappy, value: model.selection)
+    }
 
-            Spacer()
-
+    private var timelineZoom: some View {
             HStack(spacing: 6) {
                 Button { model.timelineZoom = max(1, model.timelineZoom / 1.5) } label: { Image(systemName: "minus.magnifyingglass") }
                     .buttonStyle(IconButtonStyle(size: 24)).help("Zoom out timeline (⌘−)")
@@ -217,10 +233,6 @@ struct TransportBar: View {
                     .buttonStyle(IconButtonStyle(size: 24)).help("Zoom in timeline (⌘+)")
                     .accessibilityLabel("Zoom in timeline")
             }
-        }
-        .padding(.horizontal, Theme.Space.m)
-        .frame(height: 44)
-        .background(Theme.panel)
     }
 }
 

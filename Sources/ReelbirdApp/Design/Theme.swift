@@ -82,15 +82,22 @@ extension EnvironmentValues {
     }
 }
 
+/// `--snapshot … --glass` keeps Liquid Glass in snapshots, to check what an offscreen capture shows.
+@MainActor enum GlassOverride { static var inSnapshots = false }
+
 extension View {
-    /// Liquid Glass on macOS 26+, a thick material before that (and in snapshots).
-    @ViewBuilder func floatingSurface(cornerRadius: CGFloat, snapshot: Bool) -> some View {
-        if #available(macOS 26, *), !snapshot {
+    /// Liquid Glass on macOS 26+, a thick material before that (and in snapshots, which can't
+    /// capture glass). Used only for the floating controls layer the HIG reserves glass for: the
+    /// recording control bar, its warnings and toasts. Content (editor, library, settings) stays on
+    /// solid surfaces. `glass: false` keeps a solid panel on every version: the source picker is dense content
+    /// (thumbnails, small labels) that has to stay legible over any desktop.
+    @MainActor @ViewBuilder func floatingSurface(cornerRadius: CGFloat, snapshot: Bool, glass: Bool = true) -> some View {
+        if #available(macOS 26, *), glass, !snapshot || GlassOverride.inSnapshots {
             self.glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         } else {
             self.background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color(nsColor: .rbPanel).opacity(snapshot ? 1 : 0.92))
+                    .fill(Color(nsColor: .rbPanel).opacity(snapshot || !glass ? 1 : 0.92))
                     .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))

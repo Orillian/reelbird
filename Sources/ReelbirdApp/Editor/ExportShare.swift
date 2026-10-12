@@ -283,6 +283,7 @@ struct SharePanel: View {
                 HStack {
                     Button("Open in Browser") { model.openLink() }.buttonStyle(SecondaryButtonStyle())
                     Button("Update Link") { model.publish() }.buttonStyle(SecondaryButtonStyle()).disabled(model.shareState.isWorking)
+                        .help("Renders your edits and replaces the video behind the same link")
                     Spacer()
                 }
                 Divider()
@@ -294,9 +295,10 @@ struct SharePanel: View {
                 Text("Renders your edited video, uploads it to your bucket and copies the link.")
                     .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 progressOrError
-                Button("Create Link") { model.publish() }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .disabled(model.shareState.isWorking)
+                if !model.shareState.isWorking {
+                    Button("Create Link") { model.publish() }
+                        .buttonStyle(PrimaryButtonStyle())
+                }
             }
         }
         .padding(Theme.Space.l)
@@ -317,7 +319,13 @@ struct SharePanel: View {
         case .working(let label, let p):
             VStack(alignment: .leading, spacing: 4) {
                 ProgressView(value: p).tint(Theme.accent)
-                Text("\(label)… \(Int(p * 100))%").font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
+                    .accessibilityLabel(label)
+                HStack {
+                    Text("\(label)… \(Int(p * 100))%").font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Cancel") { model.cancelWork() }
+                        .buttonStyle(.link).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
             }
         case .failed(let msg): StatusLine(tone: .error, text: msg)
         case .idle: EmptyView()

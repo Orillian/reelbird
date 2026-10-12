@@ -21,6 +21,7 @@ import SwiftUI
     }
 
     static func run(dir: URL, filter: String?, live: Bool = false) {
+        GlassOverride.inSnapshots = CommandLine.arguments.contains("--glass")
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -31,7 +32,7 @@ import SwiftUI
         prefs.cameraEnabled = true
         prefs.cameraID = "facetime"
         prefs.lastArea = CGRect(x: 320, y: 180, width: 960, height: 540)
-        let permissions = MockPermissions([.screen: .granted, .microphone: .granted, .camera: .notDetermined, .accessibility: .denied])
+        let permissions = MockPermissions([.screen: .granted, .microphone: .granted, .camera: .notDetermined, .inputMonitoring: .notDetermined])
         let services = Services.mock(permissions: permissions)
         let model = AppModel(services: services, prefs: prefs)
 
@@ -60,6 +61,16 @@ import SwiftUI
             })
         }
 
+        scenes.append(Scene(name: "picker-access", size: CGSize(width: 620, height: 640), backdrop: true) {
+            prefs.sourceTab = .display
+            let picker = SourcePickerModel(services: services, prefs: prefs)
+            picker.apply(Array(sources.filter { $0.kind == .display }.prefix(1)) + sources.filter { $0.kind == .window })
+            picker.setAccessForSnapshot(microphone: .denied, camera: .notDetermined, lowDisk: 3_400_000_000)
+            picker.shareAvailable = false
+            prefs.shareWhileRecording = false
+            return AnyView(SourcePickerView(model: picker, controller: nil, prefs: prefs))
+        })
+
         // Recording overlays
         func status(elapsed: Double, level: Double, warnings: [HealthWarning] = [], share: Bool = false, backlog: Int = 0) -> RecorderStatus {
             var s = RecorderStatus()
@@ -79,8 +90,12 @@ import SwiftUI
         scenes.append(Scene(name: "controlbar-paused", size: CGSize(width: 620, height: 170), backdrop: true) {
             AnyView(ControlBarView(controller: nil, prefs: prefs, status: status(elapsed: 202, level: 0, share: true), phase: .paused))
         })
+        scenes.append(Scene(name: "controlbar-nomic", size: CGSize(width: 620, height: 170), backdrop: true) {
+            AnyView(ControlBarView(controller: nil, prefs: prefs, permissions: MockPermissions([.microphone: .denied]),
+                                   status: status(elapsed: 31, level: 0), phase: .recording))
+        })
         scenes.append(Scene(name: "countdown", size: CGSize(width: 900, height: 560), backdrop: true) {
-            AnyView(CountdownView(controller: model.recording, value: 2).background(Color.black.opacity(0.25)))
+            AnyView(CountdownView(controller: model.recording, value: 2, sweep: 0.62).background(Color.black.opacity(0.25)))
         })
         scenes.append(Scene(name: "area-bar", size: CGSize(width: 900, height: 560), backdrop: true) {
             AnyView(AreaSnapshot())
@@ -152,12 +167,26 @@ import SwiftUI
             guard let m = editorModel() else { return AnyView(EmptyView()) }
             try? services.share.saveDestination(ShareDestination(endpoint: "https://acc.r2.cloudflarestorage.com", bucket: "reelbird",
                                                                  accessKeyID: "AKIA", publicBaseURL: "https://pub-3f9a.r2.dev"), secret: "x")
-            return AnyView(SharePanel(model: m, app: nil).frame(width: 340))
+            return AnyView(PopoverChrome { SharePanel(model: m, app: nil).frame(width: 340) })
+        })
+        scenes.append(Scene(name: "share-new", size: nil, backdrop: false) {
+            guard let m = editorModel() else { return AnyView(EmptyView()) }
+            var mf = m.manifest
+            mf.share = nil
+            try? m.bundle.writeManifest(mf)
+            let fresh = editorModel()
+            try? services.share.saveDestination(ShareDestination(endpoint: "https://acc.r2.cloudflarestorage.com", bucket: "reelbird",
+                                                                 accessKeyID: "AKIA", publicBaseURL: "https://pub-3f9a.r2.dev"), secret: "x")
+            fresh?.shareState = .working("Uploading", 0.72)
+            let view = fresh.map { AnyView(SharePanel(model: $0, app: nil).frame(width: 340)) } ?? AnyView(EmptyView())
+            mf.share = ShareInfo(key: "r/7Hk2pQx9aB", url: "https://pub-3f9a.r2.dev/r/7Hk2pQx9aB/", polished: false)
+            try? m.bundle.writeManifest(mf)
+            return AnyView(PopoverChrome { view })
         })
         scenes.append(Scene(name: "share-setup", size: nil, backdrop: false) {
             guard let m = editorModel() else { return AnyView(EmptyView()) }
             services.share.clearDestination()
-            return AnyView(SharePanel(model: m, app: nil).frame(width: 340))
+            return AnyView(PopoverChrome { SharePanel(model: m, app: nil).frame(width: 340) })
         })
 
         // Library
@@ -342,6 +371,20 @@ import SwiftUI
         try? rep.representation(using: .png, properties: [:])?.write(to: url)
         w.orderOut(nil)
         w.contentView = nil
+    }
+}
+
+/// A popover as it appears over the editor: panel fill, hairline, shadow (the real popover
+/// background is drawn by AppKit and doesn't appear in offscreen captures).
+private struct PopoverChrome<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        content
+            .background(Theme.panel, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.18), radius: 16, y: 6)
+            .padding(28)
+            .background(Theme.stage)
     }
 }
 
