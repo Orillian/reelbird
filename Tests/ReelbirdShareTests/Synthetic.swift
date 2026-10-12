@@ -114,7 +114,8 @@ enum Synthetic {
             var progressed = false
             let videoTime = Double(frame) / Double(o.fps)
             let audioTime = Double(audioPos) / Double(sampleRate)
-            if frame < frames, video.isReadyForMoreMediaData, audioPos >= audioTotal || videoTime <= audioTime + 0.1 {
+            let videoFirst = audioPos >= audioTotal || !audio.isReadyForMoreMediaData || videoTime <= audioTime
+            if frame < frames, video.isReadyForMoreMediaData, videoFirst {
                 guard let pool = adaptor.pixelBufferPool else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
                 var pb: CVPixelBuffer?
                 CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pb)
@@ -126,7 +127,7 @@ enum Synthetic {
                 frame += 1
                 progressed = true
             }
-            if audioPos < audioTotal, audio.isReadyForMoreMediaData, frame >= frames || audioTime <= videoTime + 0.1 {
+            if !progressed, audioPos < audioTotal, audio.isReadyForMoreMediaData {
                 let n = min(audioChunk, audioTotal - audioPos)
                 let sb = try audioBuffer(format: format, start: audioPos, frames: n, sampleRate: sampleRate)
                 if !audio.append(sb) { throw writer.error ?? CocoaError(.fileWriteUnknown) }
