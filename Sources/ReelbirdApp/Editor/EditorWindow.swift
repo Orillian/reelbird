@@ -44,22 +44,13 @@ import SwiftUI
     }
 
     /// Single-key shortcuts (space, J/K/L, S, Z, arrows, delete) while no text field is editing.
+    /// The Timeline menu lists them without matching them (TimelineMenuDelegate).
     private func installKeyMonitor() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, let w = self.window, w.isKeyWindow, w.attachedSheet == nil else { return event }
             if w.firstResponder is NSTextView { return event }
+            // ⌘ shortcuts live in the menus (File, Timeline, View); this handles the single keys.
             let mods = event.modifierFlags.intersection([.command, .option, .control])
-            if mods.contains(.command) {
-                if let n = Int(event.charactersIgnoringModifiers ?? ""), (1...InspectorSection.allCases.count).contains(n) {
-                    self.model.section = InspectorSection.allCases[n - 1]; return nil
-                }
-                switch event.charactersIgnoringModifiers {
-                case "=", "+": self.model.timelineZoom = min(16, self.model.timelineZoom * 1.5); return nil
-                case "-": self.model.timelineZoom = max(1, self.model.timelineZoom / 1.5); return nil
-                case "e": self.model.showExport = true; return nil
-                default: return event
-                }
-            }
             guard mods.isEmpty else { return event }
             switch event.keyCode {
             case 49: self.model.togglePlay(); return nil              // space

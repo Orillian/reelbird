@@ -14,6 +14,8 @@ import ReelbirdCore
 
     /// Whether a share destination with a secret is configured.
     private(set) var shareConfigured = false
+    /// Called after the global shortcuts change (the menus show them).
+    @ObservationIgnored var onHotKeysChanged: (() -> Void)?
 
     init(services: Services, prefs: Preferences) {
         self.services = services
@@ -54,6 +56,7 @@ import ReelbirdCore
     func registerHotKeys() {
         HotKeyCenter.shared.register(.record, prefs.recordHotKey) { [weak self] in self?.toggleRecordingFromHotKey() }
         HotKeyCenter.shared.register(.pause, prefs.pauseHotKey) { [weak self] in self?.togglePauseFromHotKey() }
+        onHotKeysChanged?()
     }
 
     /// Presents an error as a plain-English alert.
