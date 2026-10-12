@@ -76,15 +76,22 @@ public final class ScreenCaptureKitSource: NSObject, FrameSource, SCStreamOutput
             throw CaptureError.unsupportedSource
         }
 
+        // Points × pointPixelScale = native pixels (Apple's recipe). For displays and windows the
+        // filter's contentRect is the exact captured size in points (a window's frame can include
+        // shadow insets); an area uses its sourceRect.
         let scale = Double(filter.pointPixelScale)
-        let size = PixelSize(width: even(area.width * scale), height: even(area.height * scale))
+        var points = area.size
+        if areaOffset == nil, filter.contentRect.width >= 2, filter.contentRect.height >= 2 { points = filter.contentRect.size }
+        let size = PixelSize(width: even(points.width * scale), height: even(points.height * scale))
         config.width = size.width
         config.height = size.height
         config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         config.colorSpaceName = CGColorSpace.sRGB
         config.colorMatrix = CGDisplayStream.yCbCrMatrix_ITU_R_709_2
         config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, options.frameRate)))
-        config.queueDepth = 6
+        // We hold the newest frame (static-screen filler, share composer) while the encoder holds a
+        // few in flight; 8 (Apple's documented maximum) keeps ScreenCaptureKit from stalling at 5K60.
+        config.queueDepth = 8
         config.showsCursor = false
         config.captureResolution = .best
         config.scalesToFit = true
