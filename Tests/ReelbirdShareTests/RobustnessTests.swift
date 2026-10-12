@@ -46,3 +46,46 @@ import Testing
         #expect(S3Client.parseHTTPDate("Sun, 06 Nov 1994 08:49:37 GMT")?.timeIntervalSince1970 == 784_111_777)
     }
 }
+
+@Suite struct UploadQueueTests {
+    /// Offline for a long stretch: uploads stay bounded (a few in flight, a few in memory, the rest
+    /// spooled to disk), then everything lands in order once the network is back.
+    @Test func longOutageKeepsMemoryBoundedAndCatchesUp() async throws {
+        let server = try TestSupport.server()
+        defer { server.stop() }
+        let stream = try await Media.shared.cmaf()
+        let journal = try TestSupport.tempDir("queue")
+        let up = TestSupport.uploader(server, journal: journal, attempts: 1)
+        let info = try await up.begin(recordingID: "rec", title: "Outage")
+        let layout = try #require(ShareLayout(info: info, destination: server.destination()))
+        server.setOffline(true)
+        await up.initSegment(stream.initSegment)
+        let count = 30
+        for i in 1...count {
+            let s = stream.segments[(i - 1) % stream.segments.count]
+            await up.mediaSegment(index: i, data: s.data, duration: s.duration)
+        }
+        #expect(await up.state.uploadsInFlight <= LiveShareUploader.maxConcurrent)
+        #expect(await up.state.queuedInMemory <= UploadState.memoryQueueLimit)
+        #expect(await up.backlog == count + 1)
+        let spool = journal.appendingPathComponent("\(layout.id).spool")
+        let spooled = (try? FileManager.default.contentsOfDirectory(atPath: spool.path))?.count ?? 0
+        #expect(spooled >= count - UploadState.memoryQueueLimit - UploadState.maxConcurrentSegments, "spooled \(spooled)")
+
+        server.setOffline(false)
+        await up.finish(totalDuration: Double(count) * 2, timeout: 60)
+        #expect(await up.backlog == 0)
+        let playlist = String(decoding: try #require(server.object(layout.playlistKey)).data, as: UTF8.self)
+        #expect(TestSupport.playlistSegments(playlist).count == count)
+        #expect(playlist.contains("#EXT-X-TARGETDURATION:4\n"))
+        for i in [1, 9, 17, 30] {
+            #expect(server.object(layout.segmentKey(i))?.data == stream.segments[(i - 1) % stream.segments.count].data)
+        }
+        #expect(!FileManager.default.fileExists(atPath: spool.path), "spool removed after completion")
+        #expect(try TestSupport.meta(server, layout).status == .ready)
+    }
+}
+
+extension LiveShareUploader {
+    static var maxConcurrent: Int { UploadState.maxConcurrentSegments }
+}
