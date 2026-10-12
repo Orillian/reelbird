@@ -90,7 +90,8 @@ enum ProjectSummary {
         let hasCaptions = fm.fileExists(atPath: bundle.captionsURL.path)
         let hasTranscript = fm.fileExists(atPath: Operations.transcriptURL(bundle).path)
         let exports = ((try? fm.contentsOfDirectory(at: bundle.exportsURL, includingPropertiesForKeys: nil)) ?? [])
-            .filter { !$0.lastPathComponent.hasPrefix(".") }.map(\.path).sorted()
+            .filter { !$0.lastPathComponent.hasPrefix(".") && ["mp4", "mov", "m4v", "gif"].contains($0.pathExtension.lowercased()) }
+            .map(\.path).sorted()
 
         let tracks: [JSONValue] = m.tracks.map { t in
             [
