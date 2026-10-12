@@ -122,8 +122,8 @@ struct SourcePickerView: View {
                     let aspect = a.rect.width / max(1, a.rect.height)
                     VStack(spacing: 6) {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .strokeBorder(Theme.accent, lineWidth: 1.5)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(Theme.accentSoft))
+                            .strokeBorder(Theme.ink.opacity(0.7), lineWidth: 1.5)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(Theme.ink.opacity(0.06)))
                             .aspectRatio(aspect, contentMode: .fit)
                             .frame(maxWidth: 170, maxHeight: 92)
                         Text(verbatim: "\(Int(a.rect.width * 2)) × \(Int(a.rect.height * 2))")
