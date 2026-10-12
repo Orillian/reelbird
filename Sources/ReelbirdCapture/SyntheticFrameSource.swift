@@ -300,7 +300,7 @@ final class PatternRenderer: @unchecked Sendable {
         let w = size.width, h = size.height
         var rng: UInt64 = 0x9E3779B97F4A7C15
         func next() -> UInt64 { rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17; return rng }
-        var luma = [UInt8](repeating: 235, count: w * h)
+        var luma = [UInt8](repeating: text ? 235 : 90, count: w * h)
         if text {
             // Lines of dark "glyphs" (rough stand-in for text-heavy screens).
             let lineH = max(8, h / 60)

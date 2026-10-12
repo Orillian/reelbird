@@ -137,6 +137,8 @@ final class MockShareSink: ShareSegmentSink, @unchecked Sendable {
             let (d, tr) = try await loadAsset(bundle.resolve(try #require(t.file)))
             #expect(tr.contains { $0.mediaType == .audio })
             #expect(abs(d - 6) < 0.15, "\(kind) duration \(d)")
+            let windows = try await audioWindows(bundle.resolve(try #require(t.file)))
+            #expect(windows.filter { $0.t > 0.1 && $0.t < 5.8 }.allSatisfy { $0.rms > 0.1 }, "\(kind) should carry the tone")
         }
         let events = try bundle.readEvents()
         #expect(events.filter { $0.type == .move }.count > 300, "moves: \(events.count)")
@@ -247,6 +249,27 @@ final class MockShareSink: ShareSegmentSink, @unchecked Sendable {
         #expect(tracks.contains { $0.mediaType == .video } && tracks.contains { $0.mediaType == .audio })
         #expect(abs(duration - 6.5) < 0.2, "share duration \(duration)")
         #expect(share.pixelSize == PixelSize(width: 1920, height: 1080))
+        let shareAudio = try await audioWindows(bundle.resolve(try #require(share.file)))
+        #expect(shareAudio.filter { $0.t > 0.5 && $0.t < 6 }.allSatisfy { $0.rms > 0.15 }, "mixed mic + system audio")
+        // The camera bubble (grey synthetic camera) is composited bottom-right over the white screen.
+        let gen = AVAssetImageGenerator(asset: AVURLAsset(url: bundle.resolve(try #require(share.file))))
+        let (image, _) = try await gen.image(at: CMTime(seconds: 3, preferredTimescale: 600))
+        func luma(_ x: Int, _ y: Int) -> Int {
+            var px = [UInt8](repeating: 0, count: 4)
+            let ctx = CGContext(data: &px, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            ctx.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
+            return (Int(px[0]) + Int(px[1]) + Int(px[2])) / 3
+        }
+        let d = 0.22 * 1080, inset = 0.035 * 1080
+        let cx = Int(1920 - inset - d / 2), cy = Int(1080 - inset - d / 2)
+        #expect(luma(cx - 60, cy - 60) < 200, "bubble shows the camera")
+        #expect(luma(Int(1920 - inset - 2), Int(1080 - inset - 2)) > 200, "outside the circle stays screen")
+        if let out = ProcessInfo.processInfo.environment["RB_SHARE_FRAME"] {
+            let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: out) as CFURL, "public.png" as CFString, 1, nil)!
+            CGImageDestinationAddImage(dest, image, nil)
+            CGImageDestinationFinalize(dest)
+        }
         let camera = try #require(m.track(.camera))
         let (camDuration, _) = try await loadAsset(bundle.resolve(try #require(camera.file)))
         #expect(abs(camDuration - 6.5) < 0.2, "camera duration \(camDuration)")
