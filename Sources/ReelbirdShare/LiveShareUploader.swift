@@ -24,6 +24,15 @@ public final class LiveShareUploader: ShareSegmentSink {
         state = UploadState(client: S3Client(destination: d, secret: secret, session: session), destination: d, journalDirectory: dir)
     }
 
+    /// Tests: inject a client with short retry delays.
+    init(destination: ShareDestination, client: S3Client, journalDirectory: URL) {
+        self.destination = client.destination
+        state = UploadState(client: client, destination: client.destination, journalDirectory: journalDirectory)
+    }
+
+    /// Tests: stop every upload without cleaning up, as if the app had crashed.
+    func simulateCrash() async { await state.halt() }
+
     public func begin(recordingID: String, title: String) async throws -> ShareInfo {
         try await state.begin(recordingID: recordingID, title: title)
     }
@@ -387,6 +396,16 @@ actor UploadState {
         let w = waiters
         waiters = [:]
         w.values.forEach { $0.resume() }
+    }
+
+    func halt() {
+        cancelled = true
+        initTask?.cancel()
+        tasks.values.forEach { $0.cancel() }
+        playlistTask?.cancel()
+        placeholderTask?.cancel()
+        finalizeTask?.cancel()
+        resumeWaiters()
     }
 
     // MARK: Cancel
