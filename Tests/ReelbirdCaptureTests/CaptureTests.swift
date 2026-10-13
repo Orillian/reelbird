@@ -99,6 +99,9 @@ final class MockShareSink: ShareSegmentSink, @unchecked Sendable {
     func finish(totalDuration: Double, timeout: Double) async { calls.withLock { $0.append(.finish(totalDuration)) } }
     func cancel() async { calls.withLock { $0.append(.cancel) } }
     var backlog: Int { get async { 0 } }
+    /// What `waitUntilUploaded` answers (the upload finished or not).
+    let uploadCompletes = Mutex(false)
+    func waitUntilUploaded() async -> Bool { uploadCompletes.withLock { $0 } }
 }
 
 // MARK: End-to-end recordings (serialized: they share the hardware encoder and measure timing)
@@ -117,11 +120,12 @@ final class MockShareSink: ShareSegmentSink, @unchecked Sendable {
         let m = try bundle.readManifest()
         #expect(m.status == .complete)
         #expect(abs(m.duration - 6) < 0.1)
-        let screenDir = bundle.directory(for: .screen)
-        #expect(FileManager.default.fileExists(atPath: screenDir.appendingPathComponent("init.mp4").path))
-        #expect(SegmentStore.segmentFiles(in: screenDir).count >= 3)
-        let playlist = try String(contentsOf: screenDir.appendingPathComponent("index.m3u8"), encoding: .utf8)
-        #expect(playlist.contains("seg_00001.m4s") && playlist.contains("#EXT-X-ENDLIST"))
+        // Consolidated and verified: each track folder keeps only its one file (no second copy in segments).
+        for kind in [TrackKind.screen, .microphone, .systemAudio] {
+            let files = try FileManager.default.contentsOfDirectory(atPath: bundle.directory(for: kind).path)
+            #expect(files == ["\(kind.rawValue).mp4"], "\(kind): \(files)")
+        }
+        #expect((m.track(.screen)?.segmentCount ?? 0) >= 3)
 
         let screen = try #require(m.track(.screen))
         #expect(screen.codec == "hevc")
@@ -205,6 +209,11 @@ final class MockShareSink: ShareSegmentSink, @unchecked Sendable {
 
         #expect(try ProjectRecovery.recoverIfNeeded(bundle))
         #expect(try ProjectRecovery.recoverIfNeeded(bundle) == false)
+        // Segments that all went into the file are deleted; the screen's damaged last one keeps that track's
+        // segments (nothing is thrown away that might still be salvaged).
+        #expect(!SegmentStore.hasSegments(bundle.directory(for: .microphone)))
+        #expect(!FileManager.default.fileExists(atPath: bundle.directory(for: .microphone).appendingPathComponent("init.mp4").path))
+        #expect(SegmentStore.segmentFiles(in: dir).count == segs.count + 1)
         let m = try bundle.readManifest()
         #expect(m.status == .recovered)
         let screen = try #require(m.track(.screen))
@@ -244,6 +253,9 @@ final class MockShareSink: ShareSegmentSink, @unchecked Sendable {
 
         let m = try bundle.readManifest()
         #expect(m.share?.url.hasPrefix("https://example.test/r/") == true)
+        // The upload isn't confirmed finished (this sink never says so): its segments stay for a resume.
+        #expect(SegmentStore.hasSegments(bundle.directory(for: .share)))
+        #expect(!SegmentStore.hasSegments(bundle.directory(for: .screen)))
         let share = try #require(m.track(.share))
         let (duration, tracks) = try await loadAsset(bundle.resolve(try #require(share.file)))
         #expect(tracks.contains { $0.mediaType == .video } && tracks.contains { $0.mediaType == .audio })
@@ -342,7 +354,8 @@ final class MockShareSink: ShareSegmentSink, @unchecked Sendable {
         #expect(abs(duration - 10) < 0.05)
         let (micDuration, _) = try await loadAsset(bundle.resolve(try #require(m.track(.microphone)?.file)))
         #expect(abs(micDuration - 10) < 0.05)
-        #expect(SegmentStore.segmentFiles(in: bundle.directory(for: .screen)).count == 5)
+        #expect(m.track(.screen)?.segmentCount == 5)
+        #expect(!SegmentStore.hasSegments(bundle.directory(for: .screen)))
         print(String(format: "offline: 10 s of 1080p60 recorded in %.2f s", wall))
     }
 }

@@ -440,6 +440,7 @@ actor SessionEngine {
         // A track whose segments can't be copied (disk full, I/O error) leaves the project in the
         // `.recording` state so ProjectRecovery finishes it later; nothing on disk is removed.
         var tracks: [TrackInfo] = []
+        var verifiedWhole: Set<TrackKind> = []
         var deferred: (any Error)?
         for (kind, writer, _) in writers {
             var info = m.track(kind) ?? TrackInfo(kind: kind, directory: kind.rawValue, codec: "unknown")
@@ -478,6 +479,7 @@ actor SessionEngine {
                 info.channels = summary.channels ?? info.channels
                 info.segmentCount = summary.segmentCount
                 tracks.append(info)
+                if summary.includesEverySegment { verifiedWhole.insert(kind) }
             } catch {
                 CaptureLog.debug("verify \(kind): \(error)")
                 if kind == .screen { deferred = error; break }
@@ -504,7 +506,8 @@ actor SessionEngine {
         m.status = .complete
         m.share = manifest?.share ?? m.share
         manifest = m
-        try bundle.writeManifest(m)
+        try bundle.writeManifest(m)   // fully flushed: the consolidated files are now what the project points at
+        removeFinishedSegments(tracks, verified: verifiedWhole, manifest: m)
         releaseLock()
 
         if fmt.hasMicrophone { micMonitor.finish(activeSeconds: max(0, endTime - pausedTotal)) }
@@ -515,6 +518,31 @@ actor SessionEngine {
         publish()
         broadcaster.finish()
         return bundle
+    }
+
+    /// The take is finished: each track's consolidated file opened with AVFoundation and `project.json`
+    /// (status `.complete`) is on disk, so the segments are only a second copy. Deletes them for every
+    /// track whose file holds all of its segments. The share stream's segments stay while its live upload
+    /// may still need them (resume after a quit reads them) and go once the upload is done.
+    private func removeFinishedSegments(_ tracks: [TrackInfo], verified: Set<TrackKind>, manifest: ProjectManifest) {
+        let bundle = bundle
+        for t in tracks where verified.contains(t.kind) && t.kind != .share {
+            SegmentStore.removeSegments(directory: bundle.directory(for: t.kind), kind: t.kind)
+        }
+        guard verified.contains(.share) else { return }
+        guard let sink, manifest.share != nil || shareFailure == nil else {
+            // No live upload (sharing failed to start): nothing will read them again.
+            SegmentStore.removeSegments(directory: bundle.directory(for: .share), kind: .share)
+            return
+        }
+        Task.detached(priority: .utility) {
+            guard await sink.waitUntilUploaded() else { return }
+            // Only once the project is still there and finished (not trashed or discarded meanwhile).
+            guard let m = try? bundle.readManifest(), m.status != .recording, m.track(.share)?.file != nil,
+                  let lock = try? BundleLock.acquire(bundle, purpose: .cleanup, wait: false) else { return }
+            defer { lock.release() }
+            SegmentStore.removeSegments(directory: bundle.directory(for: .share), kind: .share)
+        }
     }
 
     // MARK: Discard / crash

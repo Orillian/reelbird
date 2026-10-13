@@ -19,4 +19,13 @@ public protocol ShareSegmentSink: AnyObject, Sendable {
     func cancel() async
     /// Segments queued but not yet uploaded.
     var backlog: Int { get async }
+    /// After `finish`: waits until every segment and the final playlist are uploaded (no timeout) and
+    /// returns `true`, or `false` if the upload was cancelled or stopped short (an app quit leaves a
+    /// journal to resume from, which needs the bundle's `share/` segments). The recorder deletes those
+    /// segments only after `true`.
+    func waitUntilUploaded() async -> Bool
+}
+
+extension ShareSegmentSink {
+    public func waitUntilUploaded() async -> Bool { false }
 }

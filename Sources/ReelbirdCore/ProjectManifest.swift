@@ -107,9 +107,11 @@ public enum TrackKind: String, Codable, Hashable, Sendable, CaseIterable {
 
 public struct TrackInfo: Codable, Hashable, Sendable {
     public var kind: TrackKind
-    /// Directory (relative to the bundle) holding `init.mp4` + `seg_NNNNN.m4s` + `index.m3u8`.
+    /// Directory (relative to the bundle) holding `init.mp4` + `seg_NNNNN.m4s` + `index.m3u8` while
+    /// recording, and `file` afterwards (the segments are deleted once it is verified).
     public var directory: String
     /// Single-file media (relative path), produced by `SegmentStore.consolidate` once recording ends.
+    /// `segmentCount` keeps how many segments went into it.
     /// Readable by AVAsset / AVAssetReader. `nil` while recording.
     public var file: String?
     public var codec: String

@@ -14,6 +14,9 @@ enum SegmentStore {
         var pixelSize: PixelSize?
         var sampleRate: Int?
         var channels: Int?
+        /// Every segment on disk went into the file (none was cut short or damaged), so the segments
+        /// can be deleted without losing anything.
+        var includesEverySegment = true
     }
 
     static func segmentFiles(in directory: URL) -> [URL] {
@@ -84,7 +87,8 @@ enum SegmentStore {
             duration = max(duration, Double(end - min(end, firstStart[track] ?? 0)) / max(1, scale))
         }
         return TrackSummary(file: "\(directory.lastPathComponent)/\(outName)", segmentCount: count, duration: duration,
-                            codec: info.codec, pixelSize: info.pixelSize, sampleRate: info.sampleRate, channels: info.channels)
+                            codec: info.codec, pixelSize: info.pixelSize, sampleRate: info.sampleRate, channels: info.channels,
+                            includesEverySegment: count == segments.count)
     }
 
     /// Reads a consolidated file back from disk: the expected size, a movie header and complete,
@@ -114,7 +118,13 @@ enum SegmentStore {
             duration = max(duration, Double(end - min(end, firstStart[track] ?? 0)) / max(1, scale))
         }
         return TrackSummary(file: relativePath, segmentCount: 0, duration: duration, codec: info.codec,
-                            pixelSize: info.pixelSize, sampleRate: info.sampleRate, channels: info.channels)
+                            pixelSize: info.pixelSize, sampleRate: info.sampleRate, channels: info.channels, includesEverySegment: true)
+    }
+
+    /// See `ProjectBundle.removeSegments(of:)`.
+    @discardableResult
+    static func removeSegments(directory: URL, kind: TrackKind) -> Int64 {
+        ProjectBundle.removeSegments(in: directory, kind: kind)
     }
 
     /// Whether a track directory still holds segments (a take not yet cleaned up, or a live upload's).
@@ -327,6 +337,9 @@ public enum ProjectRecovery {
     /// rebuild the same bundle at once. `waitForLock == false` returns `false` at once when someone else
     /// holds it (a recorder still finishing, or another recovery); `true` waits, then finds the work done.
     /// Blocks, so call it off the main thread.
+    ///
+    /// Once the project is safely marked `.recovered`, the segments of every track that went into its
+    /// consolidated file in full are deleted (`share/` stays until its upload is finished).
     /// Returns `true` if the bundle was recovered, `false` if it didn't need it.
     @discardableResult
     public static func recoverIfNeeded(_ bundle: ProjectBundle, waitForLock: Bool = true) throws -> Bool {
@@ -366,6 +379,7 @@ public enum ProjectRecovery {
         }
 
         var end = 0.0
+        var cleanable: [TrackKind] = []
         for kind in TrackKind.allCases {
             let dir = bundle.directory(for: kind)
             // Temporary files of writes the crash interrupted (never renamed into place). Safe to delete:
@@ -395,12 +409,14 @@ public enum ProjectRecovery {
             manifest.tracks.removeAll { $0.kind == kind }
             manifest.tracks.append(track)
             end = max(end, track.startTime + track.duration)
+            if summary.includesEverySegment && kind != .share { cleanable.append(kind) }
         }
         manifest.tracks.sort { TrackKind.allCases.firstIndex(of: $0.kind)! < TrackKind.allCases.firstIndex(of: $1.kind)! }
         manifest.duration = end
         manifest.pauses = manifest.pauses.filter { $0.start < end }.map { TimeRange(start: $0.start, end: min($0.end, end)) }
         manifest.status = .recovered
-        try bundle.writeManifest(manifest)
+        try bundle.writeManifest(manifest)   // fully flushed before anything is deleted
+        for kind in cleanable { SegmentStore.removeSegments(directory: bundle.directory(for: kind), kind: kind) }
         return true
     }
 

@@ -8,7 +8,7 @@ Demo.reelbird/
   edit.json         every edit (EditDocument)
   events.jsonl      one input event per line
   cursors/          cursor images (<id>.png at 2x) + cursors.json
-  screen/           init.mp4, seg_00001.m4s, …, index.m3u8, and screen.mp4 once finished
+  screen/           screen.mp4 (while recording: init.mp4, seg_00001.m4s, …, index.m3u8)
   camera/           same layout (optional)
   microphone/       same layout, audio only (optional)
   systemAudio/      same layout, audio only (optional)
@@ -101,13 +101,17 @@ A stem plays while it was made from the current microphone file and chain versio
 
 `project.json → status` is `recording` while a take is being written, `complete` after a clean stop and `recovered` after a crash recovery. If the project was shared, `share` holds its key, link and last update.
 
+## Tracks while recording and after
+
+While recording, each track folder fills with fragmented MP4: `init.mp4`, 2-second `seg_NNNNN.m4s` files written as they are produced, and an HLS playlist `index.m3u8`. Stopping concatenates them into `<track>.mp4` (no re-encoding), flushes it to disk, reads it back to check it and opens it with AVFoundation. Once `project.json` with status `complete` is safely on disk, the segment files are deleted, so a finished project holds one file per track. `share/` keeps its segments until its live upload has finished (an interrupted upload resumes from them), then they go too. A track whose segments couldn't all be used (a damaged one) keeps them.
+
 ## Writes
 
 `project.json` and `edit.json` are written to a temporary file, flushed and renamed over the old one, so a crash or power cut leaves the old or the new file, never a torn one. While recording (every 2 s) the flush is a write barrier (`F_BARRIERFSYNC`, about 0.5 ms); the final `project.json` of a take and every `edit.json` are fully flushed (`F_FULLFSYNC`, then the folder; about 8 ms).
 
 ## Recovery
 
-If the app stops while recording, `project.json` still says `"status": "recording"`. On next launch (or with `reelbird recover PROJECT`) the segments on disk are concatenated, a truncated last segment is dropped, the duration is recomputed, and the status becomes `recovered`.
+If the app stops while recording, `project.json` still says `"status": "recording"`. On next launch (or with `reelbird recover PROJECT`) the segments on disk are concatenated, a truncated last segment is dropped, the duration is recomputed, and the status becomes `recovered`. Segments that all went into the rebuilt file are then deleted, as after a normal stop.
 
 If `project.json` itself is unreadable, recovery rebuilds it from what is on disk: tracks from their folders (segments or finished files) and pauses from `events.jsonl`. The capture source, display scale (2) and frame rate (60) aren't stored anywhere else, so those are guesses.
 

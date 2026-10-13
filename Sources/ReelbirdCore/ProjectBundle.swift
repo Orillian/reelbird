@@ -7,7 +7,7 @@ import Foundation
 ///       edit.json           EditDocument (every edit)
 ///       events.jsonl        InputEvent per line (cursor, clicks, keys, focus, pauses)
 ///       cursors/            <id>.png + cursors.json ([CursorImageInfo])
-///       screen/             init.mp4, seg_00001.m4s …, index.m3u8   (+ screen.mp4 when consolidated)
+///       screen/             screen.mp4 once finished (while recording: init.mp4, seg_00001.m4s …, index.m3u8)
 ///       camera/  microphone/  systemAudio/  share/   (same layout, when recorded)
 ///       captions.vtt        optional, from transcription
 ///       transcript.json     optional, word-timed transcript (ReelbirdAI.Transcript) behind captions.vtt
@@ -108,6 +108,32 @@ public struct ProjectBundle: Hashable, Sendable {
     public func readCursorImages() -> [CursorImageInfo] {
         guard let d = try? Data(contentsOf: cursorIndexURL) else { return [] }
         return (try? JSONCoding.decoder.decode([CursorImageInfo].self, from: d)) ?? []
+    }
+
+    /// Deletes a finished track's recording files (`init.mp4`, `seg_*.m4s`, `index.m3u8`) and leftover
+    /// temporary files, keeping `<kind>/<kind>.mp4`. Does nothing when that file is missing. Call only
+    /// once the file is verified and a finished `project.json` pointing at it is durably written.
+    /// Returns the bytes freed.
+    @discardableResult
+    public func removeSegments(of kind: TrackKind) -> Int64 {
+        Self.removeSegments(in: directory(for: kind), kind: kind)
+    }
+
+    @discardableResult
+    public static func removeSegments(in directory: URL, kind: TrackKind) -> Int64 {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: directory.appendingPathComponent("\(kind.rawValue).mp4").path) else { return 0 }
+        var freed: Int64 = 0
+        for name in (try? fm.contentsOfDirectory(atPath: directory.path)) ?? [] {
+            let segment = name.hasPrefix("seg_") && name.hasSuffix(".m4s")
+            let leftover = name.hasPrefix(".") && (name.hasSuffix(".tmp") || name.hasSuffix(".partial"))
+            guard segment || leftover || name == "init.mp4" || name == "index.m3u8" else { continue }
+            let url = directory.appendingPathComponent(name)
+            let size = ((try? fm.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value ?? 0
+            if (try? fm.removeItem(at: url)) != nil { freed += size }
+        }
+        DurableFile.syncDirectory(directory)
+        return freed
     }
 
     /// Media file for a track: the consolidated file if present.

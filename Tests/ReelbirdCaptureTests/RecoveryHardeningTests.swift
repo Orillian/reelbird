@@ -24,6 +24,24 @@ func crashedTake(_ name: String, seconds: Double = 4, pause: Bool = false) async
 }
 
 extension RecordingTests {
+    /// The share stream's segments stay until its upload is confirmed done, then go.
+    @Test func shareSegmentsGoOnceTheUploadIsDone() async throws {
+        let url = tempBundleURL("share-done")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let sink = MockShareSink()
+        sink.uploadCompletes.withLock { $0 = true }
+        let session = RecordingSession(options: options(), bundleURL: url, shareSink: sink, frameSource: SyntheticFrameSource())
+        try await session.start()
+        await sleep(3)
+        let bundle = try await session.stop()
+        let shareDir = bundle.directory(for: .share)
+        for _ in 0..<40 where SegmentStore.hasSegments(shareDir) { await sleep(0.1) }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: shareDir.path) == ["share.mp4"])
+        let m = try bundle.readManifest()
+        let (d, _) = try await loadAsset(bundle.resolve(try #require(m.track(.share)?.file)))
+        #expect(d > 2)
+    }
+
     /// A take's lock shows it is live even when project.json looks stale, and recovery leaves it alone.
     @Test func liveTakeHoldsTheBundleLock() async throws {
         let url = tempBundleURL("locked")
