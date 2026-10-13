@@ -33,7 +33,22 @@ import ReelbirdCore
             pendingOpen.removeAll()
         } else if !model.prefs.onboardingDone {
             model.showOnboarding()
+        } else if !Self.launchedAtLogin {
+            // Opened on purpose (Finder, Dock, Spotlight): go straight to a new recording, as other
+            // recorders do. A login-item launch stays quietly in the menu bar.
+            model.newRecording()
         }
+    }
+
+    /// Whether macOS started the app as a login item rather than the person opening it.
+    private static var launchedAtLogin: Bool {
+        if let event = NSAppleEventManager.shared().currentAppleEvent,
+           event.eventID == AEEventID(kAEOpenApplication),
+           event.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue == OSType(keyAELaunchedAsLogInItem) {
+            return true
+        }
+        // Login items registered with SMAppService don't always carry that flag; right after login is a safe guess.
+        return ProcessInfo.processInfo.systemUptime < 120
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -55,7 +70,8 @@ import ReelbirdCore
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { model.openLibrary() }
+        // Opening Reelbird again while it runs: show the recorder (or bring back what's already open).
+        if !flag && model.recording.phase == .idle { model.newRecording() }
         return true
     }
 

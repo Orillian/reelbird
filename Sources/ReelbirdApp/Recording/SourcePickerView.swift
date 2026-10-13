@@ -9,6 +9,7 @@ struct SourcePickerView: View {
     let controller: RecordingController?
     @Bindable var prefs: Preferences
     var onSetUpSharing: () -> Void = {}
+    var onOpenLibrary: () -> Void = {}
     var onClose: () -> Void = {}
     @Environment(\.isSnapshot) private var snapshot
 
@@ -281,6 +282,17 @@ struct SourcePickerView: View {
             .menuIndicator(.hidden)
             .tint(.secondary)
             .fixedSize()
+
+            Button(action: onOpenLibrary) {
+                HStack(spacing: 4) {
+                    Image(systemName: "square.grid.2x2").font(.system(size: 11))
+                    Text("Library").font(.system(size: 12))
+                }
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, Theme.Space.m)
+            .help("Your recordings (⇧⌘L)")
 
             Spacer()
 

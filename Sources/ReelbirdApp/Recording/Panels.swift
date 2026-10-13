@@ -104,6 +104,10 @@ extension NSScreen {
                                         controller?.closePicker()
                                         app?.openSettings(.sharing)
                                     },
+                                    onOpenLibrary: { [weak controller, weak app] in
+                                        controller?.closePicker()
+                                        app?.openLibrary()
+                                    },
                                     onClose: { [weak controller] in controller?.closePicker() })
             .padding(24) // room for the shadow
         panel.host(view, environment: app)
