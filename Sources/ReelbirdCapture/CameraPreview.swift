@@ -47,6 +47,8 @@ public final class CameraPreviewController {
         view.layer = CALayer()
         previewLayer.frame = view.bounds
         previewLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        // Follow the bubble's own spring frame by frame: no implicit 0.25 s layer animation lagging behind it.
+        previewLayer.actions = ["bounds": NSNull(), "position": NSNull(), "frame": NSNull()]
         view.layer?.addSublayer(previewLayer)
         self.view = view
     }
