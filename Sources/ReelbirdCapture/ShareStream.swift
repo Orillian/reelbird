@@ -149,8 +149,9 @@ final class ShareTimeMap: Sendable {
     }
 }
 
-/// Composites the quick-share video: screen scaled to ≤1920 wide plus a circular camera bubble,
-/// rendered with Core Image on a Metal-backed context into a pixel buffer pool, at 30 fps.
+/// Composites the quick-share video: screen scaled to ≤1920 wide plus the camera bubble where the live
+/// bubble is (gliding when it moves, in its shape), rendered with Core Image on a Metal-backed context into
+/// a pixel buffer pool, at 30 fps.
 final class ShareComposer: @unchecked Sendable {
     let writer: SegmentedWriter
     let size: PixelSize
@@ -161,6 +162,9 @@ final class ShareComposer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "reelbird.share.compose", qos: .userInitiated)
     private struct Latest { var screen: CVPixelBuffer?; var camera: CVPixelBuffer? }
     private let latest = Locked(Latest())
+    private struct Placement { var from: NormPoint; var to: NormPoint; var since: Double; var shape: CameraLayout.Shape }
+    private let placement: Locked<Placement>
+    private var mask: (shape: CameraLayout.Shape, width: Int, height: Int, image: CIImage)?
     private var timer: (any DispatchSourceTimer)?
     private var nextTime = 0.0
     private let interval = 1.0 / 30
@@ -173,6 +177,8 @@ final class ShareComposer: @unchecked Sendable {
         self.timeMap = timeMap
         self.size = size
         self.layout = layout
+        let start = layout.position
+        placement = Locked(Placement(from: start, to: start, since: -1, shape: layout.shape))
         let options: [CIContextOption: Any] = [.workingColorSpace: colorSpace, .cacheIntermediates: false, .name: "reelbird.share"]
         if let device = MTLCreateSystemDefaultDevice() {
             context = CIContext(mtlDevice: device, options: options)
@@ -191,6 +197,23 @@ final class ShareComposer: @unchecked Sendable {
 
     func update(screen pb: CVPixelBuffer) { latest.withLock { $0.screen = pb } }
     func update(camera pb: CVPixelBuffer) { latest.withLock { $0.camera = pb } }
+
+    /// The live bubble moved (`position` as in `CameraLayout`) at timeline `t`: glide there from where it is.
+    func setCamera(position: NormPoint, shape: CameraLayout.Shape, at t: Double) {
+        placement.withLock { p in
+            let now = Self.place(p, at: t)
+            // The first place (t = 0) is where the bubble starts, not a move.
+            p = t <= 0 ? Placement(from: position, to: position, since: -1, shape: shape)
+                       : Placement(from: now, to: position, since: t, shape: shape)
+        }
+    }
+
+    private static func place(_ p: Placement, at t: Double) -> NormPoint {
+        let u = (t - p.since) / CameraPlacement.glideDuration
+        guard u < 1 else { return p.to }
+        let e = CameraPlacementPath.ease(u)
+        return NormPoint(x: p.from.x + (p.to.x - p.from.x) * e, y: p.from.y + (p.to.y - p.from.y) * e)
+    }
 
     /// Real time: renders the first frame at t = 0 now, then every 1/30 s on a timer. Ticks inside
     /// paused ranges are skipped.
@@ -230,13 +253,13 @@ final class ShareComposer: @unchecked Sendable {
         guard let screen, let pool else { return }
         var out: CVPixelBuffer?
         guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &out) == kCVReturnSuccess, let out else { framesSkipped += 1; return }
-        let image = compose(screen: screen, camera: camera)
+        let image = compose(screen: screen, camera: camera, at: t)
         context.render(image, to: out, bounds: CGRect(x: 0, y: 0, width: size.width, height: size.height), colorSpace: colorSpace)
         if writer.append(pixelBuffer: out, at: shareTime) == .appended { framesRendered += 1 } else { framesSkipped += 1 }
         nextTime = max(nextTime + interval, t + interval * 0.5)
     }
 
-    func compose(screen: CVPixelBuffer, camera: CVPixelBuffer?) -> CIImage {
+    func compose(screen: CVPixelBuffer, camera: CVPixelBuffer?, at t: Double = 0) -> CIImage {
         let W = Double(size.width), H = Double(size.height)
         var img = CIImage(cvPixelBuffer: screen)
         let ext = img.extent
@@ -253,30 +276,53 @@ final class ShareComposer: @unchecked Sendable {
             .composited(over: CIImage(color: .black).cropped(to: CGRect(x: 0, y: 0, width: W, height: H)))
         guard let camera, layout.visible else { return img.cropped(to: CGRect(x: 0, y: 0, width: W, height: H)) }
 
-        let d = layout.size * min(W, H)
-        let inset = layout.inset * min(W, H)
+        let (place, shape) = placement.withLock { (Self.place($0, at: t), $0.shape) }
+        var bubble = layout
+        bubble.shape = shape
+        let f = CameraPlacement.frame(at: place, layout: bubble, width: W, height: H)
+        let bw = f.width.rounded(), bh = f.height.rounded()
         var cam = CIImage(cvPixelBuffer: camera)
         let ce = cam.extent
-        let side = min(ce.width, ce.height)
-        cam = cam.cropped(to: CGRect(x: ce.midX - side / 2, y: ce.midY - side / 2, width: side, height: side))
-        var t = CGAffineTransform(translationX: -cam.extent.minX, y: -cam.extent.minY)
-        if layout.mirror { t = t.concatenating(CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -side, y: 0)) }
-        t = t.concatenating(CGAffineTransform(scaleX: d / side, y: d / side))
+        // Aspect-fill around the centre, so the face stays in the middle in every shape.
+        let a = CameraPlacement.aspectFill(camera: ce.width / max(1, ce.height), bubble: bw / bh)
+        cam = cam.cropped(to: CGRect(x: ce.minX + a.u0 * ce.width, y: ce.minY + (1 - a.v1) * ce.height,
+                                     width: (a.u1 - a.u0) * ce.width, height: (a.v1 - a.v0) * ce.height))
+        let cw = cam.extent.width, ch = cam.extent.height
+        var tr = CGAffineTransform(translationX: -cam.extent.minX, y: -cam.extent.minY)
+        if layout.mirror { tr = tr.concatenating(CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -cw, y: 0)) }
+        tr = tr.concatenating(CGAffineTransform(scaleX: bw / cw, y: bh / ch))
         // Core Image's origin is bottom-left.
-        let x = (layout.corner == .topLeft || layout.corner == .bottomLeft) ? inset : W - inset - d
-        let y = (layout.corner == .bottomLeft || layout.corner == .bottomRight) ? inset : H - inset - d
-        t = t.concatenating(CGAffineTransform(translationX: x, y: y))
-        cam = cam.transformed(by: t)
-        let mask = CIFilter.radialGradient()
-        mask.center = CGPoint(x: x + d / 2, y: y + d / 2)
-        mask.radius0 = Float(d / 2 - 1.5)
-        mask.radius1 = Float(d / 2)
-        mask.color0 = .white
-        mask.color1 = .clear
+        let x = f.minX.rounded(), y = (H - f.maxY).rounded()
+        tr = tr.concatenating(CGAffineTransform(translationX: x, y: y))
+        cam = cam.transformed(by: tr)
+        let maskImage = bubbleMask(shape: shape, width: Int(bw), height: Int(bh))
+            .transformed(by: CGAffineTransform(translationX: x, y: y))
         let blend = CIFilter.blendWithAlphaMask()
         blend.inputImage = cam
         blend.backgroundImage = img
-        blend.maskImage = mask.outputImage
+        blend.maskImage = maskImage
         return (blend.outputImage ?? img).cropped(to: CGRect(x: 0, y: 0, width: W, height: H))
+    }
+
+    /// The bubble's shape as an anti-aliased alpha mask at the origin, drawn from the same outline as the
+    /// editor's renderer. Cached: it only changes with the shape or size.
+    private func bubbleMask(shape: CameraLayout.Shape, width: Int, height: Int) -> CIImage {
+        if let m = mask, m.shape == shape, m.width == width, m.height == height { return m.image }
+        let w = max(1, width), h = max(1, height)
+        var image = CIImage(color: .white).cropped(to: CGRect(x: 0, y: 0, width: w, height: h))
+        if let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+            let pts = CameraPlacement.outline(shape: shape, width: Double(w), height: Double(h), perCorner: 32)
+            let path = CGMutablePath()
+            path.addLines(between: pts.map { CGPoint(x: $0.x, y: Double(h) - $0.y) })
+            path.closeSubpath()
+            ctx.setShouldAntialias(true)
+            ctx.setFillColor(red: 1, green: 1, blue: 1, alpha: 1)
+            ctx.addPath(path)
+            ctx.fillPath()
+            if let cg = ctx.makeImage() { image = CIImage(cgImage: cg) }
+        }
+        mask = (shape, w, h, image)
+        return image
     }
 }

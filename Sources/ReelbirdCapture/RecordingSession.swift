@@ -16,6 +16,7 @@ public final class RecordingSession: Sendable {
     private let engine: SessionEngine
     private let broadcaster: StatusBroadcaster
     private let micMonitor = MicrophoneMonitor()
+    private let cameraLog = CameraBubbleLog()
     /// The bundle being written.
     public let bundle: ProjectBundle
 
@@ -30,8 +31,20 @@ public final class RecordingSession: Sendable {
         self.broadcaster = broadcaster
         bundle = ProjectBundle(url: bundleURL)
         engine = SessionEngine(options: options, bundle: bundle, sink: shareSink, source: frameSource, broadcaster: broadcaster,
-                               micMonitor: micMonitor)
+                               micMonitor: micMonitor, cameraLog: cameraLog)
     }
+
+    /// Where the live camera bubble is: its frame in global display points (top-left origin, `nil` while
+    /// hidden) and shape. Call it when the bubble appears and whenever a drag or resize ends; it is logged
+    /// as a `camera` event (at t = 0 for the place it has when recording starts), so the editor puts the
+    /// camera where it was. Safe from any thread.
+    /// `host` is when it got there (`RecordingSession.hostTime`), default now.
+    public func updateCameraBubble(frame: CGRect?, shape: CameraLayout.Shape, atHostTime host: Double? = nil) {
+        cameraLog.update(frame: frame, shape: shape, atHostTime: host ?? HostClock.now())
+    }
+
+    /// Now on the host clock that recording timestamps use (seconds).
+    public static var hostTime: Double { HostClock.now() }
 
     /// Live microphone peak and RMS in dBFS, for a meter with a target zone. Silence when there is no
     /// microphone or it stopped delivering.
@@ -190,14 +203,16 @@ actor SessionEngine {
     private var bundleLock: BundleLock?
 
     let micMonitor: MicrophoneMonitor
+    let cameraLog: CameraBubbleLog
     /// The microphone the take is locked to (an explicit device, resolved at start).
     private var lockedMic: (id: String, name: String)?
     private var micProbe: (@Sendable () -> MicrophonePresence)?
     private var micPresence: MicrophonePresence?
 
     init(options: RecordingOptions, bundle: ProjectBundle, sink: (any ShareSegmentSink)?, source: (any FrameSource)?,
-         broadcaster: StatusBroadcaster, micMonitor: MicrophoneMonitor) {
+         broadcaster: StatusBroadcaster, micMonitor: MicrophoneMonitor, cameraLog: CameraBubbleLog = CameraBubbleLog()) {
         self.micMonitor = micMonitor
+        self.cameraLog = cameraLog
         self.options = options
         self.bundle = bundle
         self.sink = sink
@@ -357,6 +372,13 @@ actor SessionEngine {
         let recorder = InputEventRecorder(log: eventLog, bundle: bundle, configuration: config)
         if fmt.isRealTime { recorder.start(origin: origin) { [weak pipeline] t in pipeline?.isPaused(t) ?? false } }
         self.recorder = recorder
+        if fmt.hasCamera {
+            let composer = pipeline.composer, screen = fmt.pixelSize
+            cameraLog.begin(writer: eventLog, origin: origin, realTime: fmt.isRealTime, area: area,
+                            isPaused: { [weak pipeline] t in pipeline?.isPaused(t) ?? false }) { rect, shape, t in
+                composer?.setCamera(position: CameraPlacement.position(recorded: rect, screen: screen), shape: shape, at: t)
+            }
+        }
         phase = .recording
         publish()
         ticker = Task { [weak self] in
@@ -382,6 +404,7 @@ actor SessionEngine {
         await source?.stop()
         pipeline?.abandon()
         await pump?.cancel()
+        cameraLog.end()
         eventLog?.close()
         try? FileManager.default.removeItem(at: bundle.url)
         releaseLock()
@@ -409,6 +432,7 @@ actor SessionEngine {
         let host = HostClock.now()
         guard let range = pipeline.resume(atHost: host) else { return }
         recorder?.mark(.resume, at: range.end)
+        cameraLog.resumed(at: range.end)
         if let p = pauseStartHost { pausedTotal += host - p }
         pauseStartHost = nil
         manifest?.pauses = pipeline.pauses
@@ -444,6 +468,7 @@ actor SessionEngine {
         recorder?.stop()
         pipeline.close(endTime: endTime)
         if pipeline.pauses.count > m.pauses.count, let last = pipeline.pauses.last { recorder?.mark(.resume, at: last.end) }
+        cameraLog.end()
         eventLog?.close()
 
         // Finish every writer in parallel.
@@ -592,6 +617,7 @@ actor SessionEngine {
         await source?.stop()
         recorder?.stop()
         pipeline?.abandon()
+        cameraLog.end()
         eventLog?.close()
         await pump?.cancel()
         if wasRunning || recordingStarted || FileManager.default.fileExists(atPath: bundle.manifestURL.path) {
@@ -609,6 +635,7 @@ actor SessionEngine {
         await source?.stop()
         recorder?.stop()
         pipeline?.abandon()
+        cameraLog.end()
         eventLog?.close()
         pump?.abandon()
         releaseLock()   // a crashed process's lock goes with it
