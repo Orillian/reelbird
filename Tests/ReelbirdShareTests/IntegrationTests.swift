@@ -5,10 +5,11 @@ import Testing
 
 /// Opt-in tests against real infrastructure.
 ///
-/// - `REELBIRD_DOGFOOD=1`: live upload + publish against the dogfood bucket. The destination
-///   comes from `REELBIRD_S3_*` variables, or from `dogfood.json` + `dogfood.secret` in
-///   `REELBIRD_DOGFOOD_DIR` (default: the package's `notes/` folder). Leaves the demo share in
-///   place and prints its link, unless `REELBIRD_DOGFOOD_CLEANUP=1`.
+/// - `REELBIRD_DOGFOOD=1`: live upload + publish against a real bucket. The destination comes only
+///   from the environment: `REELBIRD_S3_*` variables (see `ShareSettings.fromEnvironment`) plus
+///   `REELBIRD_S3_SECRET_ACCESS_KEY`, or `REELBIRD_DOGFOOD_CONFIG=<path to a ShareDestination JSON>`
+///   with the secret in `REELBIRD_S3_SECRET_ACCESS_KEY`. There is no default path. Leaves the demo
+///   share in place and prints its link, unless `REELBIRD_DOGFOOD_CLEANUP=1`.
 /// - `REELBIRD_DEMO_SERVE=<seconds>`: serves demo shares from the local mock on
 ///   `REELBIRD_DEMO_PORT` (default 8765) for browser checks: a polished share, an HLS-only
 ///   share and one that is "recording" in real time.
@@ -16,15 +17,13 @@ enum Integration {
     static let env = ProcessInfo.processInfo.environment
 
     static func dogfood() -> (ShareDestination, String)? {
-        if let d = ShareSettings.fromEnvironment(), let s = env["REELBIRD_S3_SECRET_ACCESS_KEY"] { return (d, s) }
-        let dir = env["REELBIRD_DOGFOOD_DIR"].map { URL(fileURLWithPath: $0) }
-            ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-                .deletingLastPathComponent().appendingPathComponent("notes")
-        guard let data = try? Data(contentsOf: dir.appendingPathComponent("dogfood.json")),
-              let d = try? JSONDecoder().decode(ShareDestination.self, from: data),
-              let secret = try? String(contentsOf: dir.appendingPathComponent("dogfood.secret"), encoding: .utf8)
-        else { return nil }
-        return (d, secret.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard let secret = env["REELBIRD_S3_SECRET_ACCESS_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !secret.isEmpty else { return nil }
+        if let d = ShareSettings.fromEnvironment() { return (d, secret) }
+        guard let path = env["REELBIRD_DOGFOOD_CONFIG"], !path.isEmpty,
+              let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let d = try? JSONDecoder().decode(ShareDestination.self, from: data) else { return nil }
+        return (ShareSettings.normalized(d), secret)
     }
 
     static let captions = """

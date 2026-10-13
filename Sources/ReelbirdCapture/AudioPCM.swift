@@ -208,6 +208,11 @@ final class AudioTrackFeed: @unchecked Sendable {
     var tap: (@Sendable (Int64, UnsafePointer<Float>, Int, Int) -> Void)?
     private let tolerance: Int64 = 480       // 10 ms of jitter is absorbed without correction
     private let maxChunk = 4_800
+    /// Gaps longer than this are the source going quiet (ScreenCaptureKit sends no system audio
+    /// while nothing plays), not a dropout, and don't count as a correction.
+    private let dropoutLimit: Int64 = 24_000
+    private var lastIngestHost = 0.0
+    private var idlePadded = false
 
     init(writer: SegmentedWriter, channels: Int) {
         self.writer = writer
@@ -225,6 +230,9 @@ final class AudioTrackFeed: @unchecked Sendable {
     func ingest(_ sb: CMSampleBuffer, origin: Double, muted: Bool) -> Float? {
         lock.lock(); defer { lock.unlock() }
         guard let (frames, rms) = normalizer.convert(sb) else { return nil }
+        lastIngestHost = HostClock.now()
+        let afterIdle = idlePadded
+        idlePadded = false
         let rate = Double(AudioPCM.sampleRate)
         var chunkStart = Int64(((sb.presentationTimeStamp.seconds - origin) * rate).rounded())
         var offset = 0
@@ -237,7 +245,7 @@ final class AudioTrackFeed: @unchecked Sendable {
         let delta = chunkStart - nextFrame
         if delta > tolerance {
             writeSilence(frames: delta)
-            correctionFrames += delta
+            if !afterIdle && delta < dropoutLimit { correctionFrames += delta }
         } else if delta < -tolerance {
             offset += Int(-delta)
             correctionFrames += -delta
@@ -255,6 +263,20 @@ final class AudioTrackFeed: @unchecked Sendable {
             written += k
         }
         return rms
+    }
+
+    /// Keeps the track growing while the source delivers nothing (system audio while nothing plays,
+    /// an unplugged microphone): pads silence up to `time` once no buffer has arrived for `idle`
+    /// seconds. Called a few times a second, so silence goes in small steady pieces instead of one
+    /// burst on the capture queue when audio comes back, and segments keep closing every 2 s.
+    func padIfIdle(upTo time: Double, idle: Double, now: Double) {
+        lock.lock(); defer { lock.unlock() }
+        guard now - lastIngestHost >= idle else { return }
+        let target = Int64(time * Double(AudioPCM.sampleRate))
+        guard target > nextFrame else { return }
+        writeSilence(frames: target - nextFrame)
+        started = true
+        idlePadded = true
     }
 
     /// Pads the track with silence up to `time` (stop while the source delivered nothing).

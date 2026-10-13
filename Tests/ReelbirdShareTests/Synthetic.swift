@@ -4,6 +4,7 @@ import CoreMedia
 import CoreText
 import CoreVideo
 import Foundation
+import Synchronization
 import UniformTypeIdentifiers
 
 /// Generates real H.264 + AAC media with AVAssetWriter: CMAF/HLS segments through the
@@ -106,38 +107,66 @@ enum Synthetic {
         let sampleRate = 48_000
         let audioChunk = 1024
         let audioTotal = Int(o.seconds * Double(sampleRate))
-        var frame = 0, audioPos = 0
-        let painter = Painter(o)
+        nonisolated(unsafe) let painter = Painter(o)
         let format = try audioFormat(sampleRate: sampleRate)
 
-        while frame < frames || audioPos < audioTotal {
-            var progressed = false
-            let videoTime = Double(frame) / Double(o.fps)
-            let audioTime = Double(audioPos) / Double(sampleRate)
-            let videoFirst = audioPos >= audioTotal || !audio.isReadyForMoreMediaData || videoTime <= audioTime
-            if frame < frames, video.isReadyForMoreMediaData, videoFirst {
-                guard let pool = adaptor.pixelBufferPool else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
-                var pb: CVPixelBuffer?
-                CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pb)
-                guard let pb else { throw CocoaError(.fileWriteUnknown) }
-                painter.draw(into: pb, time: videoTime)
-                if !adaptor.append(pb, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: CMTimeScale(o.fps))) {
-                    throw writer.error ?? CocoaError(.fileWriteUnknown)
+        // One requestMediaDataWhenReady pull per input, each on its own queue: AVAssetWriter then
+        // interleaves without the two inputs ever waiting on each other (a single polling loop can
+        // deadlock when both report not-ready).
+        nonisolated(unsafe) let writerRef = writer
+        nonisolated(unsafe) let videoRef = video, audioRef = audio, adaptorRef = adaptor
+        let failure = Mutex<(any Error)?>(nil)
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                    nonisolated(unsafe) var frame = 0
+                    nonisolated(unsafe) var done = false
+                    videoRef.requestMediaDataWhenReady(on: DispatchQueue(label: "synthetic.video")) {
+                        while videoRef.isReadyForMoreMediaData && !done {
+                            if frame >= frames || writerRef.status != .writing {
+                                done = true
+                                videoRef.markAsFinished()
+                                c.resume()
+                                return
+                            }
+                            var pb: CVPixelBuffer?
+                            if let pool = adaptorRef.pixelBufferPool { CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pb) }
+                            guard let pb else {
+                                failure.withLock { $0 = $0 ?? CocoaError(.fileWriteUnknown) }
+                                done = true; videoRef.markAsFinished(); c.resume(); return
+                            }
+                            painter.draw(into: pb, time: Double(frame) / Double(o.fps))
+                            if !adaptorRef.append(pb, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: CMTimeScale(o.fps))) {
+                                failure.withLock { $0 = $0 ?? (writerRef.error ?? CocoaError(.fileWriteUnknown)) }
+                                done = true; videoRef.markAsFinished(); c.resume(); return
+                            }
+                            frame += 1
+                        }
+                    }
                 }
-                frame += 1
-                progressed = true
             }
-            if !progressed, audioPos < audioTotal, audio.isReadyForMoreMediaData {
-                let n = min(audioChunk, audioTotal - audioPos)
-                let sb = try audioBuffer(format: format, start: audioPos, frames: n, sampleRate: sampleRate)
-                if !audio.append(sb) { throw writer.error ?? CocoaError(.fileWriteUnknown) }
-                audioPos += n
-                progressed = true
+            group.addTask {
+                await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                    nonisolated(unsafe) var pos = 0
+                    nonisolated(unsafe) var done = false
+                    audioRef.requestMediaDataWhenReady(on: DispatchQueue(label: "synthetic.audio")) {
+                        while audioRef.isReadyForMoreMediaData && !done {
+                            if pos >= audioTotal || writerRef.status != .writing {
+                                done = true; audioRef.markAsFinished(); c.resume(); return
+                            }
+                            let n = min(audioChunk, audioTotal - pos)
+                            guard let sb = try? audioBuffer(format: format, start: pos, frames: n, sampleRate: sampleRate),
+                                  audioRef.append(sb) else {
+                                failure.withLock { $0 = $0 ?? (writerRef.error ?? CocoaError(.fileWriteUnknown)) }
+                                done = true; audioRef.markAsFinished(); c.resume(); return
+                            }
+                            pos += n
+                        }
+                    }
+                }
             }
-            if !progressed { try await Task.sleep(nanoseconds: 1_000_000) }
         }
-        video.markAsFinished()
-        audio.markAsFinished()
+        if let e = failure.withLock({ $0 }) { throw e }
         await writer.finishWriting()
         if writer.status != .completed { throw writer.error ?? CocoaError(.fileWriteUnknown) }
     }

@@ -27,6 +27,14 @@ final class MockS3Server: @unchecked Sendable {
     private var delays: [String: Double] = [:]
     private var offline = false
     var listPageSize = 1000
+    /// Server clock minus real time; requests signed more than 15 minutes off get RequestTimeTooSkewed.
+    var clockSkew: Double = 0
+    /// Path the server is mounted under (a reverse proxy in front of MinIO), e.g. "/minio".
+    var pathPrefix = ""
+    /// Requests rejected as skewed.
+    private(set) var skewRejections = 0
+    /// Delay applied to every response (a slow or congested network).
+    var globalDelay: Double = 0
 
     init(bucket: String = "test-bucket", secret: String = "test-secret-\(UUID().uuidString)") {
         self.bucket = bucket
@@ -115,12 +123,13 @@ final class MockS3Server: @unchecked Sendable {
     private func drain(_ conn: Conn) {
         while let r = parse(&conn.buffer) {
             let (status, headers, body) = handle(r)
-            let delay = delays[key(from: r.rawPath) ?? ""] ?? 0
+            let delay = max(globalDelay, delays[key(from: r.rawPath) ?? ""] ?? 0)
             var head = "HTTP/1.1 \(status) \(reason(status))\r\n"
             var h = headers
             h["Content-Length"] = String(body.count)
             h["Connection"] = "keep-alive"
             h["Access-Control-Allow-Origin"] = "*"
+            h["Date"] = Self.httpDate(Date().addingTimeInterval(clockSkew))
             for (k, v) in h { head += "\(k): \(v)\r\n" }
             head += "\r\n"
             var out = Data(head.utf8)
@@ -152,7 +161,23 @@ final class MockS3Server: @unchecked Sendable {
                        headers: headers, body: body)
     }
 
+    static func httpDate(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "GMT")
+        f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+        return f.string(from: d)
+    }
+
+    /// The request path with the mount prefix removed (nil if it isn't under the prefix).
+    private func routed(_ rawPath: String) -> String? {
+        guard !pathPrefix.isEmpty else { return rawPath }
+        guard rawPath.hasPrefix(pathPrefix + "/") else { return nil }
+        return String(rawPath.dropFirst(pathPrefix.count))
+    }
+
     private func key(from rawPath: String) -> String? {
+        guard let rawPath = routed(rawPath) else { return nil }
         let decoded = rawPath.removingPercentEncoding ?? rawPath
         let prefix = "/\(bucket)/"
         guard decoded.hasPrefix(prefix) else { return nil }
@@ -191,6 +216,7 @@ final class MockS3Server: @unchecked Sendable {
         f.timeZone = TimeZone(identifier: "UTC")
         f.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
         guard let date = f.date(from: amzDate) else { return "malformed date" }
+        if abs(date.timeIntervalSince(Date().addingTimeInterval(clockSkew))) > 900 { skewRejections += 1; return "RequestTimeTooSkewed" }
         var headers: [String: String] = [:]
         for name in signed.split(separator: ";") { headers[String(name)] = r.headers[String(name)] ?? "" }
         let signer = SigV4Signer(accessKeyID: accessKey, secretAccessKey: secret, region: String(credParts[2]))
@@ -208,7 +234,8 @@ final class MockS3Server: @unchecked Sendable {
         let result: (Int, [String: String], Data) = {
             if authed {
                 if let problem = verify(r) {
-                    return xmlError(403, problem == "InvalidAccessKeyId" ? problem : "SignatureDoesNotMatch", problem)
+                    let code = ["InvalidAccessKeyId", "RequestTimeTooSkewed"].contains(problem) ? problem : "SignatureDoesNotMatch"
+                    return xmlError(403, code, problem)
                 }
                 if offline { return xmlError(503, "ServiceUnavailable") }
                 if let k = key, let f = failures[k], f.count > 0 {
@@ -216,7 +243,7 @@ final class MockS3Server: @unchecked Sendable {
                     return xmlError(f.status, "InternalError")
                 }
             }
-            guard r.rawPath == "/\(bucket)" || r.rawPath.hasPrefix("/\(bucket)/") else { return xmlError(404, "NoSuchBucket") }
+            guard let path = routed(r.rawPath), path == "/\(bucket)" || path.hasPrefix("/\(bucket)/") else { return xmlError(404, "NoSuchBucket") }
 
             switch (r.method, key) {
             case ("GET", nil) where authed, ("GET", "") where authed:

@@ -20,6 +20,14 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
         var microphoneLastSampleHost = 0.0
         var cameraFrames = 0
         var systemAudioBuffers = 0
+        /// Samples whose timestamp wasn't on the host clock and were retimed to arrival time.
+        var clockFallbacks = 0
+    }
+
+    /// Live samples arrive within milliseconds of their timestamp. Returns the arrival time when the
+    /// timestamp is more than 2 s away from now (not host-clock based), or `nil` if it is fine.
+    static func sanitizedHostTime(_ pts: Double, now: Double) -> Double? {
+        abs(pts - now) > 2 ? now : nil
     }
 
     let format: FrameSourceFormat
@@ -29,6 +37,8 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
     let composer: ShareComposer?
     let mixer: AudioMixer?
     let shareWriter: SegmentedWriter?
+    /// Recording time → share time (pauses left out).
+    let shareTimeMap: ShareTimeMap
     private let cameraDirectory: URL
 
     private struct Timing {
@@ -54,7 +64,7 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
     private let camera = Locked(Camera())
 
     let metrics = Mutex(Metrics())
-    private var filler: (any DispatchSourceTimer)?
+    private let filler = Locked<(any DispatchSourceTimer)?>(nil)
     private let fillerQueue = DispatchQueue(label: "reelbird.capture.filler", qos: .userInitiated)
 
     /// Called once with the host time of the first screen frame (timeline zero).
@@ -63,6 +73,8 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
     /// Called when the camera writer is created (the session adds the track to the manifest).
     var onCameraStarted: (@Sendable (PixelSize) -> Void)?
     var onCameraError: (@Sendable (String) -> Void)?
+    /// A writer failed (disk full, encoder error). Called from the writer's queue.
+    var onWriterFailed: (@Sendable (TrackKind, String) -> Void)?
 
     init(format: FrameSourceFormat, screenWriter: SegmentedWriter, microphone: AudioTrackFeed?, systemAudio: AudioTrackFeed?,
          cameraDirectory: URL, shareWriter: SegmentedWriter?, composer: ShareComposer?) {
@@ -73,12 +85,18 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
         self.cameraDirectory = cameraDirectory
         self.shareWriter = shareWriter
         self.composer = composer
+        self.shareTimeMap = composer?.timeMap ?? ShareTimeMap()
         if let shareWriter {
             let inputs = (microphone != nil ? 1 : 0) + (systemAudio != nil ? 1 : 0)
             if inputs > 0 {
                 let factory = PCMBufferFactory(channels: 2)
+                let map = shareTimeMap
+                let rate = Double(AudioPCM.sampleRate)
                 let mixer = AudioMixer(inputs: inputs) { frame, samples, n in
-                    if let sb = factory.make(frame: frame, samples: samples, frames: n) { shareWriter.append(audio: sb) }
+                    // The share stream leaves pauses out (see ShareTimeMap).
+                    map.mapAudio(frame: frame, frames: n, rate: rate) { shareFrame, offset, count in
+                        if let sb = factory.make(frame: shareFrame, samples: samples + offset * 2, frames: count) { shareWriter.append(audio: sb) }
+                    }
                 }
                 self.mixer = mixer
                 var input = 0
@@ -97,6 +115,12 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
         } else {
             mixer = nil
         }
+        for w in [screenWriter, microphone?.writer, systemAudio?.writer, shareWriter].compactMap({ $0 }) { watch(w) }
+    }
+
+    private func watch(_ writer: SegmentedWriter) {
+        let kind = writer.kind
+        writer.setFailureHandler { [weak self] message in self?.onWriterFailed?(kind, message) }
     }
 
     var origin: Double? { timing.withLock { $0.origin } }
@@ -124,6 +148,12 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
         }
     }
 
+    /// Ends a pending `waitForFirstFrame` (discard while starting).
+    func cancelFirstFrameWait() {
+        let waiter = timing.withLock { t in defer { t.waiter = nil }; return t.waiter }
+        waiter?.resume(throwing: CancellationError())
+    }
+
     func isPaused(_ t: Double) -> Bool {
         timing.withLock { s in Self.paused(s, t) }
     }
@@ -136,8 +166,18 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
     // MARK: FrameSourceOutput
 
     func frameSource(didOutput sampleBuffer: CMSampleBuffer, of kind: MediaKind) {
-        let host = sampleBuffer.presentationTimeStamp.seconds
+        var host = sampleBuffer.presentationTimeStamp.seconds
         guard host.isFinite else { return }
+        if format.isRealTime {
+            // Every source is expected to stamp samples on the host clock. If one doesn't (a device
+            // clock, a zero-based stream), a single bad timestamp would trim the track away or pad
+            // hours of silence; fall back to arrival time instead and count it.
+            let now = HostClock.now()
+            if let fixed = Self.sanitizedHostTime(host, now: now) {
+                host = fixed
+                metrics.withLock { $0.clockFallbacks += 1 }
+            }
+        }
         switch kind {
         case .screen: handleScreen(sampleBuffer, host: host)
         case .camera: handleCamera(sampleBuffer, host: host)
@@ -230,10 +270,13 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
             if c.writer == nil && !c.failed {
                 let size = PixelSize(width: CVPixelBufferGetWidth(pb) & ~1, height: CVPixelBufferGetHeight(pb) & ~1)
                 do {
-                    let w = try SegmentedWriter(kind: .camera, directory: cameraDirectory,
-                                                video: EncoderSettings.camera(size: size, frameRate: 30), audio: nil,
-                                                realTime: format.isRealTime)
-                    try w.start(at: 0)
+                    let (w, _) = try EncoderSettings.makeWriter(EncoderSettings.camera(size: size, frameRate: 30)) { spec in
+                        let w = try SegmentedWriter(kind: .camera, directory: cameraDirectory, video: spec, audio: nil,
+                                                    realTime: format.isRealTime)
+                        try w.start(at: 0)
+                        return w
+                    }
+                    watch(w)
                     // Hold the first picture from timeline zero so every track starts at 0.
                     if t > 0.001 { w.append(pixelBuffer: pb, at: 0) }
                     c.writer = w
@@ -279,6 +322,7 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
         timing.withLock { s -> Double? in
             guard let o = s.origin, s.pauseStart == nil else { return nil }
             s.pauseStart = host - o
+            shareTimeMap.pause(at: host - o)
             return host - o
         }
     }
@@ -290,6 +334,7 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
             let r = TimeRange(start: p, end: max(p, host - o))
             s.pauses.append(r)
             s.pauseStart = nil
+            shareTimeMap.resume(r)
             return r
         }
         guard let range else { return nil }
@@ -306,6 +351,10 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
         composer?.resume(at: t)
     }
 
+    /// Seconds without audio buffers before a source counts as quiet and is padded with silence.
+    /// Comfortably above ScreenCaptureKit's audio latency so real buffers are never trimmed.
+    static let audioIdle = 0.5
+
     /// Re-appends the last picture when the screen has been static for a second, so segments keep
     /// closing every ~2 s (bounded loss on a crash, steady live share) even when nothing changes.
     private func startFiller() {
@@ -318,7 +367,14 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
                 guard let o = s.origin else { return (nil, true, s.closed) }
                 return (o, Self.paused(s, now - o), s.closed)
             }
-            guard let origin, !paused, !closed else { return }
+            guard let origin, !closed else { return }
+            // Audio sources that went quiet still advance (silence), so tracks stay aligned.
+            let audioEnd = now - origin - Self.audioIdle
+            if audioEnd > 0 {
+                self.microphone?.padIfIdle(upTo: audioEnd, idle: Self.audioIdle, now: now)
+                self.systemAudio?.padIfIdle(upTo: audioEnd, idle: Self.audioIdle, now: now)
+            }
+            guard !paused else { return }
             let (last, lastAppend) = self.screen.withLock { ($0.last, $0.lastAppendHost) }
             guard let last, now - lastAppend > 1.0 else { return }
             if self.screenWriter.append(pixelBuffer: last, at: now - origin) == .appended {
@@ -326,20 +382,20 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
             }
         }
         t.resume()
-        filler = t
+        filler.withLock { $0 = t }
     }
 
     /// Stops accepting samples and brings every track to `endTime` (call after the source stopped).
     /// If recording ends while paused, the open pause is closed at `endTime`.
     func close(endTime: Double) {
-        filler?.cancel()
-        filler = nil
+        filler.withLock { f in f?.cancel(); f = nil }
         fillerQueue.sync {}
         let wasPausedAt = timing.withLock { s -> Double? in
             s.closed = true
             guard let p = s.pauseStart else { return nil }
             s.pauses.append(TimeRange(start: p, end: max(p, endTime)))
             s.pauseStart = nil
+            shareTimeMap.resume(TimeRange(start: p, end: max(p, endTime)))
             return p
         }
         composer?.stop()
@@ -356,8 +412,7 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
 
     /// Stops everything without finishing (discard or simulated crash).
     func abandon() {
-        filler?.cancel()
-        filler = nil
+        filler.withLock { f in f?.cancel(); f = nil }
         timing.withLock { $0.closed = true }
         composer?.stop()
         screenWriter.abandon()

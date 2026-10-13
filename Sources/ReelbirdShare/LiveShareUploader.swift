@@ -1,11 +1,13 @@
 import Foundation
 import ReelbirdCore
+import Synchronization
 
 /// Uploads the quick-share stream while recording so the link plays the moment recording stops.
 ///
 /// `begin` mints an unguessable ID and uploads the viewer page and `meta.json` (status
-/// "recording") before the first frame. Segments upload in parallel as they arrive (order
-/// tolerant, retried until they land); after each one the EVENT playlist is rewritten to list
+/// "recording") before the first frame. Segments upload in index order, a few at a time, retried
+/// until they land; while uploads fall behind (offline, slow uplink) queued segments are spooled
+/// to disk so memory stays flat. After each upload the EVENT playlist is rewritten to list
 /// only the contiguous run of uploaded segments. `finish` appends `EXT-X-ENDLIST` and marks the
 /// share ready. A small journal in `~/Library/Application Support/Reelbird/uploads/<id>.json`
 /// lets `resumeIfNeeded(bundle:)` finish an interrupted upload after relaunch, from the
@@ -95,7 +97,21 @@ actor UploadState {
     private var initTask: Task<Void, Never>?
     private var durations: [Int: Double] = [:]
     private var uploaded: Set<Int> = []
+    /// Uploads in flight.
     private var tasks: [Int: Task<Void, Never>] = [:]
+
+    /// Where a queued segment's bytes are.
+    enum Payload: Sendable {
+        case memory(Data)
+        /// `owned`: a spool file this uploader wrote (deleted after upload); otherwise the recorder's copy.
+        case file(URL, owned: Bool)
+    }
+    /// Segments waiting for an upload slot, uploaded lowest index first.
+    private var pending: [Int: Payload] = [:]
+    /// At most this many segment uploads at once (also bounds retries hammering a flaky link).
+    static let maxConcurrentSegments = 4
+    /// Queued segments kept in memory before new ones are spooled to disk (~1 MB each).
+    static let memoryQueueLimit = 8
 
     private var publishedCount = 0
     private var playlistTask: Task<Void, Never>?
@@ -103,6 +119,7 @@ actor UploadState {
     private var hlsAnnounced = false
     private var pagesUploaded = false
     private var placeholderTask: Task<Void, Never>?
+    private var placeholderAttempt: Task<Void, any Error>?
 
     private var finished = false
     private var totalDuration: Double?
@@ -123,7 +140,11 @@ actor UploadState {
         return ShareInfo(key: layout.key, url: layout.pageURL, polished: false, updatedAt: meta?.updatedAt ?? Date())
     }
 
-    var backlog: Int { tasks.count + (initData != nil && !initUploaded ? 1 : 0) }
+    var backlog: Int { tasks.count + pending.count + (initData != nil && !initUploaded ? 1 : 0) }
+
+    /// Queued segments held in memory (tests).
+    var queuedInMemory: Int { pending.values.filter { if case .memory = $0 { true } else { false } }.count }
+    var uploadsInFlight: Int { tasks.count }
 
     // MARK: Begin
 
@@ -142,23 +163,61 @@ actor UploadState {
         journal = UploadJournal(id: id, recordingID: recordingID, title: m.title, createdAt: now, bucket: destination.bucket)
         saveJournal()
 
-        do {
-            try await uploadPlaceholder(m, layout: l)
+        // Wait a few seconds for the placeholder page; a slow or black-holed network must not hold
+        // the link (and the segments queued behind it) for minutes of request timeouts.
+        let attempt = Task { [client] in try await Self.uploadPlaceholder(m, layout: l, client: client) }
+        switch await Self.result(of: attempt, within: beginTimeout) {
+        case .success?:
             pagesUploaded = true
-        } catch let e as ShareError where !e.isTransient {
+        case .failure(let e as ShareError)? where !e.isTransient:
             discardJournal()
             layout = nil
             throw e
-        } catch {
+        case .failure(let error)?:
             // Offline or flaky: keep the link and keep trying in the background; segments queue up.
             lastError = (error as? ShareError)?.message ?? error.localizedDescription
             placeholderTask = Task { await self.retryPlaceholder() }
+        case nil:
+            lastError = "Still reserving the link; the network is slow."
+            placeholderAttempt = attempt
+            placeholderTask = Task { await self.finishSlowPlaceholder(attempt) }
         }
         return ShareInfo(key: l.key, url: l.pageURL, polished: false, updatedAt: now)
     }
 
+    /// Seconds `begin` waits for the placeholder page before returning the link anyway.
+    var beginTimeout = 5.0
+    func setBeginTimeout(_ t: Double) { beginTimeout = t }
+
+    /// The task's result, or `nil` if it isn't done within `timeout` (the task keeps running).
+    static func result<T: Sendable>(of task: Task<T, any Error>, within timeout: Double) async -> Result<T, any Error>? {
+        let done = Mutex(false)
+        return await withCheckedContinuation { (c: CheckedContinuation<Result<T, any Error>?, Never>) in
+            let resume: @Sendable (Result<T, any Error>?) -> Void = { r in
+                if done.withLock({ d in defer { d = true }; return !d }) { c.resume(returning: r) }
+            }
+            Task { resume(await task.result) }
+            Task { try? await Task.sleep(nanoseconds: UInt64(max(0, timeout) * 1e9)); resume(nil) }
+        }
+    }
+
+    private func finishSlowPlaceholder(_ attempt: Task<Void, any Error>) async {
+        switch await attempt.result {
+        case .success:
+            pagesUploaded = true
+            lastError = nil
+        case .failure(let error):
+            guard !Task.isCancelled, !(error is CancellationError) else { return }
+            lastError = (error as? ShareError)?.message ?? error.localizedDescription
+            await retryPlaceholder()
+        }
+    }
+
     private func uploadPlaceholder(_ m: ViewerMeta, layout l: ShareLayout) async throws {
-        let client = self.client
+        try await Self.uploadPlaceholder(m, layout: l, client: client)
+    }
+
+    private static func uploadPlaceholder(_ m: ViewerMeta, layout l: ShareLayout, client: S3Client) async throws {
         let html = Data(ViewerPage.html(m).utf8)
         let card = TitleCard.jpeg(title: m.title)
         try await withThrowingTaskGroup(of: Void.self) { g in
@@ -175,7 +234,9 @@ actor UploadState {
 
     private func retryPlaceholder() async {
         var delay = 2.0
-        while !cancelled && !pagesUploaded && !completed {
+        // Task.isCancelled matters: finalize cancels this loop, and a cancelled sleep returns at once,
+        // so without the check the loop would spin on the actor until the share completed.
+        while !cancelled && !pagesUploaded && !completed && !Task.isCancelled {
             guard let m = meta, let l = layout else { return }
             do {
                 try await uploadPlaceholder(m, layout: l)
@@ -227,24 +288,63 @@ actor UploadState {
     }
 
     private func startSegmentUpload(index: Int, data: Data) {
-        guard let l = layout, tasks[index] == nil, !uploaded.contains(index) else { return }
-        let client = self.client
-        tasks[index] = Task {
-            await Self.putUntilDone(client: client, key: l.segmentKey(index), data: data, contentType: "video/iso.segment",
-                                    cacheControl: ShareLayout.immutable, isCancelled: { await self.isCancelled },
-                                    onError: { await self.noteError($0) })
-            self.segmentDidUpload(index)
+        guard layout != nil, tasks[index] == nil, pending[index] == nil, !uploaded.contains(index) else { return }
+        pending[index] = queuedInMemory < Self.memoryQueueLimit ? .memory(data) : spool(index: index, data: data)
+        pumpSegments()
+    }
+
+    private func enqueue(index: Int, payload: Payload) {
+        guard tasks[index] == nil, pending[index] == nil, !uploaded.contains(index) else { return }
+        pending[index] = payload
+        pumpSegments()
+    }
+
+    private var spoolDirectory: URL? { layout.map { journalDirectory.appendingPathComponent("\($0.id).spool", isDirectory: true) } }
+
+    /// Writes a queued segment to disk so it doesn't sit in memory; keeps it in memory if that fails.
+    private func spool(index: Int, data: Data) -> Payload {
+        guard let dir = spoolDirectory else { return .memory(data) }
+        let url = dir.appendingPathComponent(String(format: "seg_%05d.m4s", index))
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+            return .file(url, owned: true)
+        } catch {
+            return .memory(data)
         }
     }
 
-    private func segmentDidUpload(_ index: Int) {
+    /// Starts queued uploads, lowest index first, up to the concurrency limit.
+    private func pumpSegments() {
+        guard !cancelled, let l = layout else { return }
+        let client = self.client
+        while tasks.count < Self.maxConcurrentSegments, let index = pending.keys.min(), let payload = pending.removeValue(forKey: index) {
+            let data: Data
+            switch payload {
+            case .memory(let d): data = d
+            case .file(let url, _):
+                guard let d = try? Data(contentsOf: url, options: .mappedIfSafe) else { continue }
+                data = d
+            }
+            tasks[index] = Task {
+                await Self.putUntilDone(client: client, key: l.segmentKey(index), data: data, contentType: "video/iso.segment",
+                                        cacheControl: ShareLayout.immutable, isCancelled: { await self.isCancelled },
+                                        onError: { await self.noteError($0) })
+                self.segmentDidUpload(index, payload: payload)
+            }
+        }
+    }
+
+    private func segmentDidUpload(_ index: Int, payload: Payload) {
         tasks[index] = nil
+        if case .file(let url, true) = payload { try? FileManager.default.removeItem(at: url) }
         guard !cancelled else { return }
         uploaded.insert(index)
         journal?.uploaded = uploaded.sorted()
         saveJournal()
         lastError = nil
         schedulePlaylist()
+        pumpSegments()
     }
 
     var isCancelled: Bool { cancelled }
@@ -338,9 +438,18 @@ actor UploadState {
             try? await client.put(l.metaKey, data: m.jsonData, contentType: "application/json", cacheControl: ShareLayout.noStore)
         }
         if let t = initTask { await t.value }
-        while let (_, t) = tasks.first { await t.value }
+        while !cancelled {
+            if tasks.isEmpty { pumpSegments() }
+            guard let t = tasks.first?.value else { break }
+            await t.value
+        }
         if let t = playlistTask { await t.value }
-        if let t = placeholderTask { t.cancel() }
+        // Stop placeholder retries and wait for any in-flight one, so a late "recording" meta.json
+        // can never land on top of the final one.
+        placeholderAttempt?.cancel()
+        placeholderTask?.cancel()
+        _ = await placeholderAttempt?.result
+        await placeholderTask?.value
         guard !cancelled else { return }
 
         let count = contiguousCount
@@ -374,6 +483,7 @@ actor UploadState {
         completed = true
         lastError = nil
         discardJournal()
+        removeSpool()
         resumeWaiters()
     }
 
@@ -417,10 +527,13 @@ actor UploadState {
         tasks.values.forEach { $0.cancel() }
         playlistTask?.cancel()
         placeholderTask?.cancel()
+        placeholderAttempt?.cancel()
         finalizeTask?.cancel()
         tasks = [:]
+        pending = [:]
         resumeWaiters()
         discardJournal()
+        removeSpool()
         guard let l = layout else { return }
         _ = try? await client.deletePrefix(l.folder)
         try? await client.delete(l.key)
@@ -438,6 +551,10 @@ actor UploadState {
         } catch {
             lastError = "Couldn't save the upload journal: \(error.localizedDescription)"
         }
+    }
+
+    private func removeSpool() {
+        if let dir = spoolDirectory { try? FileManager.default.removeItem(at: dir) }
     }
 
     private func discardJournal() {
@@ -483,11 +600,12 @@ actor UploadState {
             initData = d
             startInitUpload(d)
         }
-        for name in files.sorted() {
-            guard let n = HLSPlaylist.segmentNumber(name), !uploaded.contains(n) else { continue }
-            guard let d = try? Data(contentsOf: dir.appendingPathComponent(name), options: .mappedIfSafe) else { continue }
+        // Queue the recorder's own files (read when their turn comes; nothing is copied).
+        removeSpool()
+        for name in files {
+            guard let n = HLSPlaylist.segmentNumber(name), !uploaded.contains(n), !name.hasPrefix(".") else { continue }
             if durations[n] == nil { durations[n] = fallback }
-            startSegmentUpload(index: n, data: d)
+            enqueue(index: n, payload: .file(dir.appendingPathComponent(name), owned: false))
         }
         journal?.durations = durations
         saveJournal()

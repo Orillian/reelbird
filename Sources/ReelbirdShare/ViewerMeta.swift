@@ -111,12 +111,12 @@ public enum HLSPlaylist {
     /// An EVENT playlist over segments 1...count. `ended` appends EXT-X-ENDLIST.
     public static func event(durations: [Double], ended: Bool, initName: String = "init.mp4",
                              segmentName: (Int) -> String) -> String {
-        let target = max(1, Int((durations.max() ?? 2).rounded(.up)))
+        let target = targetDuration(durations)
         var s = """
         #EXTM3U
         #EXT-X-VERSION:7
         #EXT-X-PLAYLIST-TYPE:EVENT
-        #EXT-X-TARGETDURATION:\(max(target, 2))
+        #EXT-X-TARGETDURATION:\(target)
         #EXT-X-MEDIA-SEQUENCE:0
         #EXT-X-INDEPENDENT-SEGMENTS
         #EXT-X-MAP:URI="\(initName)"
@@ -128,6 +128,13 @@ public enum HLSPlaylist {
         }
         if ended { s += "#EXT-X-ENDLIST\n" }
         return s
+    }
+
+    /// `EXT-X-TARGETDURATION` for ~2 s segments: each EXTINF rounded to the nearest integer must fit
+    /// (RFC 8216 4.3.3.1). Starting at 4 keeps it constant through keyframe jitter, so the value in a
+    /// growing live playlist doesn't change between reloads.
+    public static func targetDuration(_ durations: [Double]) -> Int {
+        max(4, Int((durations.max() ?? 0).rounded()))
     }
 
     /// Segment durations from a local playlist (as written by the capture writer), keyed by

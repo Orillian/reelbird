@@ -83,12 +83,79 @@ final class SharePump: @unchecked Sendable {
     }
 }
 
+/// Maps the recording timeline onto the quick-share timeline, which leaves paused ranges out so the
+/// shared link plays straight through a pause (no frozen frame, no silence, no giant segment that
+/// would blow up the live playlist's target duration). Updated by the pipeline on pause/resume/stop.
+final class ShareTimeMap: Sendable {
+    private struct State {
+        var pauses: [TimeRange] = []
+        var openPause: Double?
+    }
+    private let state = Mutex(State())
+
+    func pause(at t: Double) { state.withLock { $0.openPause = t } }
+
+    func resume(_ range: TimeRange) {
+        state.withLock { s in
+            s.openPause = nil
+            if range.duration > 0 { s.pauses.append(range) }
+        }
+    }
+
+    /// Share time for recording time `t`, or `nil` while paused.
+    func time(_ t: Double) -> Double? {
+        state.withLock { s in
+            if let p = s.openPause, t >= p { return nil }
+            var shift = 0.0
+            for r in s.pauses {
+                if r.contains(t) { return nil }
+                if r.end <= t { shift += r.duration }
+            }
+            return t - shift
+        }
+    }
+
+    /// Total paused time so far.
+    var pausedTotal: Double { state.withLock { $0.pauses.reduce(0) { $0 + $1.duration } } }
+
+    /// Splits an audio chunk at `frame` (recording timeline, 48 kHz) around paused ranges and calls
+    /// `emit` with each kept piece at its share-timeline frame.
+    func mapAudio(frame: Int64, frames: Int, rate: Double,
+                  _ emit: (_ shareFrame: Int64, _ offset: Int, _ count: Int) -> Void) {
+        let (cuts, open) = state.withLock { s -> ([(Int64, Int64)], Int64?) in
+            (s.pauses.map { (Int64(($0.start * rate).rounded()), Int64(($0.end * rate).rounded())) },
+             s.openPause.map { Int64(($0 * rate).rounded()) })
+        }
+        let end = frame + Int64(frames)
+        var cursor = frame
+        var shift: Int64 = 0
+        func flush(upTo stop: Int64) {
+            let to = min(stop, end)
+            if to > cursor { emit(cursor - shift, Int(cursor - frame), Int(to - cursor)) }
+            cursor = max(cursor, to)
+        }
+        for (a, b) in cuts.sorted(by: { $0.0 < $1.0 }) where b > a {
+            if a >= end { break }
+            flush(upTo: a)
+            cursor = max(cursor, b)
+            if b <= cursor { shift += b - a }
+            if cursor >= end { return }
+        }
+        if let open {
+            flush(upTo: open)
+            return
+        }
+        flush(upTo: end)
+    }
+}
+
 /// Composites the quick-share video: screen scaled to ≤1920 wide plus a circular camera bubble,
 /// rendered with Core Image on a Metal-backed context into a pixel buffer pool, at 30 fps.
 final class ShareComposer: @unchecked Sendable {
     let writer: SegmentedWriter
     let size: PixelSize
     let layout: CameraLayout
+    let timeMap: ShareTimeMap
     private let context: CIContext
     private var pool: CVPixelBufferPool?
     private let queue = DispatchQueue(label: "reelbird.share.compose", qos: .userInitiated)
@@ -101,8 +168,9 @@ final class ShareComposer: @unchecked Sendable {
     private(set) var framesRendered = 0
     private(set) var framesSkipped = 0
 
-    init(writer: SegmentedWriter, size: PixelSize, layout: CameraLayout = CameraLayout()) {
+    init(writer: SegmentedWriter, size: PixelSize, timeMap: ShareTimeMap = ShareTimeMap(), layout: CameraLayout = CameraLayout()) {
         self.writer = writer
+        self.timeMap = timeMap
         self.size = size
         self.layout = layout
         let options: [CIContextOption: Any] = [.workingColorSpace: colorSpace, .cacheIntermediates: false, .name: "reelbird.share"]
@@ -157,13 +225,14 @@ final class ShareComposer: @unchecked Sendable {
 
     private func render(at t: Double) {
         guard t + 1e-6 >= nextTime || t == 0 else { return }
+        guard let shareTime = timeMap.time(t) else { return }
         let (screen, camera) = latest.withLock { ($0.screen, $0.camera) }
         guard let screen, let pool else { return }
         var out: CVPixelBuffer?
         guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &out) == kCVReturnSuccess, let out else { framesSkipped += 1; return }
         let image = compose(screen: screen, camera: camera)
         context.render(image, to: out, bounds: CGRect(x: 0, y: 0, width: size.width, height: size.height), colorSpace: colorSpace)
-        if writer.append(pixelBuffer: out, at: t) == .appended { framesRendered += 1 } else { framesSkipped += 1 }
+        if writer.append(pixelBuffer: out, at: shareTime) == .appended { framesRendered += 1 } else { framesSkipped += 1 }
         nextTime = max(nextTime + interval, t + interval * 0.5)
     }
 

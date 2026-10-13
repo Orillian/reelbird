@@ -592,13 +592,15 @@ actor ProgressLog {
 
     @Test func playlistHelpers() {
         let text = HLSPlaylist.event(durations: [2, 2, 1.25], ended: true) { String(format: "seg_%05d.m4s", $0) }
-        #expect(text.hasPrefix("#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-TARGETDURATION:2\n"))
+        #expect(text.hasPrefix("#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-TARGETDURATION:4\n"))
         #expect(text.contains("#EXTINF:1.25000,\nseg_00003.m4s\n#EXT-X-ENDLIST\n"))
         #expect(HLSPlaylist.durations(fromPlaylist: text) == [1: 2, 2: 2, 3: 1.25])
         #expect(HLSPlaylist.segmentNumber("seg_00012.m4s") == 12)
         #expect(HLSPlaylist.segmentNumber("init.mp4") == nil)
         let open = HLSPlaylist.event(durations: [2.4], ended: false) { "s\($0).m4s" }
-        #expect(open.contains("#EXT-X-TARGETDURATION:3"))
+        #expect(open.contains("#EXT-X-TARGETDURATION:4"))
+        #expect(HLSPlaylist.targetDuration([2.03, 1.97]) == 4)
+        #expect(HLSPlaylist.targetDuration([2, 6.6]) == 7)
         #expect(!open.contains("ENDLIST"))
     }
 

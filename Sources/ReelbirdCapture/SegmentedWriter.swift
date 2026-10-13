@@ -44,7 +44,11 @@ final class SegmentedWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendabl
         var lastSampleEnd: Double = 0
         var sampleCount = 0
         var segments: [(name: String, duration: Double)] = []
+        var nextIndex = 1
+        var bytesWritten: Int64 = 0
         var writeError: String?
+        var outOfSpace = false
+        var onFailure: (@Sendable (String) -> Void)?
     }
     private let state = Mutex(State())
     /// Serializes appends with `finish`/`abandon` so nothing is appended after inputs are marked finished.
@@ -106,6 +110,16 @@ final class SegmentedWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendabl
     var hasSamples: Bool { state.withLock { $0.sampleCount > 0 } }
     var startTime: Double { state.withLock { $0.startTime } }
     var segmentCount: Int { state.withLock { $0.segments.count } }
+    /// Bytes of segments on disk so far (what consolidation will need to copy).
+    var bytesWritten: Int64 { state.withLock { $0.bytesWritten } }
+    /// Whether a segment write failed because the volume is full.
+    var isOutOfSpace: Bool { state.withLock { $0.outOfSpace } }
+
+    /// Called once, from the writer's queue, when the encoder fails or a segment can't be written
+    /// (disk full, volume gone). The session stops gracefully; segments already on disk are kept.
+    func setFailureHandler(_ handler: @escaping @Sendable (String) -> Void) {
+        state.withLock { $0.onFailure = handler }
+    }
     /// End of the last appended sample on the recording timeline.
     var lastSampleEnd: Double { state.withLock { $0.lastSampleEnd } }
     var lastVideoTime: Double { state.withLock { $0.lastVideoTime } }
@@ -125,7 +139,7 @@ final class SegmentedWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendabl
         }
         guard ok, writer.status == .writing else { return .closed }
         guard waitUntilReady(videoInput) else { return .notReady }
-        guard adaptor.append(pixelBuffer, withPresentationTime: .seconds(time)) else { return .closed }
+        guard adaptor.append(pixelBuffer, withPresentationTime: .seconds(time)) else { reportEncoderFailure(); return .closed }
         let frame = 1.0 / Double(video?.frameRate ?? 60)
         state.withLock { $0.lastVideoTime = time; $0.lastSampleEnd = max($0.lastSampleEnd, time + frame); $0.sampleCount += 1 }
         return .appended
@@ -140,7 +154,7 @@ final class SegmentedWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendabl
         guard ok, writer.status == .writing else { return .closed }
         // Audio must stay continuous (a dropped buffer would shift everything after it), so wait briefly.
         guard waitUntilReady(audioInput, realTimeWait: 0.05) else { return .notReady }
-        guard audioInput.append(sampleBuffer) else { return .closed }
+        guard audioInput.append(sampleBuffer) else { reportEncoderFailure(); return .closed }
         let end = (sampleBuffer.presentationTimeStamp + sampleBuffer.duration).seconds
         state.withLock { $0.lastSampleEnd = max($0.lastSampleEnd, end); $0.sampleCount += 1 }
         return .appended
@@ -202,11 +216,14 @@ final class SegmentedWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendabl
             output = SegmentOutput(kind: .initialization, index: 0, data: segmentData, duration: 0)
         case .separable:
             let duration = segmentReport?.trackReports.map(\.duration.seconds).filter(\.isFinite).max() ?? segmentInterval
-            let index = state.withLock { $0.segments.count + 1 }
+            let index = state.withLock { s in defer { s.nextIndex += 1 }; return s.nextIndex }
             let name = String(format: "seg_%05d.m4s", index)
-            write(segmentData, name: name)
-            state.withLock { $0.segments.append((name, duration)) }
-            writePlaylist(ended: false)
+            // Only segments that reached the disk go in the playlist (a failed write leaves a gap that
+            // consolidation skips; the session stops on the failure).
+            if write(segmentData, name: name) {
+                state.withLock { $0.segments.append((name, duration)) }
+                writePlaylist(ended: false)
+            }
             output = SegmentOutput(kind: .media, index: index, data: segmentData, duration: duration)
         @unknown default:
             return
@@ -214,21 +231,53 @@ final class SegmentedWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendabl
         onSegment?(output)
     }
 
-    private func write(_ data: Data, name: String) {
+    /// An append was refused: the writer has failed (encoder error, media services reset).
+    private func reportEncoderFailure() {
+        guard writer.status == .failed else { return }
+        let message = "the \(kind.rawValue) encoder stopped (\(writer.error?.localizedDescription ?? "unknown error"))"
+        let handler = state.withLock { s -> (@Sendable (String) -> Void)? in
+            guard s.writeError == nil else { return nil }
+            s.writeError = message
+            return s.onFailure
+        }
+        handler?(message)
+    }
+
+    @discardableResult
+    private func write(_ data: Data, name: String) -> Bool {
         do {
-            try data.write(to: directory.appendingPathComponent(name), options: .atomic)
+            try DurableFile.write(data, to: directory.appendingPathComponent(name))
+            state.withLock { $0.bytesWritten += Int64(data.count) }
+            return true
         } catch {
-            state.withLock { $0.writeError = "\(name): \(error.localizedDescription)" }
+            let message = DurableFile.isOutOfSpace(error)
+                ? "the disk is full"
+                : "couldn't write \(kind.rawValue)/\(name) (\(error.localizedDescription))"
+            let handler = state.withLock { s -> (@Sendable (String) -> Void)? in
+                s.outOfSpace = s.outOfSpace || DurableFile.isOutOfSpace(error)
+                guard s.writeError == nil else { return nil }
+                s.writeError = message
+                return s.onFailure
+            }
+            handler?(message)
+            return false
         }
     }
 
     private func writePlaylist(ended: Bool) {
         let segments = state.withLock { $0.segments }
-        let target = max(Int(segmentInterval.rounded(.up)), Int((segments.map(\.duration).max() ?? 0).rounded(.up)))
+        let target = Self.targetDuration(segments.map(\.duration), interval: segmentInterval)
         var s = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:\(target)\n#EXT-X-MEDIA-SEQUENCE:0\n"
         s += "#EXT-X-PLAYLIST-TYPE:\(ended ? "VOD" : "EVENT")\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MAP:URI=\"init.mp4\"\n"
         for seg in segments { s += String(format: "#EXTINF:%.5f,\n", seg.duration) + seg.name + "\n" }
         if ended { s += "#EXT-X-ENDLIST\n" }
-        try? Data(s.utf8).write(to: directory.appendingPathComponent("index.m3u8"), options: .atomic)
+        try? DurableFile.write(Data(s.utf8), to: directory.appendingPathComponent("index.m3u8"))
+    }
+
+    /// `EXT-X-TARGETDURATION`: every EXTINF rounded to the nearest integer must fit (RFC 8216
+    /// 4.3.3.1). It starts at twice the segment interval so it never has to grow mid-stream for the
+    /// usual keyframe-aligned jitter (players dislike a changing target duration in a live playlist).
+    static func targetDuration(_ durations: [Double], interval: Double) -> Int {
+        max(Int((interval * 2).rounded(.up)), Int((durations.max() ?? 0).rounded()))
     }
 }
