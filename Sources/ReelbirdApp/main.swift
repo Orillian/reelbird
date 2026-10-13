@@ -2,7 +2,8 @@ import AppKit
 import Foundation
 
 // Entry point. `--snapshot <dir> [filter]` renders the UI to PNGs (design review) and exits;
-// `--selftest` / `--selftest-live` drive the app's models against mock / real services and exit.
+// `--selftest` / `--selftest-live` drive the app's models against mock / real services and exit;
+// `--probe-thumbnails <dir>` checks which off-screen windows macOS lets us capture.
 let args = CommandLine.arguments
 if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
     let dir = URL(fileURLWithPath: args[i + 1], isDirectory: true)
@@ -12,6 +13,15 @@ if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
         SnapshotRunner.run(dir: dir, filter: filter, live: args.contains("--live"))
     }
     exit(0)
+}
+
+if let i = args.firstIndex(of: "--probe-thumbnails"), i + 1 < args.count {
+    let dir = URL(fileURLWithPath: args[i + 1], isDirectory: true)
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        Task { @MainActor in await ThumbnailProbe.run(dir: dir); exit(0) }
+    }
+    RunLoop.main.run()
 }
 
 if args.contains("--selftest") || args.contains("--selftest-live") {

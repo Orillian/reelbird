@@ -204,8 +204,10 @@ struct AreaSelection: Equatable {
     /// Fills in previews for sources listed without one, displays first.
     private func loadThumbnails() {
         thumbnailTask?.cancel()
-        // Off-screen windows can't be captured (their tiles show the app icon instead).
-        let pending = sources.filter { $0.thumbnail == nil && $0.isOnScreen }.sorted { $0.kind == .display && $1.kind != .display }
+        // Displays first, then on-screen windows, then windows on other desktops (which usually capture;
+        // minimized ones don't, and keep the app icon).
+        func rank(_ s: AvailableSource) -> Int { s.kind == .display ? 0 : s.isOnScreen ? 1 : 2 }
+        let pending = sources.filter { $0.thumbnail == nil }.sorted { rank($0) < rank($1) }
         guard !pending.isEmpty else { return }
         let capture = services.capture
         thumbnailTask = Task { [weak self] in
@@ -214,7 +216,14 @@ struct AreaSelection: Equatable {
                 let width = source.kind == .display ? 480 : 320
                 guard let img = await capture.thumbnail(for: source, maxPixelWidth: width) else { continue }
                 guard let self, let i = self.sources.firstIndex(where: { $0.id == source.id }) else { continue }
-                self.sources[i].thumbnail = img
+                switch CaptureSources.classify(img) {
+                case .picture: self.sources[i].thumbnail = img
+                case .transparent where source.kind == .window:
+                    // An invisible helper window, not something to record.
+                    self.sources.remove(at: i)
+                    if self.selectedWindowID == source.id { self.selectedWindowID = self.windows.first?.id }
+                default: break
+                }
             }
         }
     }

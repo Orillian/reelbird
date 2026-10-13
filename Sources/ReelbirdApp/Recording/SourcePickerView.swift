@@ -416,8 +416,8 @@ struct SourceTile: View {
     let selected: Bool
     let large: Bool
 
-    /// A window on another desktop or minimized: no preview, so a shorter tile with the app icon.
-    private var offScreen: Bool { source.kind == .window && !source.isOnScreen }
+    /// A window on another desktop or minimized that couldn't be captured: a shorter tile with the app icon.
+    private var offScreen: Bool { source.kind == .window && !source.isOnScreen && source.thumbnail == nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: large ? 7 : 5) {
@@ -431,10 +431,10 @@ struct SourceTile: View {
                         .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
                         .padding(large ? 8 : 6)
                 } else if offScreen {
-                    // ScreenCaptureKit can't take a picture of a window that isn't on screen.
+                    // Minimized windows (and full-screen Spaces) can't be captured until they're back on screen.
                     VStack(spacing: 3) {
                         AppIconView(source: source).frame(width: 30, height: 30)
-                        Text("Not on screen")
+                        Text("No preview")
                             .font(.system(size: 10))
                             .foregroundStyle(.tertiary)
                     }

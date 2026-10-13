@@ -191,7 +191,9 @@ public enum CaptureSources {
 
     /// A preview image of a source, at most `maxPixelWidth` wide.
     public static func thumbnail(for source: AvailableSource, maxPixelWidth: Int = 480) async throws -> CGImage {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        // All windows: ones on other desktops can still be captured (macOS keeps their contents);
+        // minimized windows and full-screen Spaces generally can't, and throw.
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         let filter: SCContentFilter
         switch source.source {
         case .display(let id, _):
@@ -209,6 +211,28 @@ public enum CaptureSources {
         config.height = max(2, Int(Double(config.width) * aspect))
         config.showsCursor = false
         return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+    }
+
+    /// What a thumbnail shows: fully transparent means an invisible helper window (AutoFill panels,
+    /// placeholders) that isn't worth listing; all black means no usable picture.
+    public enum ThumbnailContent: Sendable { case picture, transparent, black }
+
+    public static func classify(_ img: CGImage) -> ThumbnailContent {
+        let w = 32, h = 32
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return .picture }
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var opaque = 0, lit = 0
+        for i in stride(from: 0, to: px.count, by: 4) {
+            if px[i + 3] > 32 { opaque += 1 }
+            if Int(px[i]) + Int(px[i + 1]) + Int(px[i + 2]) > 24 { lit += 1 }
+        }
+        let n = w * h
+        if opaque < n / 50 { return .transparent }
+        if lit < n / 100 { return .black }
+        return .picture
     }
 
     static func ownApps(_ content: SCShareableContent) -> [SCRunningApplication] {
