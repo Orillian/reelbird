@@ -196,8 +196,11 @@ import ReelbirdRender
         for kind in [TrackKind.screen, .camera, .microphone, .systemAudio] {
             let ok = bundle.mediaURL(for: kind, in: manifest).map { FileManager.default.fileExists(atPath: $0.path) } ?? false
             check(ok, "\(kind.rawValue) track consolidated")
+            let files = (try? FileManager.default.contentsOfDirectory(atPath: bundle.directory(for: kind).path)) ?? []
+            check(files == ["\(kind.rawValue).mp4"], "\(kind.rawValue) segments deleted after verifying (\(files.count) file\(files.count == 1 ? "" : "s") left)")
         }
         check((try? services.recorder.recoverIfNeeded(bundle)) == false, "finished take needs no recovery")
+        check(!BundleLock.isHeld(bundle), "the recorder released the project lock")
 
         // Library
         let store = LibraryStore(services: services, prefs: prefs)
