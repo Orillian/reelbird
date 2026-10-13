@@ -14,8 +14,13 @@ struct VideoSpec: Sendable, Hashable {
     var keyframeInterval: Double = 2
     /// Require the hardware encoder (the default). `false` is the last-resort software fallback.
     var requireHardware = true
+    /// Tag the sRGB transfer function (screen content: ScreenCaptureKit is configured for sRGB, and
+    /// the share composite is rendered in sRGB). `false` tags BT.709 (camera video).
+    var srgbTransfer = true
 
-    /// `AVAssetWriterInput` output settings: hardware encoder required, no B-frames, BT.709 tags.
+    /// `AVAssetWriterInput` output settings: hardware encoder required, no B-frames, BT.709
+    /// primaries and matrix, and the transfer function the pixels really use. Screen pixels are
+    /// sRGB-encoded; tagging them BT.709 made QuickTime and Safari decode them washed out.
     var outputSettings: [String: Any] {
         let profile: String = codec == .hevc ? (kVTProfileLevel_HEVC_Main_AutoLevel as String) : AVVideoProfileLevelH264HighAutoLevel
         var compression: [String: Any] = [
@@ -37,7 +42,7 @@ struct VideoSpec: Sendable, Hashable {
             AVVideoCompressionPropertiesKey: compression,
             AVVideoColorPropertiesKey: [
                 AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
-                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoTransferFunctionKey: srgbTransfer ? AVVideoTransferFunction_IEC_sRGB : AVVideoTransferFunction_ITU_R_709_2,
                 AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
             ],
         ]
@@ -94,7 +99,8 @@ enum EncoderSettings {
     static func camera(size: PixelSize, frameRate: Int) -> VideoSpec {
         let px = Double(size.width * size.height)
         return VideoSpec(codec: .h264, size: size, frameRate: frameRate,
-                         bitrate: max(1_000_000, Int(px * Double(min(frameRate, 30)) * 0.08)), keyframeInterval: 2)
+                         bitrate: max(1_000_000, Int(px * Double(min(frameRate, 30)) * 0.08)), keyframeInterval: 2,
+                         srgbTransfer: false)
     }
 
     /// Quick-share stream: H.264, at most 1920 wide, 30 fps.

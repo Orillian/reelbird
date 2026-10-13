@@ -243,11 +243,25 @@ final class CursorRecorder: @unchecked Sendable {
         self.indexURL = indexURL
     }
 
-    /// Returns the image's ID (hash of its 2x pixels), saving it if new. Main thread (AppKit drawing).
+    /// PNG scale: 4× so cursors stay crisp when zoomed in on a 4K export, capped at `maxPixels` a side.
+    static let scale = 4.0
+    static let maxPixels = 512.0
+
+    /// Pixel scale used for a cursor of `size` points.
+    static func pixelScale(for size: NSSize) -> Double {
+        let longest = max(size.width, size.height)
+        guard longest > 0 else { return scale }
+        return min(scale, maxPixels / longest)
+    }
+
+    /// Returns the image's ID (hash of its rendered pixels), saving it if new. Main thread (AppKit drawing).
+    /// cursors.json keeps width/height in points and the hot spot in pixels of the PNG, so readers
+    /// derive the scale as PNG width ÷ width.
     @MainActor func register(image: NSImage, hotSpot: NSPoint) -> String? {
         let size = image.size
-        let w = Int((size.width * 2).rounded()), h = Int((size.height * 2).rounded())
-        guard w > 0, h > 0, w <= 512, h <= 512,
+        let k = Self.pixelScale(for: size)
+        let w = Int((size.width * k).rounded()), h = Int((size.height * k).rounded())
+        guard w > 0, h > 0, w <= Int(Self.maxPixels), h <= Int(Self.maxPixels),
               let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8,
                                          samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
                                          bytesPerRow: w * 4, bitsPerPixel: 32),
@@ -263,7 +277,8 @@ final class CursorRecorder: @unchecked Sendable {
         let isNew = infos.withLock { $0[id] == nil }
         if isNew {
             if let cg = rep.cgImage { save(cg, id: id) }
-            let info = CursorImageInfo(id: id, hotX: hotSpot.x * 2, hotY: hotSpot.y * 2, width: size.width, height: size.height)
+            let info = CursorImageInfo(id: id, hotX: hotSpot.x * Double(w) / size.width, hotY: hotSpot.y * Double(h) / size.height,
+                                       width: size.width, height: size.height)
             infos.withLock { $0[id] = info }
             writeIndex()
         }
