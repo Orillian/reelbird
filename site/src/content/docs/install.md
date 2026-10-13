@@ -1,7 +1,7 @@
 ---
 title: "Install from source"
 seoTitle: "Install Reelbird from source on macOS 15+"
-description: "Clone the repo and run make install. Needs macOS 15 or later and Apple's Command Line Tools; no Xcode. Permissions and local signing explained."
+description: "Clone the repo and run make install. Runs on macOS 15+. Building needs the Command Line Tools for Xcode 26 (macOS 15.6+), not Xcode. Permissions explained."
 order: 1
 updated: "2026-10-12"
 source: "README.md"

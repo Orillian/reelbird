@@ -55,7 +55,7 @@ const crumbs = [{ name: "Docs", path: "/docs/" }, ...(path === "/docs/" ? [] : [
 
 <script>
   // Copy buttons for the Markdown code blocks.
-  document.querySelectorAll<HTMLPreElement>(".body pre").forEach((pre) => {
+  document.querySelectorAll<HTMLPreElement>(".body pre.astro-code").forEach((pre) => {
     pre.tabIndex = 0;
     const wrap = document.createElement("div");
     wrap.className = "md-code";
