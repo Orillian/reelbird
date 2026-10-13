@@ -353,26 +353,25 @@ final class Compositor {
         if plan.showsCamera, let cam = camera.flatMap(bind) {
             keep += cam.keepAlive
             let cl = edit.camera
-            let w = max(16, cl.size * short)
-            let h = cl.shape == .circle ? w : w * 0.75
-            let radius = cl.shape == .circle ? w / 2 : w * 0.14
-            let inset = cl.inset * short
-            let x: Double = (cl.corner == .topLeft || cl.corner == .bottomLeft) ? inset : W - inset - w
-            let y: Double = (cl.corner == .topLeft || cl.corner == .topRight) ? inset : H - inset - h
+            let f = plan.cameraFrame(at: src, width: W, height: H)
+            let x = Double(f.minX), y = Double(f.minY), w = Double(f.width), h = Double(f.height)
+            let (radius, exponent) = CameraPlacement.corner(shape: cl.shape, width: w, height: h)
             var sh = SpriteUniforms()
             let soft = w * 0.06
             sh.rect = SIMD4(Float(x - soft * 2), Float(y - soft * 2 + w * 0.015), Float(w + soft * 4), Float(h + soft * 4))
             sh.mode.x = 4
+            sh.mode.y = Int32(exponent)
             sh.params = SIMD4(Float(w / 2), Float(h / 2), Float(radius), Float(soft))
             sh.color = SIMD4(0, 0, 0, 0.32)
             draw(&sh)
             var su = SpriteUniforms()
             su.rect = SIMD4(Float(x), Float(y), Float(w), Float(h))
             su.mode.x = 5
-            // Aspect-fill crop of the camera frame.
-            let ca = Double(cam.width) / Double(max(1, cam.height)), ba = w / h
-            var u0 = 0.0, v0 = 0.0, u1 = 1.0, v1 = 1.0
-            if ca > ba { let cw = ba / ca; u0 = (1 - cw) / 2; u1 = u0 + cw } else { let chh = ca / ba; v0 = (1 - chh) / 2; v1 = v0 + chh }
+            su.mode.y = Int32(exponent)
+            // Aspect-fill crop of the camera frame around its centre, for every shape.
+            let fill = CameraPlacement.aspectFill(camera: Double(cam.width) / Double(max(1, cam.height)), bubble: w / h)
+            var u0 = fill.u0, u1 = fill.u1
+            let v0 = fill.v0, v1 = fill.v1
             if cl.mirror { swap(&u0, &u1) }
             su.uvRect = SIMD4(Float(u0), Float(v0), Float(u1), Float(v1))
             su.params = SIMD4(Float(w / 2), Float(h / 2), Float(radius), Float(max(1.5, 0.0035 * short)))

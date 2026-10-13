@@ -33,9 +33,10 @@ enum CLI {
             .value("trim", "START-END", "Keep only this range (seconds or m:ss; END may be 'end'); 'none' clears"),
             .value("cut", "START-END", "Remove a range", repeatable: true),
             .flag("clear-cuts", "Remove all cuts first"),
+            .flag("clear-camera-moves", "Keep the camera bubble in one place: drop its recorded moves"),
             .flag("crop-toolbar", "Hide the browser toolbar (tabs, address and bookmarks bars), detected from the video"),
             .flag("no-crop", "Show the whole screen again"),
-        ], discussion: "PROJECT is a .reelbird path, a name from `reelbird list`, or \"latest\". Crop by hand with --set crop.y=0.08 (normalized to the screen video; x, y, width, height)."),
+        ], discussion: "PROJECT is a .reelbird path, a name from `reelbird list`, or \"latest\". Crop by hand with --set crop.y=0.08 (normalized to the screen video; x, y, width, height). Place the camera with --set camera.x=0.5 camera.y=1 (0 = against the left/top edge, 1 = right/bottom, 0.5 = centred) or --set camera.corner=topLeft (a fixed corner; drops moves)."),
         CommandSpec(name: "export", summary: "Render the edited video to a file.", positionals: ["PROJECT"], options: [
             .value("format", "mp4|hevc|prores|gif", "Output format (default mp4, H.264)"),
             .value("height", "PIXELS", "Output height, e.g. 1080 (default: source)"),
@@ -158,7 +159,8 @@ enum CLI {
             var crop: Operations.CropChange?
             if a.has("crop-toolbar") { crop = .set(try await ops.toolbarCrop(project)) }
             if a.has("no-crop") { crop = .clear }
-            return try ops.edit(project, sets: sets, trim: a.value("trim"), cuts: a.all("cut"), clearCuts: a.has("clear-cuts"), crop: crop)
+            return try ops.edit(project, sets: sets, trim: a.value("trim"), cuts: a.all("cut"), clearCuts: a.has("clear-cuts"), crop: crop,
+                                clearCameraMoves: a.has("clear-camera-moves"))
         case "export":
             var req = ExportRequest()
             if let f = a.value("format") {

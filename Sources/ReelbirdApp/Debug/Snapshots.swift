@@ -177,6 +177,13 @@ import SwiftUI
         scenes.append(Scene(name: "camera-bubble", size: CGSize(width: 320, height: 300), backdrop: true) {
             AnyView(CameraBubbleView(camera: MockCameraView(frame: .zero), size: .medium, onResize: { _ in }).frame(width: 212, height: 212))
         })
+        for shape in [CameraLayout.Shape.roundedSquare, .portrait] {
+            let s = CameraBubbleSize.medium.size(shape)
+            scenes.append(Scene(name: "camera-bubble-\(shape.rawValue)", size: CGSize(width: 320, height: 320), backdrop: true) {
+                AnyView(CameraBubbleView(camera: MockCameraView(frame: .zero), size: .medium, shape: shape, onResize: { _ in }, showControls: true)
+                    .frame(width: s.width + 12, height: s.height + 12))
+            })
+        }
 
         // Editor
         func editor(_ section: InspectorSection, variant: String? = nil, bundle: ProjectBundle? = nil,
@@ -199,7 +206,21 @@ import SwiftUI
             m.addZoomAtPlayhead()
             m.setPlayheadForSnapshot(13.6)
         })
-        scenes.append(editor(.camera) { m in m.change("x") { $0.camera.shape = .roundedRect; $0.canvas.aspect = .wide } })
+        scenes.append(editor(.camera) { m in m.change("x") { $0.camera.shape = .roundedSquare; $0.canvas.aspect = .wide } })
+        // Recorded moves listed in the Camera panel and marked on the timeline; a portrait tile mid-video.
+        scenes.append(editor(.camera, variant: "moves") { m in
+            m.change("x") {
+                $0.camera.shape = .portrait
+                $0.camera.position = NormPoint(x: 0.5, y: 1)
+                $0.camera.moves = [CameraLayout.Move(t: 12.4, x: 0, y: 0), CameraLayout.Move(t: 31.8, x: 1, y: 0)]
+            }
+            m.setPlayheadForSnapshot(m.unzoomedTime(after: 14))
+        })
+        // Dragging the bubble on the preview: snapped to both centre lines, guides showing.
+        scenes.append(editor(.camera, variant: "drag") { m in
+            m.beginCameraDrag()
+            m.updateCameraDrag(NormPoint(x: 0.5, y: 0.5), guides: [.centerX, .centerY])
+        })
         scenes.append(editor(.canvas) { m in m.change("x") { $0.canvas.aspect = .vertical } })
         // Crop: a Chrome window before and after "Hide Browser Toolbar", and crop mode on the preview.
         func toolbar(_ m: EditorModel) {

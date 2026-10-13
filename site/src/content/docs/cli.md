@@ -3,7 +3,7 @@ title: "Command line"
 seoTitle: "Reelbird command-line tool reference"
 description: "Record, edit, export, caption and share from the terminal. Every command takes --json for scripts and agents."
 order: 4
-updated: "2026-10-12"
+updated: "2026-10-13"
 source: "README.md"
 ---
 
@@ -22,6 +22,7 @@ reelbird record --display 1 --duration 30      # 30 seconds of the main display
 reelbird record --window 1234 --share          # a window by ID from `sources`; Ctrl-C stops
 reelbird list                                  # recent recordings
 reelbird edit latest --set zoom.intensity=0.7 --trim 0:05-end
+reelbird edit latest --set camera.x=0.5 --set camera.y=1 --clear-camera-moves   # camera bottom centre, in one place
 reelbird export latest --format mp4 --height 1080
 reelbird captions latest                       # captions.vtt, made on this Mac
 reelbird enhance latest --strength medium      # clean up the voice; the raw mic is kept

@@ -180,6 +180,8 @@ import ReelbirdCore
             let bundleURL = library.newBundleURL()
             let s = try app.services.recorder.makeSession(options: options, bundleURL: bundleURL, shareSink: sink)
             session = s
+            // Where the bubble sits (and every drag from here on) goes into the take's event log.
+            cameraBubble.onPlace = { [weak s] frame, shape, host in s?.updateCameraBubble(frame: frame, shape: shape, atHostTime: host) }
             activeBundle = bundleURL
             app.library.activeRecording = bundleURL
             status = RecorderStatus()
@@ -190,6 +192,7 @@ import ReelbirdCore
             return
         }
         syncCameraBubble()
+        cameraBubble.reportPlace()
         if options.countdown > 0 {
             runCountdown(from: options.countdown)
         } else {
@@ -468,6 +471,7 @@ import ReelbirdCore
         pausedForSleep = false
         recordedAppName = nil
         previousApp = nil
+        cameraBubble.onPlace = nil
         cameraBubble.hide()
     }
 }

@@ -65,6 +65,17 @@ static inline float sdRoundRect(float2 p, float2 halfSize, float r) {
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
 }
 
+/// Rounded rect whose corners are superellipse arcs of exponent `n` (n <= 2: circular arcs, an exact SDF).
+/// n = 4 gives continuous curvature where a corner meets the straight edge (the "squircle" corner).
+static inline float sdRoundRectP(float2 p, float2 halfSize, float r, float n) {
+    if (n <= 2.0) { return sdRoundRect(p, halfSize, r); }
+    r = min(r, min(halfSize.x, halfSize.y));
+    float2 q = abs(p) - halfSize + r;
+    float2 m = max(q, 0.0) / max(r, 1e-4);
+    float corner = pow(pow(m.x, n) + pow(m.y, n), 1.0 / n) * r;
+    return corner + min(max(q.x, q.y), 0.0) - r;
+}
+
 static inline float hash12(float2 p) {
     float3 p3 = fract(float3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
@@ -272,14 +283,15 @@ fragment float4 sprite_fragment(VOut in [[stage_in]],
         return u.color * saturate(0.5 - d);
     }
     if (mode == 4) {
-        // Filled rounded rect with soft edge. params: half size x, y, radius, softness.
-        float d = sdRoundRect(centred, u.params.xy, u.params.z);
+        // Filled rounded rect with soft edge. params: half size x, y, radius, softness; mode.y: corner exponent.
+        float d = sdRoundRectP(centred, u.params.xy, u.params.z, float(u.mode.y));
         float a = u.params.w > 0 ? 1 - smoothstep(-u.params.w, u.params.w, d) : saturate(0.5 - d);
         return u.color * a;
     }
     if (mode == 5) {
-        // Camera bubble. params: half size, radius, border width; params2: border rgba (premultiplied).
-        float d = sdRoundRect(centred, u.params.xy, u.params.z);
+        // Camera bubble. params: half size, radius, border width; params2: border rgba (premultiplied);
+        // mode.y: corner exponent (2 = circular corners, 4 = continuous "squircle" corners).
+        float d = sdRoundRectP(centred, u.params.xy, u.params.z, float(u.mode.y));
         float a = saturate(0.5 - d);
         if (a <= 0) { return float4(0); }
         float4 c = sampleTex(tex0, tex1, lin, in.uv, u);

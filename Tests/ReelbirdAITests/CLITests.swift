@@ -510,3 +510,64 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
         #expect((t?["annotations"] as? [String: Any])?["destructiveHint"] as? Bool == true, "\(name)")
     }
 }
+
+@Test(.enabled(if: binaryAvailable)) func cameraPlacementFromTheCommandLineAndMCP() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let bundle = try makeProject(in: dir, name: "Camera Take")
+    var m = try bundle.readManifest()
+    m.tracks.append(TrackInfo(kind: .camera, directory: "camera", file: "camera/camera.mp4", codec: "h264",
+                              pixelSize: PixelSize(width: 1280, height: 720), duration: 30))
+    try bundle.writeManifest(m)
+    // The recorder's log: the bubble starts in the bottom-right corner and is dragged to the top left at 12 s.
+    let d = 200.0, inset = 0.035 * 1080
+    let log = try EventLogWriter(url: bundle.eventsURL)
+    log.append(.camera(0, frame: NormRect(x: (1920 - inset - d) / 1920, y: (1080 - inset - d) / 1080, width: d / 1920, height: d / 1080)))
+    log.append(.camera(12, frame: NormRect(x: 0, y: 0, width: d / 1920, height: d / 1080)))
+    log.close()
+
+    let info = try CLI.run(["info", bundle.url.path])
+    #expect(info.code == 0, "\(info.err)")
+    #expect(info.out.contains("Camera     circle 22%, bottom right, 1 move (0:12)"), "\(info.out)")
+    let infoJSON = try #require(try CLI.run(["info", bundle.url.path, "--json"]).json)
+    let camera = try #require((infoJSON["edit"] as? [String: Any])?["camera"] as? [String: Any])
+    #expect(camera["x"] as? Double == 1 && camera["y"] as? Double == 1)
+    #expect((camera["moves"] as? [[String: Any]])?.first?["t"] as? Double == 12)
+
+    // A free place: x and y; the move stays.
+    let place = try CLI.run(["edit", bundle.url.path, "--set", "camera.x=0.5", "--set", "camera.y=0", "--set", "camera.shape=portrait"])
+    #expect(place.code == 0, "\(place.err)")
+    var edit = try bundle.readEdit()
+    #expect(edit.camera.position == NormPoint(x: 0.5, y: 0) && edit.camera.moves.count == 1 && edit.camera.shape == .portrait)
+
+    let badShape = try CLI.run(["edit", bundle.url.path, "--set", "camera.shape=hexagon"])
+    #expect(badShape.code == 65)
+    #expect(badShape.err.contains("circle, roundedSquare, portrait"), "\(badShape.err)")
+
+    // Keep it in one place.
+    #expect(try CLI.run(["edit", bundle.url.path, "--clear-camera-moves"]).code == 0)
+    edit = try bundle.readEdit()
+    #expect(edit.camera.moves.isEmpty && edit.camera.position == NormPoint(x: 0.5, y: 0))
+
+    // A corner is a preset: it pins the bubble there.
+    #expect(try CLI.run(["edit", bundle.url.path, "--set", "camera.corner=bottomLeft"]).code == 0)
+    edit = try bundle.readEdit()
+    #expect(edit.camera.x == nil && edit.camera.y == nil && edit.camera.position == NormPoint(x: 0, y: 1))
+    #expect(try CLI.run(["info", bundle.url.path]).out.contains("Camera     portrait 22%, bottom left"))
+
+    // MCP: set a place and moves, then clear the moves (separate sessions: tool calls may run concurrently).
+    let p = bundle.url.path
+    let initialize = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#
+    let set = try mcp([initialize,
+        #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"set_edit","arguments":{"project":"\#(p)","set":{"camera.x":0.25,"camera.y":0.75,"camera.moves":[{"t":3,"x":1,"y":0}]}}}}"#,
+    ], library: dir)
+    #expect(toolResult(set["2"])?["isError"] as? Bool == false)
+    edit = try bundle.readEdit()
+    #expect(edit.camera.position == NormPoint(x: 0.25, y: 0.75) && edit.camera.moves == [CameraLayout.Move(t: 3, x: 1, y: 0)])
+    let clear = try mcp([initialize,
+        #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_edit","arguments":{"project":"\#(p)","clear_camera_moves":true}}}"#,
+    ], library: dir)
+    #expect(toolResult(clear["3"])?["isError"] as? Bool == false)
+    edit = try bundle.readEdit()
+    #expect(edit.camera.position == NormPoint(x: 0.25, y: 0.75) && edit.camera.moves.isEmpty)
+}

@@ -3,7 +3,7 @@ title: "Architecture"
 seoTitle: "How Reelbird is built: architecture"
 description: "ScreenCaptureKit capture in 2-second segments, a Metal compositor shared by preview and export, serverless sharing, and on-device audio and captions."
 order: 8
-updated: "2026-10-12"
+updated: "2026-10-13"
 source: "docs/ARCHITECTURE.md"
 ---
 
@@ -30,7 +30,7 @@ One host clock (`CMClockGetHostTimeClock`) drives everything. Timeline zero is t
 - **Screen:** `SCStream` in `420v` (NV12) at native pixel size, with Reelbird's own windows excluded. The system cursor is hidden and re-drawn later from the event log. Hardware HEVC (H.264 for the compact preset, unless the frame is too large for H.264).
 - **Windows:** the picker lists every app window, not just the current Space's: on-screen ones front to back, then windows on other desktops, in full-screen Spaces or minimized, grouped by app (`CaptureSources.arrange`). macOS gives no public signal that tells those off-screen cases apart. ScreenCaptureKit can't capture an off-screen window, so Start first asks macOS to bring it on screen (`WindowActivation`: unminimize through Accessibility when allowed, activate the app so macOS switches Space, then a Dock-style reopen) and waits up to 2 s; if the window doesn't come, the picker asks you to bring it on screen. A window that leaves the screen mid-take (another Space, minimized) doesn’t stop the recording: ScreenCaptureKit sends idle or no frames, the take holds its last frame and the “screen stopped updating” warning shows until the window is back.
 - **Audio:** microphone and system audio captured by ScreenCaptureKit on the same clock (macOS 15+), as separate AAC tracks. AAC in fragmented MP4 can't hold a gap (the writer would close it up and shift everything after), so each track stays continuous: gaps become silence, overlaps are trimmed, a sample stamped on another clock is put on arrival time, and chunks a busy encoder can't take yet wait in a fixed queue. Audio lost past that queue becomes silence of the same length and raises the drift warning.
-- **Camera:** its own 30 fps track, so the bubble's size, shape and corner can change after recording.
+- **Camera:** its own 30 fps track, so the bubble's size, shape and place can change after recording. The live bubble is a floating panel kept out of the capture; its frame goes to `events.jsonl` as `camera` events when recording starts and whenever a drag or resize ends (`RecordingSession.updateCameraBubble`, on the recording clock, moved inside the captured area). The first edit places the camera from them: the start place, then a 300 ms glide for each move ([Project format](/docs/format/#camera)).
 - **Events:** pointer position (sampled at 120 Hz), clicks, scrolls, cursor image changes and, when enabled, keystrokes (a listen-only event tap, which needs Input Monitoring; for a window recording only while that window's app is in front) go to `events.jsonl`. The format also has a `focus` event for focused-element frames; nothing records it yet.
 - **Segments:** every track is written by `AVAssetWriter` as fragmented MP4 with 2-second segments delivered through the writer delegate and written to disk as they arrive. A crash loses at most the segment in progress. Stopping concatenates the segments into one file per track (no re-encoding), verifies it, writes the finished `project.json` with a full flush, then deletes the segments (the share stream's after its upload finishes). The recorder holds the bundle's lock for the whole take, so recovery from another process waits instead of rebuilding a take that is still being finished. Details: [Project format](/docs/format/#tracks-while-recording-and-after).
 - **Pause:** samples are dropped while paused; the paused ranges go into `project.json` and become cuts in the edit.
@@ -41,7 +41,7 @@ One host clock (`CMClockGetHostTimeClock`) drives everything. Timeline zero is t
 Sharing is optional and serverless: the app uploads to an S3-compatible bucket you own (Cloudflare R2 recommended, free egress).
 
 1. When recording starts, the app reserves a short ID and uploads a placeholder viewer page, so the link exists before the first frame.
-2. While recording, a second writer produces an H.264 stream (screen scaled to at most 1920 px wide, camera bubble, mixed audio, 30 fps) in 2-second CMAF segments, kept in the bundle's `share/` folder and uploaded as they are written, plus an HLS playlist that grows (`EVENT`). If the app quits mid-upload, a small journal lets the next launch finish it.
+2. While recording, a second writer produces an H.264 stream (screen scaled to at most 1920 px wide, the camera bubble where the live bubble is, mixed audio, 30 fps) in 2-second CMAF segments, kept in the bundle's `share/` folder and uploaded as they are written, plus an HLS playlist that grows (`EVENT`). If the app quits mid-upload, a small journal lets the next launch finish it.
 3. On stop, the link is copied immediately; the last segment and the end marker follow within about a second.
 4. After editing, **Update link** uploads the polished MP4 under a new revision name and rewrites `meta.json` and the viewer page, which switches to it. The link never changes.
 

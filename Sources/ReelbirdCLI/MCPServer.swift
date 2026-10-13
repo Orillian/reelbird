@@ -237,7 +237,8 @@ final class MCPServer: Sendable {
             let project = try a.requiredString("project")
             let crop: Operations.CropChange? = try a.bool("crop_toolbar") == true ? .set(try await ops.toolbarCrop(project)) : nil
             return try ops.edit(project, sets: sets, trim: try a.string("trim"), cuts: cuts,
-                                clearCuts: try a.bool("clear_cuts") ?? false, crop: crop)
+                                clearCuts: try a.bool("clear_cuts") ?? false, crop: crop,
+                                clearCameraMoves: try a.bool("clear_camera_moves") ?? false)
         case "export":
             var req = ExportRequest()
             if let f = try a.string("format") {

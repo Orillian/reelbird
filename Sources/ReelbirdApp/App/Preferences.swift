@@ -8,6 +8,11 @@ enum CameraBubbleSize: String, CaseIterable, Codable {
     case small, medium, large
     var points: CGFloat { switch self { case .small: 140; case .medium: 200; case .large: 280 } }
     var title: String { rawValue.capitalized }
+    /// The live bubble's size in points for a shape (the portrait tile is taller, at about the same area).
+    func size(_ shape: CameraLayout.Shape) -> CGSize {
+        let s = CameraPlacement.bubbleSize(shape: shape, size: Double(points), short: 1)
+        return CGSize(width: s.width.rounded(), height: s.height.rounded())
+    }
 }
 
 /// Persistent user choices. Every property writes through to UserDefaults.
@@ -39,6 +44,7 @@ enum CameraBubbleSize: String, CaseIterable, Codable {
         libraryPath = d.string(forKey: "libraryPath")
         onboardingDone = d.bool(forKey: "onboardingDone")
         cameraBubbleSize = CameraBubbleSize(rawValue: d.string(forKey: "cameraBubbleSize") ?? "") ?? .medium
+        cameraShape = CameraLayout.Shape(rawValue: d.string(forKey: "cameraShape") ?? "") ?? .circle
         openEditorAfterRecording = d.object(forKey: "openEditorAfterRecording") as? Bool ?? true
     }
 
@@ -64,6 +70,8 @@ enum CameraBubbleSize: String, CaseIterable, Codable {
     var libraryPath: String? { didSet { d.set(libraryPath, forKey: "libraryPath") } }
     var onboardingDone: Bool { didSet { d.set(onboardingDone, forKey: "onboardingDone") } }
     var cameraBubbleSize: CameraBubbleSize { didSet { d.set(cameraBubbleSize.rawValue, forKey: "cameraBubbleSize") } }
+    /// The live bubble's shape; recorded with the take, so the editor starts with the same one.
+    var cameraShape: CameraLayout.Shape { didSet { d.set(cameraShape.rawValue, forKey: "cameraShape") } }
     var openEditorAfterRecording: Bool { didSet { d.set(openEditorAfterRecording, forKey: "openEditorAfterRecording") } }
 
     var library: ProjectLibrary {

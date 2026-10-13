@@ -45,6 +45,9 @@ protocol RecordingSessionHandle: AnyObject, Sendable {
     var microphoneTakeSummary: MicTakeSummary? { get }
     /// After `stop()`: tracks that stopped early or were left out, with the reason.
     var trackIssues: [TrackKind: String] { get async }
+    /// The live camera bubble's frame (global points, top-left origin; `nil` = hidden) and shape, at host time
+    /// `host` (`nil` = now). Logged as `camera` events so the editor places the camera where it was.
+    func updateCameraBubble(frame: CGRect?, shape: CameraLayout.Shape, atHostTime host: Double?)
 }
 
 /// Creates recording sessions (`RecordingSession.init`) and recovers crashed ones (`ProjectRecovery`).

@@ -44,6 +44,9 @@ public final class SyntheticFrameSource: FrameSource, @unchecked Sendable {
         /// Fault injection: seconds added to every microphone timestamp, so the microphone looks like it
         /// runs on another clock (e.g. `-start` for a zero-based device clock).
         public var microphoneClockOffset: Double = 0
+        /// Where the synthetic screen sits in global points (`capturedArea()`), so overlays such as the camera
+        /// bubble can be placed against it. `nil` = not on a display.
+        public var capturedArea: CGRect?
         public init() {}
     }
 
@@ -131,6 +134,8 @@ public final class SyntheticFrameSource: FrameSource, @unchecked Sendable {
     public func waitUntilFinished() async {
         while !run.withLock({ $0.finished }) { try? await Task.sleep(nanoseconds: 5_000_000) }
     }
+
+    public func capturedArea() -> CGRect? { configuration.capturedArea }
 
     public func simulatedPointer(atHostTime t: Double) -> NormPoint? {
         guard let start = run.withLock({ $0.startHost }) else { return nil }
