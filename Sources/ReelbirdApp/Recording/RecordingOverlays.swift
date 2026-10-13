@@ -551,7 +551,11 @@ struct CameraBubbleView: View {
     var body: some View {
         let outline = CameraBubbleShape(shape: shape)
         ZStack(alignment: .bottom) {
-            ViewHost(view: camera)
+            // Clicks pass through the camera preview (a layer-hosting view that would swallow them) to
+            // the drag area behind it, so the bubble can be dragged and the hover controls get their taps.
+            WindowDragArea()
+                .clipShape(outline)
+            ViewHost(view: camera, hitTestable: false)
                 .clipShape(outline)
                 .overlay(outline.stroke(Color.white.opacity(0.85), lineWidth: 2.5))
                 .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
@@ -609,8 +613,21 @@ struct CameraBubbleView: View {
 /// Hosts an existing NSView in SwiftUI.
 struct ViewHost: NSViewRepresentable {
     let view: NSView
-    func makeNSView(context: Context) -> NSView { view }
+    /// false: mouse events go to whatever is behind the view instead of the view itself.
+    var hitTestable = true
+    func makeNSView(context: Context) -> NSView {
+        guard !hitTestable else { return view }
+        let box = PassThroughView()
+        view.frame = box.bounds
+        view.autoresizingMask = [.width, .height]
+        box.addSubview(view)
+        return box
+    }
     func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class PassThroughView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
 }
 
 // MARK: Toast
