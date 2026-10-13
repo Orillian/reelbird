@@ -117,3 +117,29 @@ extension LiveShareUploader {
         #expect(page.contains("Later") && !page.contains("Inside the cut"))
     }
 }
+
+extension UploadQueueTests {
+    /// A very slow network at the start must not hold the link: begin returns within its timeout,
+    /// the placeholder lands later, and the share still finishes normally.
+    @Test func slowNetworkAtStartStillReturnsTheLinkQuickly() async throws {
+        let server = try TestSupport.server()
+        defer { server.stop() }
+        let stream = try await Media.shared.cmaf()
+        let up = TestSupport.uploader(server, journal: try TestSupport.tempDir("slow"))
+        await up.state.setBeginTimeout(0.5)
+        server.globalDelay = 2
+        let t0 = Date()
+        let info = try await up.begin(recordingID: "rec", title: "Slow start")
+        #expect(Date().timeIntervalSince(t0) < 1.5)
+        let layout = try #require(ShareLayout(info: info, destination: server.destination()))
+        server.globalDelay = 0
+        await up.initSegment(stream.initSegment)
+        for (i, s) in stream.segments.enumerated() { await up.mediaSegment(index: i + 1, data: s.data, duration: s.duration) }
+        await up.finish(totalDuration: stream.totalDuration, timeout: 20)
+        #expect(try TestSupport.meta(server, layout).status == .ready)
+        // The late placeholder never overwrote the final page state.
+        try await Task.sleep(nanoseconds: 2_500_000_000)
+        #expect(try TestSupport.meta(server, layout).status == .ready)
+        #expect(server.object(layout.pageKeys[0]) != nil)
+    }
+}

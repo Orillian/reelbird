@@ -1,5 +1,6 @@
 import Foundation
 import ReelbirdCore
+import Synchronization
 
 /// Uploads the quick-share stream while recording so the link plays the moment recording stops.
 ///
@@ -118,6 +119,7 @@ actor UploadState {
     private var hlsAnnounced = false
     private var pagesUploaded = false
     private var placeholderTask: Task<Void, Never>?
+    private var placeholderAttempt: Task<Void, any Error>?
 
     private var finished = false
     private var totalDuration: Double?
@@ -161,23 +163,61 @@ actor UploadState {
         journal = UploadJournal(id: id, recordingID: recordingID, title: m.title, createdAt: now, bucket: destination.bucket)
         saveJournal()
 
-        do {
-            try await uploadPlaceholder(m, layout: l)
+        // Wait a few seconds for the placeholder page; a slow or black-holed network must not hold
+        // the link (and the segments queued behind it) for minutes of request timeouts.
+        let attempt = Task { [client] in try await Self.uploadPlaceholder(m, layout: l, client: client) }
+        switch await Self.result(of: attempt, within: beginTimeout) {
+        case .success?:
             pagesUploaded = true
-        } catch let e as ShareError where !e.isTransient {
+        case .failure(let e as ShareError)? where !e.isTransient:
             discardJournal()
             layout = nil
             throw e
-        } catch {
+        case .failure(let error)?:
             // Offline or flaky: keep the link and keep trying in the background; segments queue up.
             lastError = (error as? ShareError)?.message ?? error.localizedDescription
             placeholderTask = Task { await self.retryPlaceholder() }
+        case nil:
+            lastError = "Still reserving the link; the network is slow."
+            placeholderAttempt = attempt
+            placeholderTask = Task { await self.finishSlowPlaceholder(attempt) }
         }
         return ShareInfo(key: l.key, url: l.pageURL, polished: false, updatedAt: now)
     }
 
+    /// Seconds `begin` waits for the placeholder page before returning the link anyway.
+    var beginTimeout = 5.0
+    func setBeginTimeout(_ t: Double) { beginTimeout = t }
+
+    /// The task's result, or `nil` if it isn't done within `timeout` (the task keeps running).
+    static func result<T: Sendable>(of task: Task<T, any Error>, within timeout: Double) async -> Result<T, any Error>? {
+        let done = Mutex(false)
+        return await withCheckedContinuation { (c: CheckedContinuation<Result<T, any Error>?, Never>) in
+            let resume: @Sendable (Result<T, any Error>?) -> Void = { r in
+                if done.withLock({ d in defer { d = true }; return !d }) { c.resume(returning: r) }
+            }
+            Task { resume(await task.result) }
+            Task { try? await Task.sleep(nanoseconds: UInt64(max(0, timeout) * 1e9)); resume(nil) }
+        }
+    }
+
+    private func finishSlowPlaceholder(_ attempt: Task<Void, any Error>) async {
+        switch await attempt.result {
+        case .success:
+            pagesUploaded = true
+            lastError = nil
+        case .failure(let error):
+            guard !Task.isCancelled, !(error is CancellationError) else { return }
+            lastError = (error as? ShareError)?.message ?? error.localizedDescription
+            await retryPlaceholder()
+        }
+    }
+
     private func uploadPlaceholder(_ m: ViewerMeta, layout l: ShareLayout) async throws {
-        let client = self.client
+        try await Self.uploadPlaceholder(m, layout: l, client: client)
+    }
+
+    private static func uploadPlaceholder(_ m: ViewerMeta, layout l: ShareLayout, client: S3Client) async throws {
         let html = Data(ViewerPage.html(m).utf8)
         let card = TitleCard.jpeg(title: m.title)
         try await withThrowingTaskGroup(of: Void.self) { g in
@@ -194,7 +234,9 @@ actor UploadState {
 
     private func retryPlaceholder() async {
         var delay = 2.0
-        while !cancelled && !pagesUploaded && !completed {
+        // Task.isCancelled matters: finalize cancels this loop, and a cancelled sleep returns at once,
+        // so without the check the loop would spin on the actor until the share completed.
+        while !cancelled && !pagesUploaded && !completed && !Task.isCancelled {
             guard let m = meta, let l = layout else { return }
             do {
                 try await uploadPlaceholder(m, layout: l)
@@ -402,7 +444,12 @@ actor UploadState {
             await t.value
         }
         if let t = playlistTask { await t.value }
-        if let t = placeholderTask { t.cancel() }
+        // Stop placeholder retries and wait for any in-flight one, so a late "recording" meta.json
+        // can never land on top of the final one.
+        placeholderAttempt?.cancel()
+        placeholderTask?.cancel()
+        _ = await placeholderAttempt?.result
+        await placeholderTask?.value
         guard !cancelled else { return }
 
         let count = contiguousCount
@@ -480,6 +527,7 @@ actor UploadState {
         tasks.values.forEach { $0.cancel() }
         playlistTask?.cancel()
         placeholderTask?.cancel()
+        placeholderAttempt?.cancel()
         finalizeTask?.cancel()
         tasks = [:]
         pending = [:]

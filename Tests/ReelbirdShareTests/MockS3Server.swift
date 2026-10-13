@@ -33,6 +33,8 @@ final class MockS3Server: @unchecked Sendable {
     var pathPrefix = ""
     /// Requests rejected as skewed.
     private(set) var skewRejections = 0
+    /// Delay applied to every response (a slow or congested network).
+    var globalDelay: Double = 0
 
     init(bucket: String = "test-bucket", secret: String = "test-secret-\(UUID().uuidString)") {
         self.bucket = bucket
@@ -121,7 +123,7 @@ final class MockS3Server: @unchecked Sendable {
     private func drain(_ conn: Conn) {
         while let r = parse(&conn.buffer) {
             let (status, headers, body) = handle(r)
-            let delay = delays[key(from: r.rawPath) ?? ""] ?? 0
+            let delay = max(globalDelay, delays[key(from: r.rawPath) ?? ""] ?? 0)
             var head = "HTTP/1.1 \(status) \(reason(status))\r\n"
             var h = headers
             h["Content-Length"] = String(body.count)
