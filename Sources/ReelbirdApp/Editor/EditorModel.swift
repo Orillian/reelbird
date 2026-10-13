@@ -82,7 +82,7 @@ enum CaptionState: Equatable {
     @ObservationIgnored let undoManager = UndoManager()
     /// Off in snapshots so scenes don't write into the shared demo bundle.
     @ObservationIgnored var autosaveEnabled = true
-    @ObservationIgnored private(set) var player: (any PreviewPlayerHandle)?
+    private(set) var player: (any PreviewPlayerHandle)?
     @ObservationIgnored private let services: Services
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var exportTask: Task<Void, Never>?

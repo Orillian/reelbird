@@ -44,15 +44,22 @@ public enum Exporter {
         return (size, max(1, min(240, fps)))
     }
 
-    /// The output file: `options.destination`, or `<bundle>/exports/<name>.<ext>`.
+    /// The output file: `options.destination` if it names a file; inside it, with the default name, if it
+    /// names a folder; otherwise `<bundle>/exports/<name>.<ext>`.
     ///
     /// The name is the title, plus the export time unless the title already carries a date (the default
     /// "Reelbird 2026-10-12 at 16.09.51" bundle name), so names never repeat the date. Collisions get " 2",
     /// " 3", ….
     static func destination(bundle: ProjectBundle, manifest: ProjectManifest, edit: EditDocument, options: ExportOptions,
                             now: Date = Date()) throws -> URL {
-        if let d = options.destination { return d }
-        try FileManager.default.createDirectory(at: bundle.exportsURL, withIntermediateDirectories: true)
+        var folder = bundle.exportsURL
+        if let d = options.destination {
+            var isDir: ObjCBool = false
+            let exists = FileManager.default.fileExists(atPath: d.path, isDirectory: &isDir)
+            guard (exists && isDir.boolValue) || (!exists && d.hasDirectoryPath) else { return d }
+            folder = d
+        }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var title = (edit.title?.isEmpty == false ? edit.title! : manifest.title)
             .components(separatedBy: CharacterSet(charactersIn: "/:\\?%*|\"<>\n\r\t")).joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -65,19 +72,25 @@ public enum Exporter {
             f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
             base = "\(title) \(f.string(from: now))"
         }
-        var url = bundle.exportsURL.appendingPathComponent("\(base).\(options.format.fileExtension)")
+        var url = folder.appendingPathComponent("\(base).\(options.format.fileExtension)")
         var n = 2
         while FileManager.default.fileExists(atPath: url.path) {
-            url = bundle.exportsURL.appendingPathComponent("\(base) \(n).\(options.format.fileExtension)")
+            url = folder.appendingPathComponent("\(base) \(n).\(options.format.fileExtension)")
             n += 1
         }
         return url
     }
 
-    /// A hidden sibling of `url` to write into; renamed over `url` only when the export succeeds, so a
-    /// failed or cancelled export never leaves a half-written file behind.
+    /// A temporary file to write into, moved to `url` only when the export succeeds, so a failed or
+    /// cancelled export never leaves a half-written file behind. It lives in the system's replacement
+    /// folder on the same volume (not next to `url`), because privacy-protected folders such as Downloads
+    /// only let the app write the file the person chose.
     static func partialURL(for url: URL) -> URL {
-        url.deletingLastPathComponent().appendingPathComponent(".\(url.deletingPathExtension().lastPathComponent).\(UUID().uuidString.prefix(8)).partial.\(url.pathExtension)")
+        let fm = FileManager.default
+        let dir = (try? fm.url(for: .itemReplacementDirectory, in: .userDomainMask,
+                               appropriateFor: url.deletingLastPathComponent(), create: true))
+            ?? fm.temporaryDirectory
+        return dir.appendingPathComponent("\(url.deletingPathExtension().lastPathComponent).\(UUID().uuidString.prefix(8)).partial.\(url.pathExtension)")
     }
 
     /// Average bitrate: ~10 Mbit/s for 1080p30 H.264, scaled by pixel count and √(fps/30). HEVC needs ~65%.
@@ -112,6 +125,13 @@ final class ExportJob: @unchecked Sendable {
 
     func cancel() { cancelled.set() }
 
+    /// Removes the per-export replacement folder `partialURL` created (never the shared temp folder).
+    private func removeScratchFolder() {
+        let dir = url.deletingLastPathComponent()
+        guard dir.lastPathComponent.hasPrefix("NSIRD") else { return }
+        try? FileManager.default.removeItem(at: dir)
+    }
+
     func run() async throws -> URL {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<URL, any Error>) in
             let t = Thread { [self] in
@@ -124,9 +144,11 @@ final class ExportJob: @unchecked Sendable {
                     } else {
                         try fm.moveItem(at: url, to: finalURL)
                     }
+                    removeScratchFolder()
                     cont.resume(returning: finalURL)
                 } catch {
                     try? FileManager.default.removeItem(at: url)
+                    removeScratchFolder()
                     cont.resume(throwing: cancelled.isSet ? CancellationError() : error)
                 }
             }

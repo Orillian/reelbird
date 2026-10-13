@@ -13,6 +13,10 @@ import SwiftUI
     @ObservationIgnored let app: AppModel?
     @ObservationIgnored private let permissions: any PermissionsService
     @ObservationIgnored private var timer: Timer?
+    /// Live test after granting: mic level and the available devices.
+    private(set) var micLevel: Double = 0
+    private(set) var microphones: [MediaDevice] = []
+    private(set) var cameras: [MediaDevice] = []
 
     init(app: AppModel?, permissions: (any PermissionsService)? = nil) {
         self.app = app
@@ -25,6 +29,37 @@ import SwiftUI
     }
 
     func state(_ p: Permission) -> PermissionState { states[p] ?? .notDetermined }
+
+    // MARK: Device test
+
+    var microphoneID: String {
+        get { app?.prefs.microphoneID ?? "default" }
+        set { app?.prefs.microphoneID = newValue; startMicTest() }
+    }
+
+    var cameraID: String {
+        get { app?.prefs.cameraID ?? cameras.first(where: \.isDefault)?.id ?? cameras.first?.id ?? "" }
+        set { app?.prefs.cameraID = newValue }
+    }
+
+    func startMicTest() {
+        guard let services = app?.services else { return }
+        microphones = services.capture.microphones()
+        services.inputs.startMicrophoneMeter(deviceID: microphoneID) { [weak self] level in self?.micLevel = level }
+    }
+
+    func stopMicTest() {
+        app?.services.inputs.stopMicrophoneMeter()
+        micLevel = 0
+    }
+
+    func loadCameras() {
+        cameras = app?.services.capture.cameras() ?? []
+    }
+
+    func makeCameraView() -> NSView {
+        app?.services.inputs.makeCameraView(deviceID: cameraID) ?? NSView()
+    }
 
     func next() {
         guard let n = Step(rawValue: step.rawValue + 1) else { finish(); return }
@@ -51,7 +86,8 @@ import SwiftUI
                 startPolling()
             } else if result == .granted {
                 if p == .inputMonitoring { app?.prefs.captureKeystrokes = true }
-                next()
+                // Mic and camera stay on their step so people can check them; the rest move on.
+                if p != .microphone && p != .camera { next() }
             }
         }
     }
@@ -206,6 +242,8 @@ struct OnboardingView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if state == .granted && p == .microphone { MicrophoneTest(model: model) }
+            if state == .granted && p == .camera { CameraTest(model: model) }
             if p == .screen && model.needsRelaunch && state != .granted {
                 VStack(spacing: 6) {
                     StatusLine(tone: .info, text: "Turned it on? macOS applies it after Reelbird reopens.")
@@ -269,4 +307,59 @@ struct OnboardingView: View {
         case .inputMonitoring, .accessibility: "keyboard"
         }
     }
+}
+
+/// After the mic is allowed: pick a device and watch the meter move while you talk.
+private struct MicrophoneTest: View {
+    @Bindable var model: OnboardingModel
+
+    var body: some View {
+        VStack(spacing: Theme.Space.s) {
+            HStack(spacing: Theme.Space.m) {
+                Image(systemName: "mic.fill").foregroundStyle(.secondary)
+                LevelMeter(level: model.micLevel, segments: 18, height: 8)
+                    .frame(width: 180)
+                DeviceMenu(devices: model.microphones, selection: $model.microphoneID)
+            }
+            Text(model.micLevel > 0.05 ? "Sounds good." : "Say something. The bars should move.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .animation(Theme.gentle, value: model.micLevel > 0.05)
+        }
+        .padding(.horizontal, Theme.Space.l).padding(.vertical, Theme.Space.m)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.fieldFill))
+        .onAppear { model.startMicTest() }
+        .onDisappear { model.stopMicTest() }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Microphone test")
+    }
+}
+
+/// After the camera is allowed: a live preview of the bubble and a device menu.
+private struct CameraTest: View {
+    @Bindable var model: OnboardingModel
+
+    var body: some View {
+        HStack(spacing: Theme.Space.l) {
+            CameraPreviewRepresentable(make: { model.makeCameraView() })
+                .id(model.cameraID)
+                .frame(width: 96, height: 96)
+                .clipShape(Circle())
+                .overlay(Circle().strokeBorder(Color.primary.opacity(0.1)))
+            VStack(alignment: .leading, spacing: 6) {
+                Text("This is how you'll look in the bubble.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                DeviceMenu(devices: model.cameras, selection: $model.cameraID)
+            }
+        }
+        .padding(Theme.Space.m)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.fieldFill))
+        .onAppear { model.loadCameras() }
+    }
+}
+
+private struct CameraPreviewRepresentable: NSViewRepresentable {
+    let make: () -> NSView
+    func makeNSView(context: Context) -> NSView { make() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

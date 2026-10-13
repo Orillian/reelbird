@@ -1,3 +1,4 @@
+import AVFoundation
 import AppKit
 import ReelbirdCapture
 import ReelbirdCore
@@ -300,6 +301,7 @@ struct ControlBarView: View {
 @MainActor final class CameraBubbleController {
     private var panel: FloatingPanel?
     private var deviceID: String?
+    private var builtWithAccess = false
     private let services: Services
     private let prefs: Preferences
 
@@ -309,9 +311,12 @@ struct ControlBarView: View {
     }
 
     func show(deviceID: String) {
-        if panel != nil && self.deviceID == deviceID { return }
+        // Rebuild when camera access changed too: a bubble made before access was granted only holds a placeholder.
+        let access = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
+        if panel != nil && self.deviceID == deviceID && builtWithAccess == access { return }
         hide()
         self.deviceID = deviceID
+        builtWithAccess = access
         let d = prefs.cameraBubbleSize.points
         // Never key: dragging the bubble mustn't take focus from the app being recorded. It stays
         // out of the screen capture too: the camera is its own track, composited in the editor.

@@ -11,7 +11,14 @@ struct ExportSheet: View {
     @ViewState private var format: ExportOptions.Format = .mp4H264
     @ViewState private var height: Int? = 1080
     @ViewState private var fps: Int? = nil
-    @ViewState private var destination: URL? = nil
+    /// Export folder, remembered between exports. Empty = Downloads.
+    @AppStorage("exportFolderPath") private var exportFolderPath = ""
+
+    private var destination: URL {
+        exportFolderPath.isEmpty
+            ? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+            : URL(fileURLWithPath: exportFolderPath, isDirectory: true)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -69,7 +76,7 @@ struct ExportSheet: View {
                 FieldRow(label: "Save to", labelWidth: 92) {
                     HStack(spacing: 6) {
                         Image(systemName: "folder").foregroundStyle(.secondary).font(.system(size: 11))
-                        Text(destination?.lastPathComponent ?? "In the recording")
+                        Text(FileManager.default.displayName(atPath: destination.path))
                             .font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
                         Button("Change…") { chooseFolder() }.buttonStyle(.link).font(.system(size: 12)).foregroundStyle(Theme.accentText)
                     }
@@ -190,7 +197,8 @@ struct ExportSheet: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = "Choose"
-        if panel.runModal() == .OK { destination = panel.url }
+        panel.directoryURL = destination
+        if panel.runModal() == .OK, let url = panel.url { exportFolderPath = url.path }
     }
 }
 

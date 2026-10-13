@@ -17,6 +17,9 @@
 	<key>NSSupportsAutomaticGraphicsSwitching</key><true/>
 	<key>NSMicrophoneUsageDescription</key><string>Reelbird records your voice with your screen.</string>
 	<key>NSCameraUsageDescription</key><string>Reelbird can show your camera next to your screen recording.</string>
+	<key>NSDownloadsFolderUsageDescription</key><string>Reelbird saves your exported videos to Downloads unless you choose another folder.</string>
+	<key>NSDocumentsFolderUsageDescription</key><string>Reelbird can save exported videos to a folder in Documents if you choose one.</string>
+	<key>NSDesktopFolderUsageDescription</key><string>Reelbird can save exported videos to your Desktop if you choose it.</string>
 	<key>NSSpeechRecognitionUsageDescription</key><string>Reelbird turns your narration into captions on this Mac.</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>

@@ -216,6 +216,7 @@ struct SourcePickerView: View {
                 }
             }
             .onChange(of: prefs.cameraEnabled) { _, _ in controller?.syncCameraBubble() }
+            .onChange(of: model.cameraAccess) { _, _ in controller?.syncCameraBubble() }
             .onChange(of: prefs.cameraID) { _, _ in controller?.syncCameraBubble() }
 
             InputRow(symbol: prefs.systemAudio ? "speaker.wave.2.fill" : "speaker.slash", title: "System audio", isOn: $prefs.systemAudio) {
