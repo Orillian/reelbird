@@ -88,12 +88,18 @@ export const FAQ: Faq[] = [
     html: `macOS 15 asks you now and then to reconfirm apps that record the screen; that prompt comes from macOS. Separately, ad-hoc builds lose the permission on every rebuild; <code>scripts/dev-signing.sh</code> fixes that (see <a href="/docs/install/#keep-permissions-across-rebuilds-optional">local signing</a>).`,
   },
   {
+    id: "vs-loom-screen-studio",
+    q: "How is Reelbird different from Loom and Screen Studio?",
+    a: "Loom copies a share link when you stop but has no auto-zoom, and its free Starter plan stops each video at 5 minutes, keeps 25 videos, records up to 720p and can't download. Screen Studio has polished auto-zoom but costs $29 a month ($9 billed yearly), and its share link comes after you export. Reelbird copies a link when you stop, lets you add auto-zoom later under the same link, keeps every take as MP4 files on your Mac and is free under the MIT licence. Loom does more for teams (comments, view counts, every platform) and Screen Studio has a more mature editor and a signed download. Prices checked 12 October 2026.",
+    html: `Loom copies a share link when you stop but has no auto-zoom, and its free Starter plan stops each video at 5 minutes, keeps 25 videos, records up to 720p and can't download. Screen Studio has polished auto-zoom but costs $29 a month ($9 billed yearly), and its share link comes after you export. Reelbird copies a link when you stop, lets you add auto-zoom later under the same link, keeps every take as MP4 files on your Mac and is free under the MIT licence. Loom does more for teams (comments, view counts, every platform) and Screen Studio has a more mature editor and a signed download. Prices checked 12 October 2026; see the <a href="/compare/">full comparison</a>.`,
+  },
+  {
     id: "cap-openscreen",
     q: "How is it different from Cap or OpenScreen?",
-    a: "Cap covers both jobs too but is AGPL, its free tier is personal use only, and custom S3 is a Pro feature. OpenScreen is MIT and cross-platform with signed builds but has no share links. Reelbird is Mac-only, native Swift, and its links update in place.",
-    html: `Cap covers both jobs too but is AGPL, its free tier is personal use only, and custom S3 is a Pro feature. OpenScreen is MIT and cross-platform with signed builds but has no share links. Reelbird is Mac-only, native Swift, and its links update in place. The <a href="/compare/">comparison table</a> has the details.`,
+    a: "Cap also does instant links and auto-zoom, but as separate recording modes (Instant and Studio). It runs on Mac, Windows and Linux, its code is mostly AGPLv3, its free plan is for personal use with 5-minute links, and your own S3 bucket is a Pro feature. OpenScreen is MIT, free and cross-platform with signed Mac builds, but has no share links. Reelbird is Mac-only and native Swift, links to your own bucket for free, and its links update in place after you edit.",
+    html: `Cap also does instant links and auto-zoom, but as separate recording modes (Instant and Studio). It runs on Mac, Windows and Linux, its code is mostly AGPLv3, its free plan is for personal use with 5-minute links, and your own S3 bucket is a Pro feature. OpenScreen is MIT, free and cross-platform with signed Mac builds, but has no share links. Reelbird is Mac-only and native Swift, links to your own bucket for free, and its links update in place after you edit. The <a href="/compare/">comparison</a> has the details.`,
   },
 ];
 
 /** The handful shown on the homepage. */
-export const HOME_FAQ = ["free", "install", "account", "links", "windows", "privacy"].map((id) => FAQ.find((f) => f.id === id)!);
+export const HOME_FAQ = ["vs-loom-screen-studio", "free", "install", "account", "links", "windows", "privacy"].map((id) => FAQ.find((f) => f.id === id)!);

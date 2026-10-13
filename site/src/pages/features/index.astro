@@ -92,6 +92,12 @@ const crumbs = [{ name: "Features", path: "/features/" }];
     </ul>
   </section>
 
+  <section class="wrap more" aria-labelledby="vs-title">
+    <h2 id="vs-title">Next to Loom and Screen Studio</h2>
+    <p class="muted vs">Loom gives you a link when you stop but no auto-zoom, and its free plan stops videos at 5 minutes with no downloads. Screen Studio has the polish for $29 a month, with the link after export. Reelbird does both from one take, free.</p>
+    <p class="vs-links"><a class="link-arrow" href="/loom-alternative/">Reelbird vs Loom</a><a class="link-arrow" href="/screen-studio-alternative/">Reelbird vs Screen Studio</a><a class="link-arrow" href="/compare/">Eight recorders compared</a></p>
+  </section>
+
   <CtaBand />
 </Base>
 
@@ -114,6 +120,8 @@ const crumbs = [{ name: "Features", path: "/features/" }];
   .lib h2 { margin-bottom: 1rem; }
   .plain { padding-left: 1.1rem; display: grid; gap: 0.7rem; color: var(--text-muted); }
   .plain strong { color: var(--text); font-weight: 600; }
+  .vs { max-width: 44rem; }
+  .vs-links { display: flex; flex-wrap: wrap; gap: 0.75rem 2rem; margin-top: 1.5rem; }
   @media (max-width: 60rem) {
     .row, .lib { grid-template-columns: minmax(0, 1fr); }
     .row.flip > :first-child { order: 0; }

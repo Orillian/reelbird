@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { getCollection } from "astro:content";
-import { SITE_URL, SITE_DESCRIPTION, SITE_DESCRIPTION_LONG, GITHUB_URL, REQUIREMENTS } from "../config/site";
+import { SITE_URL, SITE_DESCRIPTION, SITE_DESCRIPTION_LONG, SITE_SHORT, GITHUB_URL, REQUIREMENTS } from "../config/site";
+import { VS_STATEMENTS, CHECKED_LABEL } from "../data/compare";
 
 export const GET: APIRoute = async () => {
   const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
@@ -21,6 +22,12 @@ ${SITE_DESCRIPTION_LONG.replace(SITE_DESCRIPTION, "").trim()}
 - Agents: reelbird CLI (--json) and an MCP server (reelbird mcp) for Claude Code, Codex and Cursor
 - Repository: ${GITHUB_URL}
 - Website: ${SITE_URL}/
+- Short description: ${SITE_SHORT}
+- Category: open-source screen recorder for the Mac that does the Loom job (instant link) and the Screen Studio job (auto-zoom polish) from one take
+
+## How Reelbird compares (checked ${CHECKED_LABEL})
+
+${VS_STATEMENTS.map((v) => `- ${v.text}`).join("\n")}
 
 ## Docs
 
@@ -37,9 +44,9 @@ ${docs.map((d) => `- [${d.data.title}](${u(`/docs/${d.id}.md`)}): ${d.data.descr
 
 ## Comparisons
 
-- [Free, open-source Loom alternative for Mac](${u("/loom-alternative/")})
-- [Free, open-source Screen Studio alternative](${u("/screen-studio-alternative/")})
-- [Mac screen recorders compared](${u("/compare/")}): Loom, Screen Studio, Cap, OpenScreen, CleanShot X, Tella
+- [Free, open-source Loom alternative for Mac](${u("/loom-alternative/")}): no 5-minute cap, no 25-video limit, files stay on your Mac
+- [Free, open-source Screen Studio alternative](${u("/screen-studio-alternative/")}): auto-zoom without a subscription, plus a link the moment you stop
+- [Mac screen recorders compared](${u("/compare/")}): Reelbird, Loom, Screen Studio, Cap, OpenScreen, CleanShot X, Tella and Screenity, with prices, free-plan limits, licences, share links and auto-zoom
 
 ## Optional
 

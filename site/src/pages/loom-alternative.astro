@@ -1,41 +1,47 @@
 ---
 import Alt from "../layouts/Alt.astro";
+import { CHECKED_LABEL } from "../data/compare";
 const faq = [
-  { id: "free", q: "Is Reelbird really free?", a: "Yes. It's MIT licensed with no paid tier, no watermark and no export limit. Links use your own storage bucket; Cloudflare R2's free tier (10 GB, free egress) covers most people." },
-  { id: "where", q: "Where are my videos stored?", a: "On your Mac, in ~/Movies/Reelbird, as standard MP4 files. A shared video is also copied to the bucket you set up, and nowhere else.", html: "On your Mac, in <code>~/Movies/Reelbird</code>, as standard MP4 files. A shared video is also copied to the bucket you set up, and nowhere else." },
+  { id: "loom-limit", q: "Does Loom's free plan have a time limit?", a: `Yes. As of ${CHECKED_LABEL}, Loom's free Starter plan stops each screen recording at 5 minutes, keeps up to 25 videos per person and records at up to 720p. Reelbird sets no length or video limit; your disk and, for links, your bucket are the only limits.` },
+  { id: "loom-download", q: "Can I download my videos on Loom's free plan?", a: "No. Atlassian's Loom help says users on the Starter plan can't download videos; downloading needs Business or higher. In Reelbird every take is already a folder of standard MP4 files on your Mac, and you can export MP4 (H.264), HEVC, ProRes or GIF.", html: `No. <a href="https://support.atlassian.com/loom/docs/download-your-loom-video/">Atlassian's Loom help</a> says users on the Starter plan can't download videos; downloading needs Business or higher. In Reelbird every take is already a folder of standard MP4 files on your Mac, and you can export MP4 (H.264), HEVC, ProRes or GIF.` },
+  { id: "loom-price", q: "How much does Loom cost?", a: `As of ${CHECKED_LABEL}: Starter is free, Business is $18 and Business + AI is $24 per user a month billed monthly, and paying yearly saves up to 17%. Enterprise is priced on request. Reelbird is free, with no per-user price.`, html: `As of ${CHECKED_LABEL}: Starter is free, Business is $18 and Business + AI is $24 per user a month billed monthly, and paying yearly saves up to 17% (<a href="https://www.loom.com/pricing">Loom pricing</a>). Enterprise is priced on request. Reelbird is free, with no per-user price.` },
+  { id: "free-no-limit", q: "Is there a free Loom alternative without a 5-minute limit?", a: "Reelbird is one, for the Mac: free, MIT licensed, no length limit, and a share link on your clipboard when you stop. Other open-source options: Cap has instant links too, but its free plan is for personal use and caps share links at 5 minutes; OpenScreen is free and cross-platform but has no share links.", html: `Reelbird is one, for the Mac: free, MIT licensed, no length limit, and a share link on your clipboard when you stop. Other open-source options: Cap has instant links too, but its free plan is for personal use and caps share links at 5 minutes; OpenScreen is free and cross-platform but has no share links. See the <a href="/compare/">comparison</a>.` },
+  { id: "loom-move", q: "Can I move my Loom videos to Reelbird?", a: "Not directly. Reelbird has no Loom importer. On a paid Loom plan you can download each video as an MP4 and keep it; Starter users can't download. New recordings in Reelbird stay on your Mac from the start." },
+  { id: "where", q: "Where are my Reelbird videos stored?", a: "On your Mac, in ~/Movies/Reelbird, as standard MP4 files. A shared video is also copied to the bucket you set up, and nowhere else.", html: "On your Mac, in <code>~/Movies/Reelbird</code>, as standard MP4 files. A shared video is also copied to the bucket you set up, and nowhere else." },
   { id: "viewers", q: "Do viewers need an account or an app?", a: "No. The link opens a plain web page in any browser. Links are unlisted, not secret. Anyone with the link can watch." },
-  { id: "limit", q: "Is there a time or video limit?", a: "Reelbird sets none. Limits come from your disk and, for links, your bucket." },
-  { id: "server", q: "Do I have to run a server for links?", a: "No. Reelbird uploads a small viewer page and the video straight to an S3-compatible bucket you own. There's no database or server to run.", html: "No. Reelbird uploads a small viewer page and the video straight to an S3-compatible bucket you own. There's no database or server to run. <a href=\"/docs/sharing/\">Sharing setup</a> takes about ten minutes." },
-  { id: "teams", q: "Is it good for teams?", a: "It works for anyone who can open a link, but it has no comments, reactions, view counts or shared workspace. If your team relies on those, Loom does more." },
+  { id: "server", q: "Do I have to run a server for links?", a: "No. Reelbird uploads a small viewer page and the video straight to an S3-compatible bucket you own. There's no database or server to run. Setup takes about ten minutes, once.", html: "No. Reelbird uploads a small viewer page and the video straight to an S3-compatible bucket you own. There's no database or server to run. <a href=\"/docs/sharing/\">Sharing setup</a> takes about ten minutes, once." },
+  { id: "teams", q: "Is Reelbird good for teams?", a: "It works for anyone who can open a link, but it has no comments, reactions, view counts or shared workspace. If your team relies on those, Loom does more." },
 ];
 ---
 <Alt
   seoTitle="Free, open-source Loom alternative for Mac: Reelbird"
-  description="Instant share links like Loom, with no 5-minute cap, no account and no per-seat price. Videos stay on your Mac as MP4s and links point at your own bucket."
+  description="Instant share links like Loom, with no 5-minute cap, no 25-video limit and no download paywall. Free, MIT, for Mac. Videos stay on your Mac."
   path="/loom-alternative/"
   og="loom-alternative"
   title="A free, open-source Loom alternative for Mac"
-  intro="Like Loom, Reelbird copies a link the moment you stop. Unlike Loom, the video stays on your Mac as an MP4, the link points at a bucket you own, and there is no 5-minute cap or per-seat price."
+  answer="Reelbird is a free, open-source Loom alternative for Mac. Like Loom, it copies a share link the moment you stop recording. Unlike Loom's free plan, it has no 5-minute limit, no 25-video cap and no 720p ceiling, every take stays on your Mac as MP4 files you can keep, and the link points at a storage bucket you own. Later you can add auto-zoom and captions and update the video under the same link."
+  verdict="Reelbird vs Loom in one line: Loom is the better team tool on every platform; Reelbird is the free Mac recorder that gives you the link, the files and the polish without a plan to upgrade."
   rival="loom"
   rows={[
-    ["Price", "Free, MIT licensed", "Starter free. Business $18 and Business + AI $24 per user a month"],
-    ["Platforms", "macOS 15 or later", "Mac, Windows, web and mobile"],
+    ["Price", "Free, MIT licensed", "Starter free. Business $18 and Business + AI $24 per user a month, billed monthly"],
+    ["Free-plan limits", "None set by Reelbird", "25 videos per person, 5 minutes each, up to 720p"],
+    ["Keep the file", "Every take is a folder of MP4s on your Mac. Export MP4, HEVC, ProRes or GIF", "Starter can't download. Business and up can"],
     ["Share links", "Copied when you stop. Hosted in your own S3 or R2 bucket. The same link updates after you edit", "Copied when you stop. Hosted on Loom's cloud"],
-    ["Limits", "None set by Reelbird", "Starter: 25 videos, 5 minutes each, 720p"],
-    ["Your files", "Every take is a folder of MP4s on your Mac. Export MP4, HEVC, ProRes or GIF", "Starter can't download videos. Business and up can"],
     ["Polish", "Auto-zoom from clicks, smooth cursor, backgrounds, on-device captions", "No auto-zoom"],
+    ["Comments and view counts", "No", "Yes"],
+    ["Platforms", "macOS 15 or later", "Mac, Windows, web and mobile"],
     ["Account", "None", "Required"],
     ["Install", "Build from source, a few minutes", "Download the app"],
   ]}
   better={[
-    "It runs on Windows, in the browser and on phones. Reelbird is Mac only.",
-    "Comments, reactions, view counts and team workspaces. Reelbird has none of these.",
-    "Nothing to set up for links: Loom hosts them. Reelbird needs a bucket you own, a one-time setup of about ten minutes.",
-    "A one-click installer. Reelbird is build-from-source until a notarised download exists.",
+    "You or your viewers are on Windows, the web or phones. Reelbird is Mac only.",
+    "Your team relies on comments, reactions, view counts and shared workspaces. Reelbird has none of these.",
+    "You want nothing to set up: Loom hosts the links. Reelbird needs a bucket you own, a one-time setup of about ten minutes.",
+    "You want a one-click installer today. Reelbird is build-from-source until a notarised download exists.",
   ]}
   ours={[
-    "You record on a Mac and want links without a subscription or a seat count.",
-    "You want to keep the original files: every take is MP4 on your disk.",
+    "You record on a Mac and want links without a subscription, a seat count or a 5-minute stop.",
+    "You want to keep the original files: every take is MP4 on your disk, on day one.",
     "You want the link to get better after you send it: auto-zoom, trims and captions, then <strong>Update link</strong>.",
     "You'd rather your videos sit in your own storage than someone else's. <a href=\"/privacy/\">No account, no telemetry</a>.",
   ]}
