@@ -85,7 +85,7 @@ Click the Reelbird icon in the menu bar, choose **Settings…**, then **Sharing*
 | Public URL | your custom domain or `https://pub-….r2.dev` |
 | Prefix | `r` (default) |
 
-Choose **Test connection**. Reelbird uploads a small test file, reads it back with your keys and through your public URL, then deletes it. If both work, choose **Save**.
+Choose **Test Connection**. Reelbird uploads a small test file, reads it back with your keys and through your public URL, then deletes it. If both work, choose **Save**.
 
 The secret key is stored in your macOS Keychain. The other fields are saved in `~/Library/Application Support/Reelbird/share.json`. The `reelbird` command line tool uses the same settings.
 

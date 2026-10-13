@@ -241,13 +241,26 @@ Recording through an agent needs Screen Recording permission for the app that ru
 
 ## Sharing
 
-Sharing is optional. Reelbird uploads to an S3-compatible bucket that you own:
+Sharing is optional; recording, editing and exporting work without it. Reelbird has no server, so share links point at a storage bucket **you** own. When you share, Reelbird uploads a small viewer page and the video to `https://<your public URL>/r/<id>/`, signed with your own keys. Anyone with that link can watch in a browser, and the link never changes, even after **Update link**.
 
-1. Create a Cloudflare R2 bucket and give it a public URL (a custom domain, or the r2.dev URL to start).
-2. Create an R2 API token with **Object Read & Write**, limited to that bucket.
-3. Paste the endpoint, keys and public URL into **Settings… → Sharing** and choose **Test Connection**, then **Save**.
+Cloudflare R2 is the recommended host: no download (egress) fees, and the free tier includes 10 GB of storage. Setup takes about ten minutes, once:
 
-R2's free tier includes 10 GB of storage and free egress, which covers hours of shared video. AWS S3, Backblaze B2 and MinIO work too. The full walkthrough, costs and privacy notes are in [docs/SHARING.md](docs/SHARING.md).
+1. **Create a bucket.** Cloudflare dashboard → **R2 object storage** → **Create bucket**, for example `reelbird`. (R2 asks for a payment method even on the free tier.)
+2. **Give it a public URL.** Bucket → **Settings** → either **Custom Domains** → **Add** (a subdomain such as `video.example.com`, recommended), or **Public Development URL** → **Enable** for a quick `https://pub-….r2.dev` URL (rate-limited; fine for trying it out).
+3. **Create an API token.** R2 → **Manage API Tokens** → **Create Account API token** with **Object Read & Write**, limited to that bucket. Copy the Access Key ID and Secret Access Key (the secret is shown once).
+4. **Connect Reelbird.** Menu bar icon → **Settings…** → **Sharing**:
+
+| Field | Value |
+|---|---|
+| Endpoint | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` (account ID is on the R2 overview page) |
+| Bucket | your bucket name |
+| Region | `auto` |
+| Access key ID / Secret access key | from step 3 |
+| Public URL | your custom domain or `https://pub-….r2.dev` |
+
+Choose **Test Connection**, which uploads a test file and reads it back through your public URL, then **Save**. The secret is kept in your macOS Keychain, and the `reelbird` CLI uses the same settings (`reelbird config share --help`).
+
+Then turn on **Share while recording** in the picker, and the link is on your clipboard when you stop. Or share any recording later from the editor. AWS S3, Backblaze B2 and MinIO work too. The full walkthrough, costs, privacy notes and CI setup are in [docs/SHARING.md](docs/SHARING.md).
 
 ## Troubleshooting
 
