@@ -473,9 +473,27 @@ struct AudioSection: View {
 
     private var voice: some View {
         let muted = model.edit.audio.microphoneMuted
+        let enhance = model.edit.audio.enhance
         return VStack(alignment: .leading, spacing: 10) {
             header(title: "Voice", symbol: "mic.fill", muted: \.audio.microphoneMuted)
             Group {
+                Toggle(isOn: model.binding(\.audio.enhance, "Enhance Voice")) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Enhance voice").font(.system(size: 12))
+                        Text(enhanceStatus).font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.brand)
+                .help("Removes background noise and evens out your voice. The original recording is kept.")
+                if enhance {
+                    PillTabs(selection: model.binding(\.audio.enhanceStrength, "Enhance Strength"),
+                             items: EnhanceStrength.allCases.map { .init(value: $0, title: $0.title, symbol: nil) }, compact: true)
+                        .help("How much background noise to remove. Stronger settings can sound processed.")
+                        .accessibilityLabel("Strength")
+                    mixSlider
+                    hearOriginalButton.padding(.bottom, 4)
+                }
+                if let error = model.voiceStemError { StatusLine(tone: .warning, text: error) }
                 Toggle(isOn: model.binding(\.audio.autoLevel, "Auto Level")) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Auto level").font(.system(size: 12))
@@ -493,15 +511,74 @@ struct AudioSection: View {
         }
     }
 
+    /// Original ↔ Enhanced blend.
+    private var mixSlider: some View {
+        VStack(spacing: 2) {
+            Slider(value: model.binding(\.audio.enhanceMix, "Enhance Mix"), in: 0...1)
+                .controlSize(.small)
+                .tint(Theme.accent)
+                .accessibilityLabel("Original to enhanced")
+                .accessibilityValue("\(Int((model.edit.audio.enhanceMix * 100).rounded())) percent enhanced")
+            HStack {
+                Text("Original")
+                Spacer()
+                Text("Enhanced")
+            }
+            .font(.system(size: 10.5))
+            .foregroundStyle(.tertiary)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// Plays the raw microphone for as long as it's pressed.
+    private var hearOriginalButton: some View {
+        let on = model.isHearingOriginal
+        return Label(on ? "Playing original" : "Hold to hear original", systemImage: on ? "ear.fill" : "ear")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(on ? Theme.accent : Color.primary)
+            .frame(maxWidth: .infinity)
+            .frame(height: 26)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(on ? Theme.accent.opacity(0.14) : Theme.fieldFill))
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { _ in model.setHearOriginal(true) }
+                .onEnded { _ in model.setHearOriginal(false) })
+            .help("Press and hold to compare with the voice as recorded.")
+            .accessibilityElement()
+            .accessibilityLabel("Hear original")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { model.setHearOriginal(!model.isHearingOriginal) }
+    }
+
     private var systemAudio: some View {
         let muted = model.edit.audio.systemMuted
         return VStack(alignment: .leading, spacing: 10) {
             header(title: "System audio", symbol: "speaker.wave.2.fill", muted: \.audio.systemMuted)
-            FieldRow(label: "Volume", labelWidth: 52) {
-                ValueSlider(value: model.binding(\.audio.systemGainDB, "System Audio Volume"), range: -24...12, detent: 0, format: Self.db)
+            Group {
+                FieldRow(label: "Volume", labelWidth: 52) {
+                    ValueSlider(value: model.binding(\.audio.systemGainDB, "System Audio Volume"), range: -24...12, detent: 0, format: Self.db)
+                }
+                if model.hasMicrophone {
+                    Toggle(isOn: model.binding(\.audio.duckSystemAudio, "Lower Under Voice")) {
+                        Text("Lower under voice").font(.system(size: 12))
+                    }
+                    .toggleStyle(.brand)
+                    .help("Turns system audio down by about 12 dB while you speak.")
+                }
             }
             .disabled(muted)
             .opacity(muted ? 0.5 : 1)
+        }
+    }
+
+    private var enhanceStatus: String {
+        guard model.edit.audio.enhance else { return "Plays as recorded" }
+        if let p = model.voiceStemProgress { return "Enhancing voice… \(Int((p * 100).rounded()))%" }
+        switch model.edit.audio.enhanceStrength {
+        case .light: return "Removes a little background noise"
+        case .medium: return "Removes background noise"
+        case .strong: return "Removes most background noise"
+        case .max: return "Removes all the noise it can"
         }
     }
 

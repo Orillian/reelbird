@@ -60,6 +60,10 @@ protocol RecorderService: Sendable {
     var onTimeChange: (@MainActor (Double) -> Void)? { get set }
     /// Called once media has loaded (`nil`) or failed to load.
     var onReady: (@MainActor ((any Error)?) -> Void)? { get set }
+    /// Plays the raw microphone instead of the enhanced voice while true (press-and-hold "Hear original").
+    func setHearOriginal(_ on: Bool)
+    /// The voice stem was rendered: swap it in at the playhead.
+    func voiceStemDidChange()
 }
 
 /// `ReelbirdRender` (PreviewPlayer, Exporter, Thumbnailer) and `ReelbirdCore.Motion.AutoZoomPlanner`.
@@ -69,7 +73,10 @@ protocol RenderService: Sendable {
                 progress: @escaping @Sendable (Double) -> Void) async throws -> URL
     func poster(bundle: ProjectBundle, at t: Double, maxWidth: Int) async throws -> CGImage
     /// The voice's measured loudness (`AudioAnalyzer`), measured on first call and cached in the bundle.
-    func audioAnalysis(bundle: ProjectBundle) async -> AudioAnalysis?
+    func audioAnalysis(bundle: ProjectBundle, settings: AudioSettings) async -> AudioAnalysis?
+    /// `ReelbirdRender.VoiceStem`: whether the enhanced voice matches `settings`, and rendering it.
+    func voiceStemStatus(bundle: ProjectBundle, settings: AudioSettings) -> VoiceStemStatus
+    func renderVoiceStem(bundle: ProjectBundle, settings: AudioSettings, progress: @escaping @Sendable (Double) -> Void) async throws
     func autoZoomPlan(events: [InputEvent], duration: Double, intensity: Double) -> [ZoomRegion]
 }
 

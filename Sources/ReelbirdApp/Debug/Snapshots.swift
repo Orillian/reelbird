@@ -157,8 +157,8 @@ import SwiftUI
         })
 
         // Editor
-        func editor(_ section: InspectorSection, configure: @escaping (EditorModel) -> Void = { _ in }) -> Scene {
-            Scene(name: "editor-\(section.rawValue)", size: CGSize(width: 1320, height: 840), backdrop: false) {
+        func editor(_ section: InspectorSection, variant: String? = nil, configure: @escaping (EditorModel) -> Void = { _ in }) -> Scene {
+            Scene(name: "editor-\(section.rawValue)" + (variant.map { "-\($0)" } ?? ""), size: CGSize(width: 1320, height: 840), backdrop: false) {
                 guard let m = try? EditorModel(bundle: demo, services: services) else { return AnyView(Text("Editor failed")) }
                 m.autosaveEnabled = false
                 m.attachPlayer()
@@ -187,6 +187,12 @@ import SwiftUI
             m.change("x") { $0.trim = TimeRange(start: 1.5, end: 44) }
             m.setAudioAnalysisForSnapshot(AudioAnalysis(microphone: TrackLoudness(file: "microphone/microphone.m4a", fileSize: 0,
                                                                                   integratedLUFS: -25.2, peakDBFS: -9, duration: 42)))
+        })
+        scenes.append(editor(.audio, variant: "enhancing") { m in
+            m.change("x") { $0.audio.enhanceStrength = .strong; $0.audio.enhanceMix = 0.8 }
+            m.setVoiceStemProgressForSnapshot(0.4)
+            m.setAudioAnalysisForSnapshot(AudioAnalysis(microphone: TrackLoudness(file: "voice/voice.caf", fileSize: 0,
+                                                                                  integratedLUFS: -19.4, peakDBFS: -6, duration: 42)))
         })
         scenes.append(editor(.captions) { m in
             m.change("x") { $0.captions.file = "captions.vtt" }

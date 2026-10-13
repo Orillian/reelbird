@@ -81,6 +81,11 @@ enum CaptionState: Equatable {
     /// The voice's measured loudness, for auto level. `nil` until measured (or with no microphone).
     private(set) var audioAnalysis: AudioAnalysis?
     private(set) var isMeasuringVoice = false
+    /// Progress (0…1) of the voice stem render, `nil` when none is running.
+    private(set) var voiceStemProgress: Double?
+    private(set) var voiceStemError: String?
+    /// True while "Hear original" is held.
+    private(set) var isHearingOriginal = false
 
     @ObservationIgnored let undoManager = UndoManager()
     /// Off in snapshots so scenes don't write into the shared demo bundle.
@@ -90,6 +95,9 @@ enum CaptionState: Equatable {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var exportTask: Task<Void, Never>?
     @ObservationIgnored private var shareTask: Task<Void, Never>?
+    @ObservationIgnored private var stemTask: Task<Void, Never>?
+    /// The enhance settings the stem was last checked for (enhance, strength, mix).
+    @ObservationIgnored private var stemKey: String?
     @ObservationIgnored private var coalesceKey: String?
     @ObservationIgnored private var coalesceUntil = Date.distantPast
 
@@ -143,11 +151,13 @@ enum CaptionState: Equatable {
     func loadTimelineMedia() {
         if hasMicrophone, audioAnalysis == nil, !isMeasuringVoice {
             isMeasuringVoice = true
+            let settings = edit.audio
             Task {
-                audioAnalysis = await services.render.audioAnalysis(bundle: bundle)
+                audioAnalysis = await services.render.audioAnalysis(bundle: bundle, settings: settings)
                 isMeasuringVoice = false
             }
         }
+        updateVoiceStem(debounce: false)
         let audioURL = bundle.mediaURL(for: .microphone, in: manifest) ?? bundle.mediaURL(for: .systemAudio, in: manifest)
         let duration = manifest.duration
         Task {
@@ -220,7 +230,76 @@ enum CaptionState: Equatable {
         player?.update(edit: edit)
         clampPlayhead()
         scheduleSave()
+        updateVoiceStem(debounce: true)
     }
+
+    // MARK: Voice stem
+
+    private static func stemKey(_ a: AudioSettings) -> String {
+        "\(a.enhance)|\(a.enhanceStrength.rawValue)|\(VoiceStemInfo.quantizedMix(a.enhanceMix))"
+    }
+
+    /// Renders the enhanced voice when it's missing or doesn't match the settings (the preview keeps playing the
+    /// previous voice meanwhile and switches when it's ready). Slider drags settle for a moment first; a newer
+    /// change cancels a running render.
+    func updateVoiceStem(debounce: Bool) {
+        guard hasMicrophone, player != nil else { return }
+        let key = Self.stemKey(edit.audio)
+        guard key != stemKey else { return }
+        let enhanceChanged = stemKey.map { $0.hasPrefix("\(!edit.audio.enhance)|") } ?? false
+        stemKey = key
+        stemTask?.cancel()
+        voiceStemError = nil
+        let settings = edit.audio, services = services, bundle = bundle
+        if enhanceChanged { refreshAudioAnalysis() }
+        guard settings.enhance, services.render.voiceStemStatus(bundle: bundle, settings: settings) != .ready else {
+            voiceStemProgress = nil
+            if settings.enhance { player?.voiceStemDidChange(); refreshAudioAnalysis() }
+            return
+        }
+        stemTask = Task { [weak self] in
+            if debounce { try? await Task.sleep(for: .milliseconds(350)) }
+            guard !Task.isCancelled, let self else { return }
+            self.voiceStemProgress = 0
+            do {
+                try await services.render.renderVoiceStem(bundle: bundle, settings: settings) { p in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.voiceStemProgress != nil, !Task.isCancelled else { return }
+                        self.voiceStemProgress = max(self.voiceStemProgress ?? 0, p)
+                    }
+                }
+                guard !Task.isCancelled else { return }
+                self.voiceStemProgress = nil
+                self.player?.voiceStemDidChange()
+                self.refreshAudioAnalysis()
+            } catch is CancellationError {
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.voiceStemProgress = nil
+                self.voiceStemError = "Couldn't enhance the voice: \((error as? any LocalizedError)?.errorDescription ?? error.localizedDescription)"
+                // Let the next settings change try again.
+                self.stemKey = nil
+            }
+        }
+    }
+
+    /// Re-measures the voice that now plays (auto level status).
+    private func refreshAudioAnalysis() {
+        let settings = edit.audio, services = services, bundle = bundle
+        Task { [weak self] in
+            let a = await services.render.audioAnalysis(bundle: bundle, settings: settings)
+            self?.audioAnalysis = a
+        }
+    }
+
+    /// Press-and-hold "Hear original": the raw microphone plays instead of the enhanced voice.
+    func setHearOriginal(_ on: Bool) {
+        guard on != isHearingOriginal else { return }
+        isHearingOriginal = on
+        player?.setHearOriginal(on)
+    }
+
+    func setVoiceStemProgressForSnapshot(_ p: Double?) { voiceStemProgress = p }
 
     func setTitle(_ t: String) {
         let trimmed = t.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -25,6 +25,9 @@ import ReelbirdCore
     var view: NSView { canvas }
     var duration: Double { timeline.duration }
 
+    func setHearOriginal(_ on: Bool) {}
+    func voiceStemDidChange() {}
+
     func update(edit: EditDocument) {
         timeline = EditTimeline(duration: sourceDuration, trim: edit.trim, cuts: edit.cuts)
         canvas.edit = edit

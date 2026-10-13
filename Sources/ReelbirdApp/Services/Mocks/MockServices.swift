@@ -274,7 +274,15 @@ struct MockRender: RenderService {
         return url
     }
 
-    func audioAnalysis(bundle: ProjectBundle) async -> AudioAnalysis? {
+    func voiceStemStatus(bundle: ProjectBundle, settings: AudioSettings) -> VoiceStemStatus { settings.enhance ? .ready : .off }
+    func renderVoiceStem(bundle: ProjectBundle, settings: AudioSettings, progress: @escaping @Sendable (Double) -> Void) async throws {
+        for i in 1...10 {
+            try await Task.sleep(for: .milliseconds(40))
+            progress(Double(i) / 10)
+        }
+    }
+
+    func audioAnalysis(bundle: ProjectBundle, settings: AudioSettings) async -> AudioAnalysis? {
         let file = (try? bundle.readManifest())?.track(.microphone)?.file ?? "microphone/microphone.m4a"
         return AudioAnalysis(microphone: TrackLoudness(file: file, fileSize: 0, integratedLUFS: -25.2, peakDBFS: -9, duration: 42))
     }

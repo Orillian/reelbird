@@ -69,6 +69,8 @@ struct LiveRecorder: RecorderService {
         get { player.onReady }
         set { player.onReady = newValue }
     }
+    func setHearOriginal(_ on: Bool) { player.hearOriginal = on }
+    func voiceStemDidChange() { player.voiceStemDidChange() }
 }
 
 struct LiveRender: RenderService {
@@ -82,7 +84,17 @@ struct LiveRender: RenderService {
     func poster(bundle: ProjectBundle, at t: Double, maxWidth: Int) async throws -> CGImage {
         try await Thumbnailer.poster(bundle: bundle, at: t, maxWidth: maxWidth)
     }
-    func audioAnalysis(bundle: ProjectBundle) async -> AudioAnalysis? { await AudioAnalyzer.analysis(bundle: bundle) }
+    func audioAnalysis(bundle: ProjectBundle, settings: AudioSettings) async -> AudioAnalysis? {
+        await AudioAnalyzer.analysis(bundle: bundle, settings: settings)
+    }
+    func voiceStemStatus(bundle: ProjectBundle, settings: AudioSettings) -> VoiceStemStatus {
+        VoiceStem.status(bundle: bundle, settings: settings)
+    }
+    func renderVoiceStem(bundle: ProjectBundle, settings: AudioSettings, progress: @escaping @Sendable (Double) -> Void) async throws {
+        // Off the caller's actor, at utility priority; cancelling the caller stops the render.
+        let task = Task.detached(priority: .utility) { try await VoiceStem.render(bundle: bundle, settings: settings, progress: progress) }
+        try await withTaskCancellationHandler { _ = try await task.value } onCancel: { task.cancel() }
+    }
     func autoZoomPlan(events: [InputEvent], duration: Double, intensity: Double) -> [ZoomRegion] {
         AutoZoomPlanner.plan(events: events, duration: duration, intensity: intensity)
     }
