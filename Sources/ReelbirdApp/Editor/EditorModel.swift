@@ -78,6 +78,9 @@ enum CaptionState: Equatable {
     private(set) var saveError: String?
     /// Set when the preview can't load; the stage explains instead of spinning forever.
     private(set) var previewError: String?
+    /// The voice's measured loudness, for auto level. `nil` until measured (or with no microphone).
+    private(set) var audioAnalysis: AudioAnalysis?
+    private(set) var isMeasuringVoice = false
 
     @ObservationIgnored let undoManager = UndoManager()
     /// Off in snapshots so scenes don't write into the shared demo bundle.
@@ -138,6 +141,13 @@ enum CaptionState: Equatable {
     }
 
     func loadTimelineMedia() {
+        if hasMicrophone, audioAnalysis == nil, !isMeasuringVoice {
+            isMeasuringVoice = true
+            Task {
+                audioAnalysis = await services.render.audioAnalysis(bundle: bundle)
+                isMeasuringVoice = false
+            }
+        }
         let audioURL = bundle.mediaURL(for: .microphone, in: manifest) ?? bundle.mediaURL(for: .systemAudio, in: manifest)
         let duration = manifest.duration
         Task {
@@ -155,6 +165,8 @@ enum CaptionState: Equatable {
     }
 
     /// Injects timeline media directly (snapshots).
+    func setAudioAnalysisForSnapshot(_ a: AudioAnalysis?) { audioAnalysis = a; isMeasuringVoice = false }
+
     func setTimelineMediaForSnapshot(waveform: [Float], filmstrip: [CGImage]) {
         self.waveform = waveform
         self.filmstrip = filmstrip
@@ -167,6 +179,8 @@ enum CaptionState: Equatable {
     var hasCamera: Bool { manifest.track(.camera) != nil }
     var hasMicrophone: Bool { manifest.track(.microphone) != nil }
     var hasSystemAudio: Bool { manifest.track(.systemAudio) != nil }
+    /// Gain auto level applies to the voice right now, in dB (`nil` when off or not measured yet).
+    var autoLevelGainDB: Double? { edit.audio.autoLevelGainDB(audioAnalysis) }
     var shareInfo: ShareInfo? { manifest.share }
     var title: String { edit.title ?? manifest.title }
 

@@ -196,19 +196,21 @@ extension EnvironmentValues {
     }
 }
 
-/// A slider with a trailing numeric readout.
+/// A slider with a trailing numeric readout. With a `detent`, values near it snap to it and a tick marks it.
 struct ValueSlider: View {
     @Binding var value: Double
     var range: ClosedRange<Double>
+    var detent: Double? = nil
     var format: (Double) -> String
     var onEditingChanged: (Bool) -> Void = { _ in }
     @Environment(\.fieldLabel) private var label
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
-            Slider(value: $value, in: range, onEditingChanged: onEditingChanged)
+            Slider(value: snapped, in: range, onEditingChanged: onEditingChanged)
                 .controlSize(.small)
                 .tint(Theme.accent)
+                .overlay { if let detent { tick(at: detent).allowsHitTesting(false) } }
                 .accessibilityLabel(label)
                 .accessibilityValue(format(value))
             Text(format(value))
@@ -217,6 +219,26 @@ struct ValueSlider: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 38, alignment: .trailing)
         }
+    }
+
+    private var snapped: Binding<Double> {
+        guard let detent else { return $value }
+        let zone = (range.upperBound - range.lowerBound) * 0.03
+        return Binding(get: { value }, set: { v in value = abs(v - detent) < zone ? detent : v })
+    }
+
+    private func tick(at v: Double) -> some View {
+        GeometryReader { geo in
+            // The small slider's knob is ~14 pt wide; its centre travels between the insets.
+            let inset: CGFloat = 7
+            let f = (v - range.lowerBound) / (range.upperBound - range.lowerBound)
+            // A short notch just above the track, clear of the knob.
+            Capsule()
+                .fill(Color.primary.opacity(0.28))
+                .frame(width: 1.5, height: 4)
+                .position(x: inset + CGFloat(f) * (geo.size.width - 2 * inset), y: geo.size.height / 2 - 7)
+        }
+        .accessibilityHidden(true)
     }
 }
 

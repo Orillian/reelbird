@@ -46,6 +46,8 @@ final class MediaSources: @unchecked Sendable {
         let screen = try await load(.screen, .video)
         let camera = try await load(.camera, .video)
         var audio: [Track] = []
+        // Extension point: a processed voice stem (rendered after Stop) would replace the raw microphone here, and
+        // `AudioAnalyzer.voiceFile` would return the same file so loudness is measured on what plays.
         for k in [TrackKind.microphone, .systemAudio] { if let t = try await load(k, .audio) { audio.append(t) } }
         return MediaSources(screen: screen, camera: camera, audio: audio)
     }
@@ -58,17 +60,11 @@ final class MediaSources: @unchecked Sendable {
         let audio: [(kind: TrackKind, track: AVMutableCompositionTrack, gain: Float)]
         let duration: Double
 
-        /// Audio mix with gains normalised to ≤ 1 (AVAudioMix's range). Returns the leftover boost.
-        func audioMix() -> (mix: AVAudioMix, boost: Float)? {
+        /// An audio mix that applies each track's gain and limiter in an `AudioTrackProcessor` tap.
+        func audioMix(forPlayback: Bool) -> (mix: AVAudioMix, processors: [AudioTrackProcessor])? {
             guard !audio.isEmpty else { return nil }
-            let peak = max(1, audio.map(\.gain).max() ?? 1)
-            let mix = AVMutableAudioMix()
-            mix.inputParameters = audio.map { a in
-                let p = AVMutableAudioMixInputParameters(track: a.track)
-                p.setVolume(a.gain / peak, at: .zero)
-                return p
-            }
-            return (mix, peak)
+            return AudioTrackProcessor.mix(audio.map { (kind: $0.kind, track: $0.track as AVAssetTrack, gain: $0.gain) },
+                                           forPlayback: forPlayback)
         }
     }
 
@@ -76,7 +72,9 @@ final class MediaSources: @unchecked Sendable {
     static func time(_ s: Double) -> CMTime { CMTime(seconds: s, preferredTimescale: timescale) }
 
     /// A composition of the kept ranges, back to back. `video` / `camera` / `audio` choose the tracks.
-    func composition(timeline: EditTimeline, video: Bool = true, camera wantCamera: Bool, audio settings: AudioSettings?) throws -> Composition {
+    /// `analysis` supplies the voice's measured loudness for auto level.
+    func composition(timeline: EditTimeline, video: Bool = true, camera wantCamera: Bool, audio settings: AudioSettings?,
+                     analysis: AudioAnalysis? = nil) throws -> Composition {
         let comp = AVMutableComposition()
         func add(_ src: Track, type: AVMediaType) throws -> AVMutableCompositionTrack? {
             guard let ct = comp.addMutableTrack(withMediaType: type, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
@@ -108,10 +106,8 @@ final class MediaSources: @unchecked Sendable {
         var audioTracks: [(TrackKind, AVMutableCompositionTrack, Float)] = []
         if let settings {
             for a in audio {
-                let muted = a.kind == .microphone ? settings.microphoneMuted : settings.systemMuted
-                let db = a.kind == .microphone ? settings.microphoneGainDB : settings.systemGainDB
-                guard !muted, let t = try add(a, type: .audio) else { continue }
-                audioTracks.append((a.kind, t, Float(pow(10, min(24, max(-60, db)) / 20))))
+                guard settings.gainDB(for: a.kind, analysis: analysis) != nil, let t = try add(a, type: .audio) else { continue }
+                audioTracks.append((a.kind, t, settings.linearGain(for: a.kind, analysis: analysis)))
             }
         }
         return Composition(asset: comp, screen: screenTrack, camera: cameraTrack,

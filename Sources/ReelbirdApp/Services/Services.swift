@@ -23,6 +23,9 @@ protocol CaptureSourceService: Sendable {
     func thumbnail(for source: AvailableSource, maxPixelWidth: Int) async -> CGImage?
     func microphones() -> [MediaDevice]
     func cameras() -> [MediaDevice]
+    /// The microphone's hardware input volume (0…1), or `nil` when the device doesn't offer one.
+    func inputVolume(deviceID: String) -> Float?
+    func setInputVolume(_ volume: Float, deviceID: String)
 }
 
 /// `ReelbirdCapture.RecordingSession`
@@ -61,6 +64,8 @@ protocol RenderService: Sendable {
     func export(bundle: ProjectBundle, edit: EditDocument, options: ExportOptions,
                 progress: @escaping @Sendable (Double) -> Void) async throws -> URL
     func poster(bundle: ProjectBundle, at t: Double, maxWidth: Int) async throws -> CGImage
+    /// The voice's measured loudness (`AudioAnalyzer`), measured on first call and cached in the bundle.
+    func audioAnalysis(bundle: ProjectBundle) async -> AudioAnalysis?
     func autoZoomPlan(events: [InputEvent], duration: Double, intensity: Double) -> [ZoomRegion]
 }
 

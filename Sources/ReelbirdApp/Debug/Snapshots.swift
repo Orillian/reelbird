@@ -136,6 +136,8 @@ import SwiftUI
             m.splitAtPlayhead()
             m.selection = .segment(TimeRange(start: 18, end: 26))
             m.change("x") { $0.trim = TimeRange(start: 1.5, end: 44) }
+            m.setAudioAnalysisForSnapshot(AudioAnalysis(microphone: TrackLoudness(file: "microphone/microphone.m4a", fileSize: 0,
+                                                                                  integratedLUFS: -25.2, peakDBFS: -9, duration: 42)))
         })
         scenes.append(editor(.captions) { m in
             m.change("x") { $0.captions.file = "captions.vtt" }

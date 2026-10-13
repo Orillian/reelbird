@@ -24,7 +24,11 @@ public enum Exporter {
         let sources = try await MediaSources.load(bundle: bundle, manifest: manifest)
         guard sources.screen != nil else { throw RenderError.missingScreenTrack }
         let url = try destination(bundle: bundle, manifest: manifest, edit: edit, options: options)
-        let job = try ExportJob(plan: plan, sources: sources, options: options, url: url, progress: progress)
+        var analysis: AudioAnalysis?
+        if options.format != .gif, edit.audio.autoLevel, !edit.audio.microphoneMuted, sources.audio.contains(where: { $0.kind == .microphone }) {
+            analysis = await AudioAnalyzer.analysis(bundle: bundle)
+        }
+        let job = try ExportJob(plan: plan, sources: sources, options: options, url: url, analysis: analysis, progress: progress)
         return try await withTaskCancellationHandler {
             try await job.run()
         } onCancel: {
@@ -112,11 +116,14 @@ final class ExportJob: @unchecked Sendable {
     let progress: @Sendable (Double) -> Void
     let size: PixelSize
     let fps: Int
+    /// Voice loudness for auto level.
+    let analysis: AudioAnalysis?
     private let cancelled = Atomic()
     private let ctx: MetalContext
 
-    init(plan: RenderPlan, sources: MediaSources, options: ExportOptions, url: URL, progress: @escaping @Sendable (Double) -> Void) throws {
-        self.plan = plan; self.sources = sources; self.options = options; self.progress = progress
+    init(plan: RenderPlan, sources: MediaSources, options: ExportOptions, url: URL, analysis: AudioAnalysis? = nil,
+         progress: @escaping @Sendable (Double) -> Void) throws {
+        self.plan = plan; self.sources = sources; self.options = options; self.progress = progress; self.analysis = analysis
         finalURL = url
         self.url = Exporter.partialURL(for: url)
         (size, fps) = Exporter.outputGeometry(plan: plan, options: options)
@@ -209,7 +216,7 @@ final class ExportJob: @unchecked Sendable {
     }
 
     private func runVideo() throws {
-        let comp = try sources.composition(timeline: plan.timeline, camera: plan.showsCamera, audio: plan.edit.audio)
+        let comp = try sources.composition(timeline: plan.timeline, camera: plan.showsCamera, audio: plan.edit.audio, analysis: analysis)
         guard let screenTrack = comp.screen else { throw RenderError.missingScreenTrack }
         try? FileManager.default.removeItem(at: url)
         let writer: AVAssetWriter
@@ -230,7 +237,7 @@ final class ExportJob: @unchecked Sendable {
         writer.add(vIn)
 
         var aIn: AVAssetWriterInput?
-        let mix = comp.audioMix()
+        let mix = comp.audioMix(forPlayback: false)
         if mix != nil {
             let a = AVAssetWriterInput(mediaType: .audio, outputSettings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 192_000,
@@ -271,27 +278,37 @@ final class ExportJob: @unchecked Sendable {
         writer.startSession(atSourceTime: .zero)
         guard vReader.startReading() else { throw RenderError.readerFailed(vReader.error?.localizedDescription ?? "start failed") }
 
-        // Audio on its own thread.
+        // Audio on its own thread: per-track gain and limiting happen in the mix's taps; the finisher limits
+        // the sum and removes the limiters' look-ahead delay.
         let audioDone = DispatchSemaphore(value: 0)
         let audioError = Box<(any Error)?>(nil)
-        if let aReader, let aOut, let aIn {
-            let boost = mix?.boost ?? 1
-            let captured = Unchecked((aReader, aOut, aIn, writer))
+        if let aReader, let aOut, let aIn, let mix {
+            let captured = Unchecked((aReader, aOut, aIn, writer, mix.processors))
             let t = Thread { [self] in
-                let (aReader, aOut, aIn, writer) = captured.value
+                let (aReader, aOut, aIn, writer, processors) = captured.value
                 defer { audioDone.signal() }
                 guard aReader.startReading() else {
                     audioError.value = RenderError.readerFailed(aReader.error?.localizedDescription ?? "audio")
                     aIn.markAsFinished()
                     return
                 }
-                while !cancelled.isSet, writer.status == .writing {
-                    guard let sb = aOut.copyNextSampleBuffer() else { break }
-                    if boost > 1.0001 { Self.applyGain(sb, boost) }
+                let finisher = MixFinisher(sampleRate: 48_000, channels: 2)
+                func append(_ sb: CMSampleBuffer) -> Bool {
                     while !aIn.isReadyForMoreMediaData, !cancelled.isSet, writer.status == .writing { usleep(300) }
-                    if cancelled.isSet || writer.status != .writing { break }
-                    if !aIn.append(sb) { break }
+                    if cancelled.isSet || writer.status != .writing { return false }
+                    return aIn.append(sb)
                 }
+                var ok = true
+                while ok, !cancelled.isSet, writer.status == .writing {
+                    guard let sb = aOut.copyNextSampleBuffer() else { break }
+                    if let out = finisher.process(sb) { ok = append(out) }
+                }
+                if aReader.status == .failed {
+                    audioError.value = RenderError.readerFailed(aReader.error?.localizedDescription ?? "audio")
+                } else if ok, !cancelled.isSet, aReader.status == .completed, let tail = finisher.flush() {
+                    _ = append(tail)
+                }
+                withExtendedLifetime(processors) {}
                 aIn.markAsFinished()
             }
             t.qualityOfService = .userInitiated
@@ -380,23 +397,6 @@ final class ExportJob: @unchecked Sendable {
             throw RenderError.writerFailed(writer.error?.localizedDescription ?? "finish failed")
         }
         progress(1)
-    }
-
-    /// Applies a gain above 1 with a soft knee so peaks don't clip harshly.
-    static func applyGain(_ sb: CMSampleBuffer, _ gain: Float) {
-        guard let bb = CMSampleBufferGetDataBuffer(sb) else { return }
-        var length = 0
-        var ptr: UnsafeMutablePointer<CChar>?
-        guard CMBlockBufferGetDataPointer(bb, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length, dataPointerOut: &ptr) == noErr,
-              let ptr, length == CMBlockBufferGetDataLength(bb) else { return }
-        let n = length / MemoryLayout<Float>.size
-        ptr.withMemoryRebound(to: Float.self, capacity: n) { f in
-            for i in 0..<n {
-                let y = f[i] * gain
-                let a = abs(y)
-                f[i] = a <= 0.8 ? y : (y < 0 ? -1 : 1) * (0.8 + 0.2 * tanh((a - 0.8) / 0.2))
-            }
-        }
     }
 
     // MARK: GIF

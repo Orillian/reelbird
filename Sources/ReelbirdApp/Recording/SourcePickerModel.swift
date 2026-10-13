@@ -19,6 +19,8 @@ struct AreaSelection: Equatable {
     private(set) var microphones: [MediaDevice] = []
     private(set) var cameras: [MediaDevice] = []
     private(set) var micLevel: Double = 0
+    /// The selected mic's hardware input volume (0…1), or `nil` when the device has none to set.
+    private(set) var inputVolume: Float?
     var selectedDisplayID: String?
     var selectedWindowID: String? { didSet { if selectedWindowID != oldValue { notice = nil } } }
     /// A one-line note above the sources (e.g. the chosen window closed); the list stays usable.
@@ -184,6 +186,7 @@ struct AreaSelection: Equatable {
 
     func startMeters() {
         metering = true
+        inputVolume = prefs.microphoneEnabled ? services.capture.inputVolume(deviceID: prefs.microphoneID) : nil
         guard prefs.microphoneEnabled else { micLevel = 0; return }
         services.inputs.startMicrophoneMeter(deviceID: prefs.microphoneID) { [weak self] level in
             self?.micLevel = level
@@ -194,6 +197,12 @@ struct AreaSelection: Equatable {
         metering = false
         services.inputs.stopMicrophoneMeter()
         micLevel = 0
+    }
+
+    /// Sets the selected mic's hardware input volume (the System Settings › Sound › Input slider).
+    func setInputVolume(_ v: Float) {
+        services.capture.setInputVolume(v, deviceID: prefs.microphoneID)
+        inputVolume = services.capture.inputVolume(deviceID: prefs.microphoneID) ?? v
     }
 
     func setMicLevelForSnapshot(_ v: Double) { micLevel = v }

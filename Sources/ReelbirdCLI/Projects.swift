@@ -93,6 +93,13 @@ enum ProjectSummary {
             .filter { !$0.lastPathComponent.hasPrefix(".") && ["mp4", "mov", "m4v", "gif"].contains($0.pathExtension.lowercased()) }
             .map(\.path).sorted()
 
+        let analysis = bundle.readAnalysis()
+        let voice: JSONValue = analysis?.microphone.map { mic in
+            [
+                "integratedLUFS": JSONValue(mic.integratedLUFS), "peakDBFS": JSONValue(mic.peakDBFS),
+                "autoLevelGainDB": JSONValue(e.audio.autoLevelGainDB(analysis)), "file": .string(mic.file),
+            ]
+        } ?? .null
         let tracks: [JSONValue] = m.tracks.map { t in
             [
                 "kind": .string(t.kind.rawValue), "codec": .string(t.codec), "duration": JSONValue(t.duration),
@@ -124,7 +131,13 @@ enum ProjectSummary {
                 "aspect": .string(e.canvas.aspect.rawValue),
                 "captionsFile": JSONValue(e.captions.file),
                 "annotations": .int(e.annotations.count),
+                "audio": [
+                    "autoLevel": .bool(e.audio.autoLevel), "microphoneGainDB": JSONValue(e.audio.microphoneGainDB),
+                    "microphoneMuted": .bool(e.audio.microphoneMuted), "systemGainDB": JSONValue(e.audio.systemGainDB),
+                    "systemMuted": .bool(e.audio.systemMuted),
+                ],
             ],
+            "voiceLoudness": voice,
             "chapters": .array(e.chapters.map { ["time": JSONValue($0.time), "title": .string($0.title)] }),
             "captions": .bool(hasCaptions),
             "transcript": .bool(hasTranscript),
@@ -147,6 +160,13 @@ enum ProjectSummary {
         editBits.append("zoom \(e.zoom.mode.rawValue) \(Format.seconds(e.zoom.intensity))")
         editBits.append("background \(e.background.kind.rawValue)")
         lines.append("  Edit       " + editBits.joined(separator: ", "))
+        if let mic = analysis?.microphone {
+            var v = mic.integratedLUFS.map { String(format: "%.1f LUFS", $0) } ?? "silent"
+            if let p = mic.peakDBFS { v += String(format: ", peak %.1f dBFS", p) }
+            if let g = e.audio.autoLevelGainDB(analysis) { v += String(format: ", auto level %+.1f dB", g) } else if !e.audio.autoLevel { v += ", auto level off" }
+            if e.audio.microphoneGainDB != 0 { v += String(format: ", boost %+.1f dB", e.audio.microphoneGainDB) }
+            lines.append("  Voice      \(v)")
+        }
         if !e.chapters.isEmpty {
             lines.append("  Chapters")
             for c in e.chapters { lines.append("    \(Format.duration(c.time).padding(toLength: 8, withPad: " ", startingAt: 0)) \(c.title)") }

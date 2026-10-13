@@ -21,6 +21,8 @@ struct LiveCaptureSources: CaptureSourceService {
     }
     func microphones() -> [MediaDevice] { Devices.microphones() }
     func cameras() -> [MediaDevice] { Devices.cameras() }
+    func inputVolume(deviceID: String) -> Float? { Devices.inputVolume(deviceID: deviceID) }
+    func setInputVolume(_ volume: Float, deviceID: String) { Devices.setInputVolume(volume, deviceID: deviceID) }
 }
 
 extension RecordingSession: RecordingSessionHandle {}
@@ -80,6 +82,7 @@ struct LiveRender: RenderService {
     func poster(bundle: ProjectBundle, at t: Double, maxWidth: Int) async throws -> CGImage {
         try await Thumbnailer.poster(bundle: bundle, at: t, maxWidth: maxWidth)
     }
+    func audioAnalysis(bundle: ProjectBundle) async -> AudioAnalysis? { await AudioAnalyzer.analysis(bundle: bundle) }
     func autoZoomPlan(events: [InputEvent], duration: Double, intensity: Double) -> [ZoomRegion] {
         AutoZoomPlanner.plan(events: events, duration: duration, intensity: intensity)
     }

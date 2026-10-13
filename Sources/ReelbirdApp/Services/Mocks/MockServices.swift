@@ -58,6 +58,9 @@ struct MockCaptureSources: CaptureSourceService {
         [MediaDevice(id: "facetime", name: "FaceTime HD Camera", isDefault: true),
          MediaDevice(id: "continuity", name: "iPhone Camera", isDefault: false)]
     }
+
+    func inputVolume(deviceID: String) -> Float? { deviceID == "shure-mv7" ? nil : 0.7 }
+    func setInputVolume(_ volume: Float, deviceID: String) {}
 }
 
 struct MockRecorder: RecorderService {
@@ -251,6 +254,11 @@ struct MockRender: RenderService {
         }
         try Data("Reelbird mock export".utf8).write(to: url)
         return url
+    }
+
+    func audioAnalysis(bundle: ProjectBundle) async -> AudioAnalysis? {
+        let file = (try? bundle.readManifest())?.track(.microphone)?.file ?? "microphone/microphone.m4a"
+        return AudioAnalysis(microphone: TrackLoudness(file: file, fileSize: 0, integratedLUFS: -25.2, peakDBFS: -9, duration: 42))
     }
 
     func poster(bundle: ProjectBundle, at t: Double, maxWidth: Int) async throws -> CGImage {

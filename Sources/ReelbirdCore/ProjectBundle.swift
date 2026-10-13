@@ -11,6 +11,7 @@ import Foundation
 ///       camera/  microphone/  systemAudio/  share/   (same layout, when recorded)
 ///       captions.vtt        optional, from transcription
 ///       transcript.json     optional, word-timed transcript (ReelbirdAI.Transcript) behind captions.vtt
+///       analysis.json       optional cache: measured loudness of the audio (AudioAnalysis)
 ///       exports/            rendered outputs
 public struct ProjectBundle: Hashable, Sendable {
     public static let pathExtension = "reelbird"
@@ -26,6 +27,7 @@ public struct ProjectBundle: Hashable, Sendable {
     public var exportsURL: URL { url.appendingPathComponent("exports", isDirectory: true) }
     public var captionsURL: URL { url.appendingPathComponent("captions.vtt") }
     public var transcriptURL: URL { url.appendingPathComponent("transcript.json") }
+    public var analysisURL: URL { url.appendingPathComponent("analysis.json") }
 
     public func directory(for kind: TrackKind) -> URL { url.appendingPathComponent(kind.rawValue, isDirectory: true) }
     public func resolve(_ relative: String) -> URL {
@@ -60,6 +62,18 @@ public struct ProjectBundle: Hashable, Sendable {
 
     public func writeEdit(_ e: EditDocument) throws {
         try JSONCoding.writeAtomically(e, to: editURL)
+    }
+
+    /// The cached `analysis.json`, or `nil` when missing, unreadable or from another analysis version.
+    public func readAnalysis() -> AudioAnalysis? {
+        guard let d = try? Data(contentsOf: analysisURL),
+              let a = try? JSONCoding.decoder.decode(AudioAnalysis.self, from: d),
+              a.version == AudioAnalysis.currentVersion else { return nil }
+        return a
+    }
+
+    public func writeAnalysis(_ a: AudioAnalysis) throws {
+        try JSONCoding.writeAtomically(a, to: analysisURL)
     }
 
     public func readEvents() throws -> [InputEvent] {

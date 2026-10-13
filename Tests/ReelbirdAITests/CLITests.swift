@@ -188,6 +188,12 @@ private func tempDir() throws -> URL {
     // Bad range.
     let badRange = try CLI.run(["edit", bundle.url.path, "--cut", "9-3"])
     #expect(badRange.code == 64)
+
+    // Audio: auto level and boost.
+    #expect(try bundle.readEdit().audio.autoLevel)
+    let audio = try CLI.run(["edit", bundle.url.path, "--set", "audio.autoLevel=false", "--set", "audio.microphoneGainDB=4.5"])
+    #expect(audio.code == 0, "\(audio.err)")
+    #expect(try !bundle.readEdit().audio.autoLevel && bundle.readEdit().audio.microphoneGainDB == 4.5)
 }
 
 @Test(.enabled(if: binaryAvailable)) func infoAndListFindProjects() throws {
@@ -203,6 +209,14 @@ private func tempDir() throws -> URL {
 
     let human = try CLI.run(["info", a.url.path])
     #expect(human.code == 0 && human.out.contains("Synthetic (test), 1920×1080 @ 60 fps"))
+
+    // The cached voice measurement shows up once analysis.json exists.
+    try a.writeAnalysis(AudioAnalysis(microphone: TrackLoudness(file: "microphone/microphone.m4a", fileSize: 1, integratedLUFS: -27.04,
+                                                                peakDBFS: -8.2, duration: 30)))
+    let voice = try CLI.run(["info", a.url.path])
+    #expect(voice.out.contains("Voice      -27.0 LUFS, peak -8.2 dBFS, auto level +11.0 dB"), "\(voice.out)")
+    let voiceJSON = try CLI.run(["info", a.url.path, "--json"])
+    #expect((voiceJSON.json?["voiceLoudness"] as? [String: Any])?["autoLevelGainDB"] as? Double == 11.04)
 
     let ambiguous = try CLI.run(["info", "take"], library: dir)
     #expect(ambiguous.code != 0)

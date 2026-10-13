@@ -452,12 +452,10 @@ struct AudioSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
-            if model.hasMicrophone {
-                track(title: "Microphone", symbol: "mic.fill", gain: \.audio.microphoneGainDB, muted: \.audio.microphoneMuted)
-            }
+            if model.hasMicrophone { voice }
             if model.hasSystemAudio {
                 if model.hasMicrophone { Divider().padding(.vertical, 2) }
-                track(title: "System audio", symbol: "speaker.wave.2.fill", gain: \.audio.systemGainDB, muted: \.audio.systemMuted)
+                systemAudio
             }
             if !model.hasMicrophone && !model.hasSystemAudio {
                 StatusLine(tone: .info, text: "This recording has no audio.")
@@ -473,25 +471,65 @@ struct AudioSection: View {
         }
     }
 
-    private func track(title: String, symbol: String, gain: WritableKeyPath<EditDocument, Double>, muted: WritableKeyPath<EditDocument, Bool>) -> some View {
-        let isMuted = model.edit[keyPath: muted]
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Label(title, systemImage: symbol).font(.system(size: 12, weight: .medium))
-                Spacer()
-                Button { model.change(isMuted ? "Unmute" : "Mute") { $0[keyPath: muted].toggle() } } label: {
-                    Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2")
+    private var voice: some View {
+        let muted = model.edit.audio.microphoneMuted
+        return VStack(alignment: .leading, spacing: 10) {
+            header(title: "Voice", symbol: "mic.fill", muted: \.audio.microphoneMuted)
+            Group {
+                Toggle(isOn: model.binding(\.audio.autoLevel, "Auto Level")) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Auto level").font(.system(size: 12))
+                        Text(autoLevelStatus).font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
+                    }
                 }
-                .buttonStyle(IconButtonStyle(size: 24, active: isMuted))
-                .help(isMuted ? "Unmute" : "Mute")
-                .accessibilityLabel(isMuted ? "Unmute \(title)" : "Mute \(title)")
+                .toggleStyle(.brand)
+                .help("Brings your voice to a steady, podcast-like loudness (−16 LUFS) without clipping.")
+                FieldRow(label: "Boost", labelWidth: 52) {
+                    ValueSlider(value: model.binding(\.audio.microphoneGainDB, "Voice Boost"), range: -12...12, detent: 0, format: Self.db)
+                }
             }
-            ValueSlider(value: model.binding(gain, "\(title) Volume"), range: -24...12) { v in
-                v == 0 ? "0 dB" : String(format: "%+.0f dB", v)
+            .disabled(muted)
+            .opacity(muted ? 0.5 : 1)
+        }
+    }
+
+    private var systemAudio: some View {
+        let muted = model.edit.audio.systemMuted
+        return VStack(alignment: .leading, spacing: 10) {
+            header(title: "System audio", symbol: "speaker.wave.2.fill", muted: \.audio.systemMuted)
+            FieldRow(label: "Volume", labelWidth: 52) {
+                ValueSlider(value: model.binding(\.audio.systemGainDB, "System Audio Volume"), range: -24...12, detent: 0, format: Self.db)
             }
-            .environment(\.fieldLabel, "\(title) volume")
-            .disabled(isMuted)
-            .opacity(isMuted ? 0.5 : 1)
+            .disabled(muted)
+            .opacity(muted ? 0.5 : 1)
+        }
+    }
+
+    private var autoLevelStatus: String {
+        guard model.edit.audio.autoLevel else { return "Plays as recorded" }
+        if model.isMeasuringVoice { return "Measuring your voice…" }
+        guard let analysis = model.audioAnalysis else { return "Not measured yet" }
+        guard analysis.microphone?.integratedLUFS != nil else { return "No speech found" }
+        let gain = model.autoLevelGainDB ?? 0
+        if abs(gain) < 0.5 { return "Already at a good level" }
+        return String(format: "%+.0f dB applied", gain)
+    }
+
+    private static func db(_ v: Double) -> String {
+        abs(v) < 0.05 ? "0 dB" : String(format: "%+.0f dB", v)
+    }
+
+    private func header(title: String, symbol: String, muted: WritableKeyPath<EditDocument, Bool>) -> some View {
+        let isMuted = model.edit[keyPath: muted]
+        return HStack {
+            Label(title, systemImage: symbol).font(.system(size: 12, weight: .medium))
+            Spacer()
+            Button { model.change(isMuted ? "Unmute" : "Mute") { $0[keyPath: muted].toggle() } } label: {
+                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2")
+            }
+            .buttonStyle(IconButtonStyle(size: 24, active: isMuted))
+            .help(isMuted ? "Unmute" : "Mute")
+            .accessibilityLabel(isMuted ? "Unmute \(title)" : "Mute \(title)")
         }
     }
 }

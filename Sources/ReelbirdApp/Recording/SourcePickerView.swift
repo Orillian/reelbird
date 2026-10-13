@@ -205,7 +205,11 @@ struct SourcePickerView: View {
                     if model.microphoneAccess != .granted {
                         allowButton("Allow Microphone…", .microphone)
                     } else {
-                        LevelMeter(level: model.micLevel, segments: 10, height: 5).frame(width: 52)
+                        if model.inputVolume != nil {
+                            InputVolumeButton(model: model)
+                        } else {
+                            LevelMeter(level: model.micLevel, segments: 10, height: 5).frame(width: 52)
+                        }
                         DeviceMenu(devices: model.microphones, selection: $prefs.microphoneID)
                     }
                 }
@@ -419,6 +423,49 @@ struct InputRow<Accessory: View>: View {
                 .accessibilityAction { if enabled { isOn.toggle() } }
         }
         .frame(height: 32)
+    }
+}
+
+/// The mic level meter as a button: click it for the microphone's input volume (the same control as
+/// System Settings › Sound › Input). Shown only when the device's volume can be set.
+struct InputVolumeButton: View {
+    @Bindable var model: SourcePickerModel
+    @ViewState private var open = false
+    @ViewState private var hovering = false
+
+    var body: some View {
+        Button { open.toggle() } label: {
+            LevelMeter(level: model.micLevel, segments: 10, height: 5)
+                .frame(width: 52)
+                .padding(.horizontal, 4)
+                .frame(height: 20)
+                .background(RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous)
+                    .fill(Color.primary.opacity(open ? 0.09 : hovering ? 0.06 : 0)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Input volume")
+        .accessibilityLabel("Input volume")
+        .accessibilityValue("\(Int((model.inputVolume ?? 0) * 100)) percent")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Input volume").font(.system(size: 12, weight: .semibold))
+                HStack(spacing: 8) {
+                    Image(systemName: "mic").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Slider(value: Binding(get: { Double(model.inputVolume ?? 0) }, set: { model.setInputVolume(Float($0)) }), in: 0...1)
+                        .controlSize(.small)
+                        .tint(Theme.accent)
+                        .accessibilityLabel("Input volume")
+                    Image(systemName: "mic.fill").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                LevelMeter(level: model.micLevel, segments: 18, height: 5)
+                Text("Sets this mic’s level for every app, like System Settings › Sound.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Theme.Space.m)
+            .frame(width: 240)
+        }
     }
 }
 

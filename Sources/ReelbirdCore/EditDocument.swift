@@ -189,12 +189,13 @@ public struct CanvasSettings: Codable, Hashable, Sendable {
 }
 
 public struct AudioSettings: Codable, Hashable, Sendable {
+    /// The user's boost for the voice in dB, on top of auto level.
     public var microphoneGainDB: Double = 0
     public var systemGainDB: Double = 0
     public var microphoneMuted = false
     public var systemMuted = false
-    /// Remove steady background noise from the microphone.
-    public var denoise = true
+    /// Bring the voice to a steady loudness (−16 LUFS) from its measured level (`analysis.json`).
+    public var autoLevel = true
 
     public init() {}
     public init(from decoder: any Decoder) throws {
@@ -204,7 +205,7 @@ public struct AudioSettings: Codable, Hashable, Sendable {
         systemGainDB = try c.decodeIfPresent(Double.self, forKey: .systemGainDB) ?? d.systemGainDB
         microphoneMuted = try c.decodeIfPresent(Bool.self, forKey: .microphoneMuted) ?? d.microphoneMuted
         systemMuted = try c.decodeIfPresent(Bool.self, forKey: .systemMuted) ?? d.systemMuted
-        denoise = try c.decodeIfPresent(Bool.self, forKey: .denoise) ?? d.denoise
+        autoLevel = try c.decodeIfPresent(Bool.self, forKey: .autoLevel) ?? d.autoLevel
     }
 }
 

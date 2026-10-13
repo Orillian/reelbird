@@ -31,7 +31,10 @@ public final class PreviewPlayer: @unchecked Sendable {
     private var pendingSeek: Double?
     private var loadTask: Task<Void, Never>?
     private var previewView: PreviewView?
-    private var audioTracks: [(TrackKind, AVMutableCompositionTrack)] = []
+    /// The current item's per-track gain stages; gain edits go straight to them while playing.
+    private var audioProcessors: [AudioTrackProcessor] = []
+    /// The voice's measured loudness (auto level), once known.
+    public private(set) var audioAnalysis: AudioAnalysis?
 
     /// Opens a bundle for preview. Media loads in the background (`onReady` fires when done).
     public init(bundle: ProjectBundle) throws {
@@ -57,6 +60,11 @@ public final class PreviewPlayer: @unchecked Sendable {
                 self.sources = s
                 try self.rebuildItems(keepingSourceTime: nil)
                 self.onReady?(nil)
+                if s.audio.contains(where: { $0.kind == .microphone }) {
+                    let analysis = await AudioAnalyzer.analysis(bundle: bundle)
+                    self.audioAnalysis = analysis
+                    self.applyAudioGains()
+                }
             } catch {
                 self.onReady?(error)
             }
@@ -105,7 +113,7 @@ public final class PreviewPlayer: @unchecked Sendable {
         if plan.timeline != old.timeline || plan.showsCamera != old.showsCamera {
             try? rebuildItems(keepingSourceTime: sourceTime)
         } else if plan.edit.audio != old.edit.audio {
-            mainPlayer.currentItem?.audioMix = audioMix(for: plan)
+            applyAudioGains()
         }
         loop.wake()
         notifyTime()
@@ -183,20 +191,18 @@ public final class PreviewPlayer: @unchecked Sendable {
         onTimeChange?(currentTime)
     }
 
+    /// Sets each track's gain (auto level + boost, or 0 when muted) on the running taps. Takes effect within
+    /// one audio buffer, without touching playback.
     @MainActor
-    private func audioMix(for plan: RenderPlan) -> AVAudioMix? {
-        guard !audioTracks.isEmpty else { return nil }
-        let a = plan.edit.audio
-        let mix = AVMutableAudioMix()
-        mix.inputParameters = audioTracks.map { kind, track in
-            let muted = kind == .microphone ? a.microphoneMuted : a.systemMuted
-            let db = kind == .microphone ? a.microphoneGainDB : a.systemGainDB
-            let p = AVMutableAudioMixInputParameters(track: track)
-            p.setVolume(muted ? 0 : Float(min(1, pow(10, db / 20))), at: .zero)
-            return p
-        }
-        return mix
+    private func applyAudioGains() {
+        let settings = state.plan.edit.audio
+        for p in audioProcessors { p.gain = settings.linearGain(for: p.kind, analysis: audioAnalysis) }
     }
+
+    /// Linear gain the preview currently applies to `kind` (tests).
+    func audioGain(for kind: TrackKind) -> Float? { audioProcessors.first { $0.kind == kind }?.gain }
+
+    var currentItemForTesting: AVPlayerItem? { mainPlayer.currentItem }
 
     /// (Re)creates the player items for the current plan's timeline.
     @MainActor
@@ -204,16 +210,22 @@ public final class PreviewPlayer: @unchecked Sendable {
         guard let sources else { return }
         let plan = state.plan
         if state.isPlaying { mainPlayer.pause(); cameraPlayer?.pause(); state.isPlaying = false }
+        // Every audio track stays in the composition (mutes are a gain of 0), so audio edits never rebuild the item.
         let comp = try sources.composition(timeline: plan.timeline, camera: false, audio: AudioSettings())
-        audioTracks = comp.audio.map { ($0.kind, $0.track) }
         let item = AVPlayerItem(asset: comp.asset)
         let attrs = MediaSources.decodeSettings
         let screenOut = AVPlayerItemVideoOutput(pixelBufferAttributes: attrs)
         screenOut.suppressesPlayerRendering = true
         item.add(screenOut)
         sources.applySDRConversion(kind: .screen, to: item, asset: comp.asset)
+        if let mix = comp.audioMix(forPlayback: true) {
+            item.audioMix = mix.mix
+            audioProcessors = mix.processors
+            applyAudioGains()
+        } else {
+            audioProcessors = []
+        }
         mainPlayer.replaceCurrentItem(with: item)
-        item.audioMix = audioMix(for: plan)
 
         var cameraOut: AVPlayerItemVideoOutput?
         if plan.showsCamera, sources.camera != nil {
