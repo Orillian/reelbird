@@ -310,3 +310,9 @@ extension RecordingTests {
         #expect(abs(screenDuration - m.duration) < 0.1)
     }
 }
+
+@Test func timestampsOffTheHostClockFallBackToArrivalTime() {
+    #expect(CapturePipeline.sanitizedHostTime(1000.01, now: 1000.05) == nil)
+    #expect(CapturePipeline.sanitizedHostTime(0.02, now: 1000.05) == 1000.05)        // zero-based device clock
+    #expect(CapturePipeline.sanitizedHostTime(98_000, now: 1000.05) == 1000.05)      // another clock domain
+}

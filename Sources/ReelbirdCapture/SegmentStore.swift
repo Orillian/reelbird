@@ -256,6 +256,10 @@ public enum ProjectRecovery {
         var end = 0.0
         for kind in TrackKind.allCases {
             let dir = bundle.directory(for: kind)
+            // Temporary files of writes the crash interrupted (never renamed into place).
+            for name in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] where name.hasPrefix(".") && name.hasSuffix(".tmp") {
+                try? FileManager.default.removeItem(at: dir.appendingPathComponent(name))
+            }
             guard let summary = try SegmentStore.consolidate(directory: dir, kind: kind) else {
                 manifest.tracks.removeAll { $0.kind == kind && $0.file == nil && $0.segmentCount == 0 }
                 continue

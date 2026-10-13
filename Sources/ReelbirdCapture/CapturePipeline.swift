@@ -20,6 +20,14 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
         var microphoneLastSampleHost = 0.0
         var cameraFrames = 0
         var systemAudioBuffers = 0
+        /// Samples whose timestamp wasn't on the host clock and were retimed to arrival time.
+        var clockFallbacks = 0
+    }
+
+    /// Live samples arrive within milliseconds of their timestamp. Returns the arrival time when the
+    /// timestamp is more than 2 s away from now (not host-clock based), or `nil` if it is fine.
+    static func sanitizedHostTime(_ pts: Double, now: Double) -> Double? {
+        abs(pts - now) > 2 ? now : nil
     }
 
     let format: FrameSourceFormat
@@ -158,8 +166,18 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
     // MARK: FrameSourceOutput
 
     func frameSource(didOutput sampleBuffer: CMSampleBuffer, of kind: MediaKind) {
-        let host = sampleBuffer.presentationTimeStamp.seconds
+        var host = sampleBuffer.presentationTimeStamp.seconds
         guard host.isFinite else { return }
+        if format.isRealTime {
+            // Every source is expected to stamp samples on the host clock. If one doesn't (a device
+            // clock, a zero-based stream), a single bad timestamp would trim the track away or pad
+            // hours of silence; fall back to arrival time instead and count it.
+            let now = HostClock.now()
+            if let fixed = Self.sanitizedHostTime(host, now: now) {
+                host = fixed
+                metrics.withLock { $0.clockFallbacks += 1 }
+            }
+        }
         switch kind {
         case .screen: handleScreen(sampleBuffer, host: host)
         case .camera: handleCamera(sampleBuffer, host: host)
