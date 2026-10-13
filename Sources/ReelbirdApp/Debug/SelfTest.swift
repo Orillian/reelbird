@@ -6,6 +6,24 @@ import ReelbirdRender
 /// `ReelbirdApp --selftest`: drives the app's models end to end against the services (mock by
 /// default) without any windows: record → stop → library → editor edits, undo, autosave → export.
 @MainActor enum SelfTest {
+    /// Picker microphone logic: Automatic, the Bluetooth note, the one-click switch, a missing device.
+    private static func microphoneChoice(services: Services, prefs: Preferences, check: (Bool, String) -> Void) {
+        let picker = SourcePickerModel(services: services, prefs: prefs)
+        picker.apply([])
+        check(prefs.microphoneID == MicPolicy.automaticID, "microphone defaults to Automatic")
+        check(picker.automaticMicrophone?.name == "MacBook Pro Microphone", "Automatic picks the built-in mic over AirPods, iPhone and Zoom")
+        check(picker.callQualityAdvice == nil, "no Bluetooth note on Automatic")
+        prefs.microphoneID = "airpods"
+        check(picker.callQualityAdvice?.alternative?.name == "MacBook Pro Microphone", "Bluetooth note offers the built-in mic")
+        check(picker.lockedMicrophoneID() == "airpods", "an explicit choice is recorded by its own ID")
+        picker.switchToFullQualityMicrophone()
+        check(prefs.microphoneID == MicPolicy.automaticID && picker.callQualityAdvice == nil, "Switch goes back to Automatic (the built-in mic)")
+        check(picker.lockedMicrophoneID() == "builtin-mic", "Automatic is locked to an explicit device ID at start")
+        prefs.microphoneID = "unplugged"
+        check(picker.chosenMicrophoneMissing && picker.lockedMicrophoneID() == "builtin-mic", "a missing mic falls back to the best one")
+        prefs.microphoneID = MicPolicy.automaticID
+    }
+
     static func run() async -> Bool {
         var failures: [String] = []
         func check(_ ok: Bool, _ what: String) { print(ok ? "  ok   \(what)" : "  FAIL \(what)"); if !ok { failures.append(what) } }
@@ -46,6 +64,9 @@ import ReelbirdRender
         check(manifest?.status == .complete, "manifest written as complete")
         check(manifest?.pauses.count == 1, "pause recorded in manifest")
         check(manifest?.track(.camera) != nil, "camera track recorded")
+        check(session.microphoneTakeSummary.map { !$0.isEssentiallySilent } == true, "mic take summary reported (not silent)")
+
+        microphoneChoice(services: services, prefs: prefs, check: check)
 
         // Library
         let store = LibraryStore(services: services, prefs: prefs)

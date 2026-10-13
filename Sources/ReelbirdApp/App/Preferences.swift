@@ -20,7 +20,10 @@ enum CameraBubbleSize: String, CaseIterable, Codable {
         lastSourceID = d.string(forKey: "lastSourceID")
         lastArea = (d.data(forKey: "lastArea")).flatMap { try? JSONDecoder().decode(CGRect.self, from: $0) }
         microphoneEnabled = d.object(forKey: "microphoneEnabled") as? Bool ?? true
-        microphoneID = d.string(forKey: "microphoneID") ?? "default"
+        // "Automatic" (the best connected mic, locked at start). Older builds stored "default" (the system
+        // default, which follows macOS onto AirPods); move those to Automatic.
+        let mic = d.string(forKey: "microphoneID")
+        microphoneID = mic == nil || mic == MicPolicy.systemDefaultID ? MicPolicy.automaticID : mic ?? MicPolicy.automaticID
         cameraEnabled = d.object(forKey: "cameraEnabled") as? Bool ?? false
         cameraID = d.string(forKey: "cameraID")
         systemAudio = d.object(forKey: "systemAudio") as? Bool ?? true
@@ -44,6 +47,7 @@ enum CameraBubbleSize: String, CaseIterable, Codable {
     /// Last area in global top-left-origin points.
     var lastArea: CGRect? { didSet { d.set(try? JSONEncoder().encode(lastArea), forKey: "lastArea") } }
     var microphoneEnabled: Bool { didSet { d.set(microphoneEnabled, forKey: "microphoneEnabled") } }
+    /// `MicPolicy.automaticID` or an explicit device ID.
     var microphoneID: String { didSet { d.set(microphoneID, forKey: "microphoneID") } }
     var cameraEnabled: Bool { didSet { d.set(cameraEnabled, forKey: "cameraEnabled") } }
     var cameraID: String? { didSet { d.set(cameraID, forKey: "cameraID") } }

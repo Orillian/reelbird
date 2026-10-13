@@ -80,6 +80,16 @@ public struct HealthWarning: Codable, Hashable, Sendable, Identifiable {
         /// The share link couldn't be reserved when recording started; the take is saved locally only.
         case shareFailed
         case permissionMissing
+        /// The recording microphone was unplugged or switched off mid-take.
+        case microphoneDisconnected
+        /// macOS switched its default input (e.g. AirPods reconnected); the take keeps its locked mic.
+        case microphoneChanged
+        /// Peaks hit 0 dBFS repeatedly.
+        case microphoneClipping
+        /// Speech is reaching the mic but its peaks stay below -30 dBFS.
+        case microphoneTooQuiet
+        /// Speech while the recording is paused.
+        case talkingWhilePaused
     }
     public var id: String { kind.rawValue }
     public var kind: Kind

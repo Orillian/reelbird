@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Observation
 import ReelbirdCapture
 import ReelbirdCore
@@ -35,6 +36,8 @@ struct AreaSelection: Equatable {
     @ObservationIgnored private let prefs: Preferences
     @ObservationIgnored private var thumbnailTask: Task<Void, Never>?
     @ObservationIgnored private var metering = false
+    /// The device the meter is listening to (resolved, so "Automatic" meters the mic it will record).
+    @ObservationIgnored private var meteredID: String?
 
     init(services: Services, prefs: Preferences) {
         self.services = services
@@ -49,6 +52,49 @@ struct AreaSelection: Equatable {
                 self.load()
             }
         }
+        // Plugging in a USB mic or AirPods while the picker is open updates the list (and Automatic).
+        for name in [AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshMicrophones() }
+            }
+        }
+    }
+
+    // MARK: Microphone choice
+
+    /// What "Automatic" records with right now.
+    var automaticMicrophone: MediaDevice? { microphones.bestMicrophone }
+
+    /// The device a recording would lock to: the explicit choice, or the best one for Automatic (and
+    /// when the chosen device isn't connected).
+    var resolvedMicrophone: MediaDevice? { microphones.resolveMicrophone(prefs.microphoneID) }
+
+    /// The chosen device is not connected (recording would use Automatic's pick instead).
+    var chosenMicrophoneMissing: Bool {
+        !microphones.isEmpty && MicPolicy.isMissing(prefs.microphoneID, in: microphones.map(\.micCandidate))
+    }
+
+    /// Set when the mic that would record is Bluetooth or call quality: what to say and what to offer.
+    var callQualityAdvice: (device: MediaDevice, alternative: MediaDevice?)? {
+        guard prefs.microphoneEnabled, let mic = resolvedMicrophone, mic.isCallQuality else { return nil }
+        return (mic, microphones.alternative(to: mic))
+    }
+
+    /// One click from a Bluetooth mic to the best full-quality one. Goes back to Automatic when that
+    /// is what Automatic picks, so a mic plugged in later is still preferred.
+    func switchToFullQualityMicrophone() {
+        guard let alt = callQualityAdvice?.alternative else { return }
+        prefs.microphoneID = automaticMicrophone?.id == alt.id ? MicPolicy.automaticID : alt.id
+    }
+
+    /// The explicit device ID to record with, locked when recording starts.
+    func lockedMicrophoneID() -> String {
+        resolvedMicrophone?.id ?? MicPolicy.systemDefaultID
+    }
+
+    func refreshMicrophones() {
+        microphones = services.capture.microphones()
+        if metering, resolvedMicrophone?.id != meteredID { startMeters() }
     }
 
     /// The display under the rectangle's centre (global points, top-left origin), else the main display.
@@ -185,13 +231,16 @@ struct AreaSelection: Equatable {
     func startMeters() {
         metering = true
         guard prefs.microphoneEnabled else { micLevel = 0; return }
-        services.inputs.startMicrophoneMeter(deviceID: prefs.microphoneID) { [weak self] level in
+        let id = resolvedMicrophone?.id ?? prefs.microphoneID
+        meteredID = id
+        services.inputs.startMicrophoneMeter(deviceID: id) { [weak self] level in
             self?.micLevel = level
         }
     }
 
     func stopMeters() {
         metering = false
+        meteredID = nil
         services.inputs.stopMicrophoneMeter()
         micLevel = 0
     }

@@ -214,8 +214,12 @@ final class AudioTrackFeed: @unchecked Sendable {
     private var lastIngestHost = 0.0
     private var idlePadded = false
 
-    init(writer: SegmentedWriter, channels: Int) {
+    /// Analyses the raw input (microphone track only), before pause muting.
+    let monitor: MicrophoneMonitor?
+
+    init(writer: SegmentedWriter, channels: Int, monitor: MicrophoneMonitor? = nil) {
         self.writer = writer
+        self.monitor = monitor
         normalizer = PCMNormalizer(channels: channels)
         factory = PCMBufferFactory(channels: channels)
     }
@@ -231,6 +235,8 @@ final class AudioTrackFeed: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         guard let (frames, rms) = normalizer.convert(sb) else { return nil }
         lastIngestHost = HostClock.now()
+        monitor?.ingest(normalizer.output, frames: frames, channels: normalizer.channels,
+                        at: sb.presentationTimeStamp.seconds, paused: muted)
         let afterIdle = idlePadded
         idlePadded = false
         let rate = Double(AudioPCM.sampleRate)

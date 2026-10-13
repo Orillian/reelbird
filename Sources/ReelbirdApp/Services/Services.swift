@@ -33,6 +33,10 @@ protocol RecordingSessionHandle: AnyObject, Sendable {
     func resume() async
     func stop() async throws -> ProjectBundle
     func discard() async
+    /// Live microphone peak/RMS in dBFS (HUD meter target zone).
+    var microphoneLevels: MicLevelReading { get }
+    /// After `stop()`: how much the microphone picked up (`nil` without a microphone).
+    var microphoneTakeSummary: MicTakeSummary? { get }
 }
 
 /// Creates recording sessions (`RecordingSession.init`) and recovers crashed ones (`ProjectRecovery`).
