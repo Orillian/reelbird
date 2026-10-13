@@ -183,7 +183,9 @@ public enum ToolbarDetector {
 
         func still(_ y: Int) -> Bool { activity[y] <= stillActivity && change[y] <= 2.5 }
         // The still band at the top ends where a few rows in a row are moving (single noisy rows are tolerated).
-        let run = max(3, Int((2 * captureScale).rounded()))
+        // Clamped: the scale comes from project.json.
+        let scale = min(8, max(0.5, captureScale.isFinite ? captureScale : 1))
+        let run = max(3, Int((2 * scale).rounded()))
         var staticEnd = h
         var moving = 0
         for y in 0..<h {
@@ -193,7 +195,6 @@ public enum ToolbarDetector {
             }
         }
 
-        let scale = max(0.5, captureScale.isFinite ? captureScale : 1)
         let minRows = max(Int((40 * scale).rounded()), Int((0.03 * Double(h)).rounded(.up)))
         let maxRows = min(Int((220 * scale).rounded()), h / 2)
         guard minRows < maxRows, staticEnd >= minRows else { return .none(height: h, staticRows: staticEnd) }

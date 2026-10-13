@@ -3,7 +3,7 @@ import Foundation
 /// What to record. Built by the app or the CLI and handed to the recorder.
 public struct RecordingOptions: Codable, Hashable, Sendable {
     public enum Quality: String, Codable, Hashable, Sendable, CaseIterable {
-        /// HEVC, ~1.2 bits/pixel/s cap. Default.
+        /// HEVC at the standard bitrate (EncoderSettings.bitsPerPixel). Default.
         case high
         /// HEVC at a higher bitrate for text-heavy 5K screens.
         case max
@@ -19,7 +19,7 @@ public struct RecordingOptions: Codable, Hashable, Sendable {
     public var microphoneID: String? = "default"
     /// Camera device unique ID, or `nil` for no camera.
     public var cameraID: String?
-    /// Record key presses for a keystroke overlay (needs Accessibility permission).
+    /// Record key presses for a keystroke overlay (needs Input Monitoring permission).
     public var captureKeystrokes = false
     /// Produce and upload the quick-share stream while recording (needs a share destination).
     public var shareWhileRecording = false

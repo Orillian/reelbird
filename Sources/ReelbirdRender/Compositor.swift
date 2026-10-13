@@ -253,7 +253,8 @@ final class Compositor {
                 guard let str = a.text, !str.isEmpty else { continue }
                 // Render at the zoom-1 size ×2 so zooming stays crisp; mipmaps handle shrinking.
                 let base = viewRect.height * layout.card.height / layout.base.y * 0.7
-                let key = TextCache.Key(text: str, fontSize: Int((base * 2).rounded()), weight: 600,
+                guard base.isFinite, base > 0 else { continue }
+                let key = TextCache.Key(text: str, fontSize: Int(min(base * 2, 2048).rounded()), weight: 600,
                                         color: packRGBA(a.color), pill: 0, maxWidth: 0)
                 guard let e = text.texture(key, context: ctx, queue: queue) else { continue }
                 let scale = s / 2

@@ -61,6 +61,8 @@ public struct RGBA: Codable, Hashable, Sendable {
         }
     }
     public var hex: String {
-        String(format: "#%02X%02X%02X", Int((r * 255).rounded()), Int((g * 255).rounded()), Int((b * 255).rounded()))
+        // Clamped: values decoded from a hand-edited edit.json can be anything.
+        func byte(_ c: Double) -> Int { c.isFinite ? Int((min(max(c, 0), 1) * 255).rounded()) : 0 }
+        return String(format: "#%02X%02X%02X", byte(r), byte(g), byte(b))
     }
 }
