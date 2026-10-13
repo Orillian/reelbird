@@ -29,7 +29,7 @@ private func decodeEdit(_ json: String) throws -> EditDocument {
     #expect(!String(decoding: try JSONCoding.encoder.encode(EditDocument()), as: UTF8.self).contains("\"crop\""))
 }
 
-@Test func cropSpaceMapsBothWays() {
+@Test func cropSpaceMapsBothWays() throws {
     let s = CropSpace(NormRect(x: 0.1, y: 0.2, width: 0.5, height: 0.4))
     let p = NormPoint(x: 0.35, y: 0.4)
     let v = s.toView(p)
@@ -45,8 +45,8 @@ private func decodeEdit(_ json: String) throws -> EditDocument {
         InputEvent(t: 1, type: .focus, rect: NormRect(x: 0.1, y: 0.1, width: 0.2, height: 0.2)),
     ])
     #expect(events[0].rect == nil)
-    let r = try? #require(events[1].rect)
-    #expect(r.map { abs($0.y) < 1e-12 && abs($0.height - 0.25) < 1e-12 && abs($0.width - 0.4) < 1e-12 } == true)
+    let r = try #require(events[1].rect)
+    #expect(abs(r.y) < 1e-12 && abs(r.height - 0.25) < 1e-12 && abs(r.width - 0.4) < 1e-12)
 }
 
 @Test func autoZoomPlansInsideTheCrop() {

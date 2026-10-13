@@ -134,7 +134,8 @@ final class MockS3Server: @unchecked Sendable {
             head += "\r\n"
             var out = Data(head.utf8)
             if r.method != "HEAD" { out.append(body) }
-            let send = { conn.c.send(content: out, completion: .contentProcessed { _ in }) }
+            let payload = out
+            let send: @Sendable () -> Void = { conn.c.send(content: payload, completion: .contentProcessed { _ in }) }
             if delay > 0 { queue.asyncAfter(deadline: .now() + delay, execute: send) } else { send() }
         }
     }

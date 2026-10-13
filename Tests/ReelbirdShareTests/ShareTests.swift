@@ -576,6 +576,18 @@ actor ProgressLog {
         #expect(decoded?.chapters == meta().chapters)
     }
 
+    @Test func placeholdersInTheTitleStayText() {
+        var m = meta()
+        m.title = #"0;url=https://evil.example/#{{TITLE}}" http-equiv=refresh x="{{META}}{{REPO}}"#
+        let html = ViewerPage.html(m)
+        // The quote stays escaped in every tag, so no attribute can break out (the JSON block escapes it as \").
+        let tags = html.components(separatedBy: "<").filter { $0.hasPrefix("meta ") }
+        #expect(!tags.isEmpty && !tags.contains { $0.contains(#"" http-equiv"#) })
+        #expect(html.contains("{{TITLE}}&quot; http-equiv=refresh"))
+        #expect(html.components(separatedBy: #"<script type="application/json" id="meta">"#).count == 2)
+        #expect(ViewerPage.fill("a{{X}}b{{Y}}c{{", ["X": "{{Y}}", "Y": "2"]) == "a{{Y}}b2c{{")
+    }
+
     @Test func recordingPageUsesTheTitleCard() {
         let html = ViewerPage.html(meta(.recording, video: false))
         #expect(!html.contains("og:video"))
@@ -612,5 +624,10 @@ actor ProgressLog {
         #expect(l.pageKeys == ["v/XyZ/index.html", "v/XyZ/", "v/XyZ"])
         #expect(l.segmentKey(7) == "v/XyZ/hls/seg_00007.m4s")
         #expect(ShareLayout(info: ShareInfo(key: "v/XyZ", url: ""), destination: d)?.id == "XyZ")
+        // A share made before the prefix changed keeps its folder.
+        let old = ShareLayout(info: ShareInfo(key: "old/links/AbC", url: ""), destination: d)
+        #expect(old?.folder == "old/links/AbC/")
+        #expect(ShareLayout(info: ShareInfo(key: "AbC", url: ""), destination: d)?.key == "v/AbC")
+        #expect(ShareLayout(info: ShareInfo(key: "", url: ""), destination: d) == nil)
     }
 }

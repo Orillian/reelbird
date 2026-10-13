@@ -70,7 +70,7 @@ public struct CursorImageInfo: Codable, Hashable, Sendable {
     }
 }
 
-/// Reads and appends `events.jsonl`. Appending is line-buffered and safe to call from one queue.
+/// Reads and appends `events.jsonl`. Each event is one unbuffered write of a whole line, behind a lock.
 public final class EventLogWriter: @unchecked Sendable {
     private let handle: FileHandle
     private let encoder: JSONEncoder
@@ -190,7 +190,7 @@ enum FlatEventParser {
                 case "y": e.y = v
                 case "dx": e.dx = v
                 case "dy": e.dy = v
-                default: e.button = Int(v)
+                default: e.button = v.isFinite && abs(v) < 1_000 ? Int(v) : 0 // hand-edited logs must not trap
                 }
             default:
                 return nil

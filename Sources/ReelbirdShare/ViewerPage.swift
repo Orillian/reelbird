@@ -71,17 +71,40 @@ public enum ViewerPage {
             .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
             .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
 
-        return template
-            .replacingOccurrences(of: "{{HEAD}}", with: head.joined(separator: "\n"))
-            .replacingOccurrences(of: "{{TITLE}}", with: text(title))
-            .replacingOccurrences(of: "{{SUBLINE}}", with: text(subline))
-            .replacingOccurrences(of: "{{RATIO}}", with: ratio)
-            .replacingOccurrences(of: "{{RATIO_N}}", with: ratioNumber)
-            .replacingOccurrences(of: "{{POSTER}}", with: meta.url(meta.poster).map { #" poster="\#(attr($0))""# } ?? "")
-            .replacingOccurrences(of: "{{HLS_URL}}", with: hlsURL)
-            .replacingOccurrences(of: "{{HLS_SRI}}", with: hlsIntegrity)
-            .replacingOccurrences(of: "{{REPO}}", with: ReelbirdInfo.repositoryURL)
-            .replacingOccurrences(of: "{{META}}", with: json)
+        // One pass: text that came from the user (title, chapters) can't pull in another placeholder.
+        return fill(template, [
+            "HEAD": head.joined(separator: "\n"),
+            "TITLE": text(title),
+            "SUBLINE": text(subline),
+            "RATIO": ratio,
+            "RATIO_N": ratioNumber,
+            "POSTER": meta.url(meta.poster).map { #" poster="\#(attr($0))""# } ?? "",
+            "HLS_URL": hlsURL,
+            "HLS_SRI": hlsIntegrity,
+            "REPO": ReelbirdInfo.repositoryURL,
+            "META": json,
+        ])
+    }
+
+    /// Replaces each `{{NAME}}` in `template` with `values[NAME]`, without looking inside inserted values.
+    /// Unknown `{{…}}` stay as they are.
+    static func fill(_ template: String, _ values: [String: String]) -> String {
+        var out = ""
+        out.reserveCapacity(template.utf8.count + 4096)
+        var rest = template[...]
+        while let open = rest.range(of: "{{") {
+            out += rest[..<open.lowerBound]
+            let after = rest[open.upperBound...]
+            if let close = after.range(of: "}}"), let value = values[String(after[..<close.lowerBound])] {
+                out += value
+                rest = after[close.upperBound...]
+            } else {
+                out += "{{"
+                rest = after
+            }
+        }
+        out += rest
+        return out
     }
 
     static func formatDuration(_ s: Double) -> String {
@@ -100,10 +123,10 @@ public enum ViewerPage {
 
     static func text(_ s: String) -> String {
         s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
     }
 
-    static func attr(_ s: String) -> String { text(s).replacingOccurrences(of: "\"", with: "&quot;") }
+    static func attr(_ s: String) -> String { text(s) }
     static func tag(_ name: String, text t: String) -> String { "<\(name)>\(text(t))</\(name)>" }
     static func named(_ name: String, _ content: String) -> String { #"<meta name="\#(name)" content="\#(attr(content))">"# }
     static func property(_ p: String, _ content: String) -> String { #"<meta property="\#(p)" content="\#(attr(content))">"# }

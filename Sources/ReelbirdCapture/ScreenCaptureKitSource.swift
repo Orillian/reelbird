@@ -170,8 +170,8 @@ public final class ScreenCaptureKitSource: NSObject, FrameSource, SCStreamOutput
             if let id = s.windowID, now - s.windowFrameCheckedAt > 0.25 {
                 s.windowFrameCheckedAt = now
                 if let list = CGWindowListCreateDescriptionFromArray([NSNumber(value: id)] as CFArray) as? [[String: Any]],
-                   let b = list.first?[kCGWindowBounds as String] as! CFDictionary?,
-                   let rect = CGRect(dictionaryRepresentation: b) {
+                   let b = list.first?[kCGWindowBounds as String] as? NSDictionary,
+                   let rect = CGRect(dictionaryRepresentation: b as CFDictionary) {
                     s.area = rect
                 }
             }

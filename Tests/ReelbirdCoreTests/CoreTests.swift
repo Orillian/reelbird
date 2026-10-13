@@ -38,9 +38,25 @@ import Testing
     #expect(events.map(\.type) == [.down, .move])
 }
 
+@Test func liveBundleIsOnlyARecentRecordingManifest() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-\(UUID().uuidString).reelbird")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let b = try ProjectBundle.create(at: dir)
+    var m = ProjectManifest(title: "Live", appVersion: "test",
+                            capture: CaptureInfo(source: .synthetic(name: "t"), pixelSize: PixelSize(width: 640, height: 360), scale: 1, frameRate: 30),
+                            clock: ClockInfo(originHostTime: 0))
+    m.status = .recording
+    try b.writeManifest(m)
+    #expect(b.isBeingRecorded(m))
+    #expect(!b.isBeingRecorded(m, now: Date().addingTimeInterval(60))) // stopped changing: a crashed take
+    m.status = .complete
+    #expect(!b.isBeingRecorded(m))
+}
+
 @Test func colorHex() {
     #expect(RGBA(hex: "#FF8000")?.hex == "#FF8000")
     #expect(RGBA(hex: "nope") == nil)
+    #expect(RGBA(1e300, -5, 0.5, 1).hex == "#FF0080")
 }
 
 @Test func eventLogSkipsTruncatedLineAndIsFast() throws {

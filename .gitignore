@@ -16,6 +16,7 @@ xcuserdata/
 
 # Private notes, credentials and local config
 notes/
+launch/
 .env
 .env.*
 *.secret

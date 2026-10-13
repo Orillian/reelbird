@@ -65,8 +65,14 @@ public enum ShareService {
         let layout = manifest.share.flatMap { ShareLayout(info: $0, destination: d) }
             ?? ShareLayout(id: ShortID.make(length: 14), destination: d)
         var previous: ViewerMeta?
-        if manifest.share != nil, let data = try? await client.get(layout.metaKey) {
-            previous = try? JSONCoding.decoder.decode(ViewerMeta.self, from: data)
+        if manifest.share != nil {
+            // Only a missing meta.json means "start over at revision 1". Any other failure (offline,
+            // 403) stops here: carrying on would overwrite the immutable video.1.mp4 that caches keep.
+            do {
+                let data = try await client.get(layout.metaKey)
+                previous = try? JSONCoding.decoder.decode(ViewerMeta.self, from: data)
+            } catch let e as ShareError where e.status == 404 {
+            }
         }
 
         let now = Date()

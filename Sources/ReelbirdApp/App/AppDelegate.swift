@@ -129,6 +129,9 @@ import ReelbirdCore
     @objc func openPermissions(_ sender: Any?) { model.openSettings(.permissions) }
     @objc func openAbout(_ sender: Any?) { model.openSettings(.about) }
     @objc func showOnboarding(_ sender: Any?) { model.showOnboarding() }
+    @objc func openWebsite(_ sender: Any?) {
+        if let u = URL(string: ReelbirdInfo.websiteURL) { NSWorkspace.shared.open(u) }
+    }
     @objc func openRepository(_ sender: Any?) {
         if let u = URL(string: ReelbirdInfo.repositoryURL) { NSWorkspace.shared.open(u) }
     }
@@ -160,11 +163,13 @@ import ReelbirdCore
     // MARK: Editor commands (routed to the key editor window)
 
     private var editor: EditorModel? { model.windows.keyEditor?.model }
+    /// The key editor, unless a text field in it (the title) is editing, where ⌘⌫ deletes to the line start.
+    private var editorNotEditingText: EditorModel? { NSApp.keyWindow?.firstResponder is NSText ? nil : editor }
 
     @objc func exportRecording(_ sender: Any?) { editor?.showExport = true }
     @objc func shareRecording(_ sender: Any?) { editor?.showShare = true }
     @objc func trashRecording(_ sender: Any?) {
-        if let e = editor { model.moveToTrash(e.bundle) } else if libraryHasSelection { model.moveToTrash(model.library.selectedItems.map(\.bundle)) }
+        if let e = editorNotEditingText { model.moveToTrash(e.bundle) } else if libraryHasSelection { model.moveToTrash(model.library.selectedItems.map(\.bundle)) }
     }
     @objc func revealRecording(_ sender: Any?) {
         if let e = editor { NSWorkspace.shared.activateFileViewerSelecting([e.bundle.url]) } else if libraryHasSelection { model.library.reveal(model.library.selectedItems) }
@@ -215,8 +220,10 @@ import ReelbirdCore
         case #selector(shareRecording(_:)):
             item.title = e?.shareInfo == nil ? "Share Link…" : "Copy Link…"
             return e != nil
-        case #selector(revealRecording(_:)), #selector(trashRecording(_:)):
+        case #selector(revealRecording(_:)):
             return e != nil || libraryHasSelection
+        case #selector(trashRecording(_:)):
+            return editorNotEditingText != nil || libraryHasSelection
         case #selector(selectAll(_:)):
             return model.windows.libraryIsKey && !model.library.filtered.isEmpty
         case #selector(goToStart(_:)), #selector(splitAtPlayhead(_:)),

@@ -38,7 +38,7 @@ struct SpriteUniforms {
     float4 yuv0;
     float4 yuv1;
     float4 yuv2;
-    float4 yuvOffset;   // y offset, c offset, isYUV, 0
+    float4 yuvOffset;   // y offset, c offset, y scale, isYUV
     float4 camera;      // for screen-sampling modes: source uv = xy + p * zw (p in canvas px)
     float4 card;        // unused
     int4 mode;

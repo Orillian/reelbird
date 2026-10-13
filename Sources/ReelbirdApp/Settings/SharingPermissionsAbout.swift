@@ -83,7 +83,7 @@ struct SharingSettings: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Links upload to a storage bucket you own. Nothing goes through Reelbird's servers, because there aren't any.")
                         .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    DisclosureGroup("Set up Cloudflare R2 in five minutes") {
+                    DisclosureGroup("How to set up Cloudflare R2") {
                         VStack(alignment: .leading, spacing: 5) {
                             step(1, "In Cloudflare, open R2 and create a bucket, e.g. “reelbird”.")
                             step(2, "In the bucket's Settings, turn on the public r2.dev URL (or connect your own domain) and copy it.")
@@ -283,16 +283,22 @@ struct AboutSettings: View {
             Text("Free and open source under the MIT licence.\nRecordings stay on your Mac unless you share them.")
                 .font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
             HStack(spacing: Theme.Space.s) {
-                Button("GitHub") { NSWorkspace.shared.open(URL(string: ReelbirdInfo.repositoryURL)!) }
+                Button("Website") { open(ReelbirdInfo.websiteURL) }
+                    .buttonStyle(SecondaryButtonStyle())
+                Button("GitHub") { open(ReelbirdInfo.repositoryURL) }
                     .buttonStyle(SecondaryButtonStyle())
                 Button("Welcome Tour") { app?.showOnboarding() }
                     .buttonStyle(SecondaryButtonStyle())
-                Button("Support Reelbird") { NSWorkspace.shared.open(URL(string: ReelbirdInfo.supportURL)!) }
+                Button("Support Reelbird") { open(ReelbirdInfo.supportURL) }
                     .buttonStyle(PrimaryButtonStyle())
             }
             .padding(.top, Theme.Space.s)
             .padding(.bottom, Theme.Space.xl)
         }
         .frame(width: 560)
+    }
+
+    private func open(_ link: String) {
+        if let url = URL(string: link) { NSWorkspace.shared.open(url) }
     }
 }

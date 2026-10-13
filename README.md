@@ -58,7 +58,7 @@ Reelbird isn't on the App Store and doesn't have a signed download yet, so you b
 
 You need:
 
-- macOS 15 or later
+- macOS 15 or later, on Apple silicon. It also compiles for Intel Macs that run macOS 15, but it hasn't been tested on one yet.
 - The Command Line Tools (`xcode-select --install`). Xcode works too but isn't required.
 
 ```sh
@@ -120,7 +120,7 @@ In the editor:
 |---|---|
 | Space | Play or pause |
 | J / K / L | Back 2 seconds / pause / play |
-| ← / → | One frame back or forward (with ⇧: one second) |
+| ← / → | Step back or forward 1/30 second (with ⇧: one second) |
 | Home / End | Jump to start or end |
 | S | Split at the playhead |
 | Z | Add a zoom at the playhead |
@@ -131,7 +131,7 @@ In the editor:
 | ⌘E | Export |
 | ⌘Z / ⇧⌘Z | Undo / redo |
 
-Elsewhere: ⇧⌘L opens the library, ⌘O opens a `.reelbird` project, ⌘, opens Settings.
+Elsewhere: ⌘N starts a new recording, ⇧⌘L opens the library, ⌘O opens a `.reelbird` project, ⇧⌘E shares or copies the link, ⇧⌘R shows the recording in Finder, ⌘⌫ moves it to the Trash, and ⌘, opens Settings.
 
 ## Command line
 
@@ -209,7 +209,7 @@ Sharing is optional. Reelbird uploads to an S3-compatible bucket that you own:
 
 1. Create a Cloudflare R2 bucket and give it a public URL (a custom domain, or the r2.dev URL to start).
 2. Create an R2 API token with **Object Read & Write**, limited to that bucket.
-3. Paste the endpoint, keys and public URL into **Settings… → Sharing** and choose **Test connection**, then **Save**.
+3. Paste the endpoint, keys and public URL into **Settings… → Sharing** and choose **Test Connection**, then **Save**.
 
 R2's free tier includes 10 GB of storage and free egress, which covers hours of shared video. AWS S3, Backblaze B2 and MinIO work too. The full walkthrough, costs and privacy notes are in [docs/SHARING.md](docs/SHARING.md).
 
@@ -258,4 +258,4 @@ Bug reports, fixes and features are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) 
 
 ---
 
-Reelbird is free. If it saves you time, you can support it here: https://shotcandy.vercel.app/support/
+Reelbird is free. If it saves you time, you can support it here: https://reelbird.shiptiffin.app/support/

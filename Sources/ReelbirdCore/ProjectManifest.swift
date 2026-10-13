@@ -54,7 +54,7 @@ public struct ProjectManifest: Codable, Hashable, Sendable {
 }
 
 public enum RecordingStatus: String, Codable, Hashable, Sendable {
-    /// Still recording, or the app quit before finishing (see `ProjectStore.recover`).
+    /// Still recording, or the app quit before finishing (see `ProjectRecovery.recoverIfNeeded`).
     case recording
     /// Finished normally.
     case complete

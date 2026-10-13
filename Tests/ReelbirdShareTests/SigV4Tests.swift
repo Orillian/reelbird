@@ -100,4 +100,14 @@ import Testing
     @Test func headerValuesAreTrimmed() {
         #expect(SigV4Signer.trimHeaderValue("  a   b \t c ") == "a b c")
     }
+
+    @Test func secretNeverPrints() {
+        let secret = Self.suiteSigner.secretAccessKey
+        var dumped = ""
+        dump(Self.suiteSigner, to: &dumped)
+        #expect(!String(describing: Self.suiteSigner).contains(secret))
+        #expect(!String(reflecting: Self.suiteSigner).contains(secret))
+        #expect(!dumped.contains(secret))
+        #expect(dumped.contains("AKIDEXAMPLE"))
+    }
 }
