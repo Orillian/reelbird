@@ -21,7 +21,7 @@ const permissions = [
 >
   <PageHead
     title="Get Reelbird"
-    lede="Reelbird is free and open source. Download the app and approve it once, or build it from the source code in a few minutes with no Xcode."
+    lede="Reelbird is free and open source. Download the app, signed and notarised by Apple, or build it from the source code in a few minutes with no Xcode."
     crumbs={[{ name: "Download", path: "/download/" }]}
   />
 
@@ -34,12 +34,11 @@ const permissions = [
           <a class="btn btn-primary" href={PREBUILT.url} data-download data-umami-event="download-zip"><Icon name="download" />{PREBUILT.label}</a>
           <ol class="prebuilt-steps">
             <li>Unzip it and drag <strong>Reelbird</strong> to your Applications folder.</li>
-            <li>Open it. macOS says it can't verify the developer. Choose <strong>Done</strong>.</li>
-            <li>Open <strong>System Settings → Privacy &amp; Security</strong>, scroll down and choose <strong>Open Anyway</strong> next to Reelbird. You only do this once.</li>
-            <li>Reelbird's welcome tour asks for Screen Recording, microphone and camera. After an update, macOS may ask for Screen Recording again, because the app isn't signed with an Apple Developer ID.</li>
+            <li>Open it. Reelbird lives in the menu bar; look for the robin.</li>
+            <li>The welcome tour asks for Screen Recording, microphone and camera. macOS keeps them when you update.</li>
           </ol>
           <p class="muted small">SHA-256: <code class="hash">{PREBUILT.sha256}</code></p>
-          <p class="muted small">Prefer to build it yourself? Building from source avoids the approval step. The steps are below.</p>
+          <p class="muted small">Prefer to build it yourself? The steps are below.</p>
         </section>
       )}
 
@@ -79,7 +78,7 @@ const permissions = [
         <h2 id="optional-title">Optional, and worth it</h2>
 
         <h3 id="signing">Keep permissions across rebuilds</h3>
-        <p>By default the app is signed ad hoc, and that signature changes with every build, so macOS forgets the Screen Recording permission each time you rebuild. A local signing certificate fixes that. Create it once:</p>
+        <p>This is only for builds from source. By default they're signed ad hoc, and that signature changes with every build, so macOS forgets the Screen Recording permission each time you rebuild. A local signing certificate fixes that. Create it once:</p>
         <Code code={`scripts/dev-signing.sh\nexport RB_SIGN_IDENTITY="Reelbird Local Signing"   # add this to your ~/.zshrc\nmake install`} />
         <p class="muted">The certificate stays in your login keychain and is only trusted for signing your own builds. The first build asks whether <code>codesign</code> may use the key: choose <strong>Always Allow</strong>. <code>scripts/dev-signing.sh --remove</code> deletes it.</p>
 
@@ -147,7 +146,7 @@ const permissions = [
   <img src="/anim/celebrating.svg" alt="" width="88" height="88" class="only-light" />
   <img src="/anim/celebrating-dark.svg" alt="" width="88" height="88" class="only-dark" />
   <h2 id="thanks-title">Your download has started</h2>
-  <p>Unzip it, drag Reelbird to Applications, then choose <strong>Open Anyway</strong> in System Settings → Privacy &amp; Security the first time.</p>
+  <p>Unzip it, drag Reelbird to Applications and open it. Look for the robin in the menu bar.</p>
   <p class="muted">Reelbird is free, with no account and no ads. If it saves you a subscription, a one-time tip keeps it going.</p>
   <div class="thanks-actions">
     <a class="btn btn-primary" href={DONATION_LINKS.once} target="_blank" rel="noopener" data-umami-event="tip-after-download">Leave a tip</a>

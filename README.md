@@ -29,7 +29,7 @@
   <img src="brand/media/demo.gif" alt="Reelbird zooming in on a click, the link being copied, then zooming back out" width="800">
 </p>
 
-It's a native Swift app with no account, no telemetry and no Reelbird server: share links point at a storage bucket you own, such as Cloudflare R2. It includes a command-line tool and an MCP server, so coding agents can record and share demos too. You can download it (not yet notarised by Apple) or build it from source, on macOS 15 or later.
+It's a native Swift app with no account, no telemetry and no Reelbird server: share links point at a storage bucket you own, such as Cloudflare R2. It includes a command-line tool and an MCP server, so coding agents can record and share demos too. You can download it, signed and notarised by Apple, or build it from source, on macOS 15 or later.
 
 **Why not just use Loom or Screen Studio?** Loom's free plan stops each video at 5 minutes and won't let you download it; Screen Studio costs $29 a month and gives you a link only after you export. Reelbird gives you the link when you stop and the auto-zoom polish later, under the same link, for free. [How it compares](#how-it-compares).
 
@@ -99,25 +99,19 @@ It's a native Swift app with no account, no telemetry and no Reelbird server: sh
 | Download your video | Always | Business plans and up | Yes | Yes | Yes |
 | Comments or viewer stats | No | Yes | Yes | Viewer analytics on Pro | No links |
 | Platforms | Mac | Mac, Windows, web, mobile | Mac | Mac, Windows (beta), Linux | Mac, Windows, Linux |
-| Notarised download | Not yet: approve once, or build from source | Yes | Yes | Yes | Yes |
+| Notarised download | Yes | Yes | Yes | Yes | Yes |
 
 Checked 12 October 2026 on each vendor's own pages: [Loom pricing](https://www.loom.com/pricing), [Loom downloads](https://support.atlassian.com/loom/docs/download-your-loom-video/), [Screen Studio](https://screen.studio/), [Cap pricing](https://cap.so/pricing), [OpenScreen](https://github.com/getopenscreen/openscreen). Loom is the better team tool and runs everywhere; Screen Studio has the more mature editor; Cap and OpenScreen run on Windows and Linux. More detail, plus CleanShot X, Tella and Screenity, at [reelbird.shiptiffin.app/compare](https://reelbird.shiptiffin.app/compare/).
 
 ## Download
 
-[**Download Reelbird 0.1.0**](https://github.com/btahir/reelbird/releases/latest/download/Reelbird-0.1.0.zip) for Apple silicon Macs on macOS 15 or later (5.6 MB).
+[**Download Reelbird 0.1.1**](https://github.com/btahir/reelbird/releases/latest/download/Reelbird-0.1.1.zip) for Apple silicon Macs on macOS 15 or later (7.1 MB).
 
-It isn't notarised by Apple yet, so macOS asks you to approve it once:
-
-1. Unzip it and drag **Reelbird** to your Applications folder.
-2. Open it. macOS says it can't verify the developer. Choose **Done**.
-3. Open **System Settings → Privacy & Security**, scroll down and choose **Open Anyway** next to Reelbird.
-
-After an update, macOS may ask for Screen Recording permission again, because the app isn't signed with an Apple Developer ID. Building from source avoids both steps. The SHA-256 of each zip is listed on its [release page](https://github.com/btahir/reelbird/releases).
+Unzip it, drag **Reelbird** to your Applications folder and open it. It's signed with an Apple Developer ID and notarised by Apple, so it opens like any other app, and macOS keeps your permissions across updates. The SHA-256 of each zip is listed on its [release page](https://github.com/btahir/reelbird/releases).
 
 ## Install from source
 
-Building it yourself takes a few minutes and needs no Xcode, and macOS trusts the result without the approval step.
+Building it yourself takes a few minutes and needs no Xcode.
 
 You need:
 
@@ -349,7 +343,6 @@ Then turn on **Share while recording** in the picker, and the link is on your cl
 - **Joining clips.** The project format can already append other takes; the editor doesn't have a UI for it yet.
 - **Focus-follow zoom.** Zooms that follow the text field you're typing in. Today zooms follow clicks.
 - **Titles and chapters in the app.** Available from the CLI and MCP today.
-- **A signed, notarised download**, so there is no approval step.
 - **Windows and Linux are not planned.** Reelbird is built on Apple frameworks from top to bottom.
 
 ## How it's built

@@ -24,8 +24,8 @@ export const FAQ: Faq[] = [
   {
     id: "install",
     q: "How do I install it? Is there a download?",
-    a: "Not yet. There's no signed or notarized download, so you build it: git clone, then make install. It takes a few minutes and needs Apple's Command Line Tools, not Xcode. A notarized download is on the roadmap.",
-    html: `Not yet. There's no signed or notarized download, so you build it: <code>git clone</code>, then <code>make install</code>. It takes a few minutes and needs Apple's Command Line Tools, not Xcode. A notarized download is on the roadmap. The steps are on the <a href="/download/">download page</a>.`,
+    a: "Yes. Download the zip from the download page or GitHub Releases, unzip it and drag Reelbird to Applications. It's signed with an Apple Developer ID and notarized by Apple, so it opens like any other app. You can also build it from source: git clone, then make install.",
+    html: `Yes. Get the zip from the <a href="/download/">download page</a>, unzip it and drag Reelbird to Applications. It's signed with an Apple Developer ID and notarized by Apple, so it opens like any other app. You can also build it from source: <code>git clone</code>, then <code>make install</code>, with Apple's Command Line Tools (no Xcode).`,
   },
   {
     id: "requirements",
@@ -84,8 +84,8 @@ export const FAQ: Faq[] = [
   {
     id: "permission-prompts",
     q: "Why does macOS keep asking about Screen Recording?",
-    a: "macOS 15 asks you now and then to reconfirm apps that record the screen; that prompt comes from macOS. Separately, ad-hoc builds lose the permission on every rebuild; scripts/dev-signing.sh fixes that.",
-    html: `macOS 15 asks you now and then to reconfirm apps that record the screen; that prompt comes from macOS. Separately, ad-hoc builds lose the permission on every rebuild; <code>scripts/dev-signing.sh</code> fixes that (see <a href="/docs/install/#keep-permissions-across-rebuilds-optional">local signing</a>).`,
+    a: "macOS 15 asks you now and then to reconfirm apps that record the screen; that prompt comes from macOS. The download keeps the permission across updates. If you build from source, ad-hoc builds lose it on every rebuild; scripts/dev-signing.sh fixes that.",
+    html: `macOS 15 asks you now and then to reconfirm apps that record the screen; that prompt comes from macOS. The download keeps the permission across updates. If you build from source, ad-hoc builds lose it on every rebuild; <code>scripts/dev-signing.sh</code> fixes that (see <a href="/docs/install/#keep-permissions-across-rebuilds-optional">local signing</a>).`,
   },
   {
     id: "vs-loom-screen-studio",

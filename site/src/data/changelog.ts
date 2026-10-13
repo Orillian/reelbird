@@ -3,6 +3,19 @@ export interface Release { version: string; date: string; title: string; summary
 
 export const RELEASES: Release[] = [
   {
+    version: "0.1.1",
+    date: "2026-10-13",
+    title: "Signed and notarised download",
+    summary: "The download is now signed with an Apple Developer ID and notarised by Apple, so it opens with no approval step and keeps its permissions across updates.",
+    notes: [
+      "Signed with an Apple Developer ID and notarised by Apple. No more Open Anyway in System Settings.",
+      "macOS keeps Screen Recording and the other permissions when you update.",
+      "Privacy blur, arrows, boxes, text and highlights in the editor.",
+      "Speed changes, markers and camera layouts on the timeline, a command menu (⌘K) and a shortcut sheet (⌘/).",
+      "A movable camera bubble in circle, rounded square or portrait shapes that matches the export exactly.",
+    ],
+  },
+  {
     version: "0.1.0",
     date: "2026-10-12",
     title: "First public release",

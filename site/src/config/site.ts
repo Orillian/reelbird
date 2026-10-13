@@ -10,8 +10,8 @@ export const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues`;
 export const GITHUB_RELEASES_URL = `${GITHUB_URL}/releases`;
 export const LICENSE_NAME = "MIT";
 
-export const APP_VERSION = "0.1.0";
-export const RELEASE_DATE = "2026-10-12";
+export const APP_VERSION = "0.1.1";
+export const RELEASE_DATE = "2026-10-13";
 export const MIN_MACOS = "macOS 15";
 
 /** What it takes to build and run Reelbird. Say it the same way everywhere. */
@@ -27,7 +27,7 @@ export const SITE_DESCRIPTION =
   "Reelbird is a free, open-source screen recorder for macOS that copies a share link the moment you stop recording, then lets you polish the same take with auto-zoom, a smooth cursor and captions without changing the link.";
 
 /** The canonical three-sentence description (homepage intro, llms.txt, directories). */
-export const SITE_DESCRIPTION_LONG = `${SITE_DESCRIPTION} It is a native Swift app with no account, no telemetry and no Reelbird server: share links point at a storage bucket you own, such as Cloudflare R2. It includes a command-line tool and an MCP server so coding agents can record and share demos, and you can download it (not yet notarised by Apple) or build it from source, on macOS 15 or later.`;
+export const SITE_DESCRIPTION_LONG = `${SITE_DESCRIPTION} It is a native Swift app with no account, no telemetry and no Reelbird server: share links point at a storage bucket you own, such as Cloudflare R2. It includes a command-line tool and an MCP server so coding agents can record and share demos, and you can download it, signed and notarised by Apple, or build it from source, on macOS 15 or later.`;
 
 export const SITE_TAGLINE = "Record. Get a link. Polish it later.";
 
@@ -50,16 +50,16 @@ export const LAUNCH_VIDEO = {
 };
 
 /**
- * Optional prebuilt download from GitHub Releases. Off until a signed,
- * notarised build exists. When `enabled`, /download shows it above the
+ * Prebuilt download from GitHub Releases (signed with a Developer ID and
+ * notarised by `make dist`). When `enabled`, /download shows it above the
  * build-from-source steps.
  */
 export const PREBUILT = {
   enabled: true,
-  url: `${GITHUB_RELEASES_URL}/download/v${"0.1.0"}/Reelbird-0.1.0.zip`,
-  label: "Download Reelbird 0.1.0 (.zip)",
-  note: "For Apple silicon Macs on macOS 15 or later. It isn't notarised by Apple yet, so macOS asks you to approve it once.",
-  sha256: "e1670fdce17990647d6d375d948e97717a7a06dde586bb30ca07bec82fb3e262",
+  url: `${GITHUB_RELEASES_URL}/download/v${APP_VERSION}/Reelbird-${APP_VERSION}.zip`,
+  label: `Download Reelbird ${APP_VERSION} (.zip)`,
+  note: "For Apple silicon Macs on macOS 15 or later. Signed and notarised by Apple, so it opens like any other app.",
+  sha256: "d3130e0f13771e71b44ba479fa457ac71d7c499a269878106903f91147d44c50",
 };
 
 /** Donations. Read by the /support page and the thank-you after a download. */
