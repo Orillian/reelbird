@@ -210,12 +210,15 @@ struct SourcePickerView: View {
                         } else {
                             LevelMeter(level: model.micLevel, segments: 10, height: 5).frame(width: 52)
                         }
-                        DeviceMenu(devices: model.microphones, selection: $prefs.microphoneID)
+                        MicrophoneMenu(devices: model.microphones, selection: $prefs.microphoneID)
                     }
                 }
             }
             .onChange(of: prefs.microphoneEnabled) { _, on in on ? model.startMeters() : model.stopMeters() }
             .onChange(of: prefs.microphoneID) { _, _ in model.startMeters() }
+            if prefs.microphoneEnabled, model.microphoneAccess == .granted {
+                microphoneNotes
+            }
 
             InputRow(symbol: prefs.cameraEnabled ? "video.fill" : "video.slash", title: "Camera", isOn: $prefs.cameraEnabled) {
                 if prefs.cameraEnabled {
@@ -246,6 +249,54 @@ struct SourcePickerView: View {
                 }
             }
         }
+    }
+
+    /// Inline advice under the microphone row: a Bluetooth (call-quality) mic, or a chosen mic that
+    /// isn't connected.
+    @ViewBuilder private var microphoneNotes: some View {
+        if let advice = model.callQualityAdvice {
+            HStack(alignment: .center, spacing: Theme.Space.s) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.warning)
+                    .frame(width: 18)
+                Text(Self.callQualityText(advice.device, alternative: advice.alternative))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if advice.alternative != nil {
+                    Button("Switch") { model.switchToFullQualityMicrophone() }
+                        .buttonStyle(SecondaryButtonStyle(small: true))
+                        .help("Record with \(advice.alternative?.name ?? "") instead")
+                }
+            }
+            .padding(.bottom, Theme.Space.xs)
+            .accessibilityElement(children: .contain)
+        } else if model.chosenMicrophoneMissing, let fallback = model.resolvedMicrophone {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
+                Image(systemName: "info.circle.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                    .frame(width: 18)
+                Text("Your chosen mic isn't connected. This take will use \(fallback.name).")
+                    .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.bottom, Theme.Space.xs)
+        }
+    }
+
+    static func callQualityText(_ device: MediaDevice, alternative: MediaDevice?) -> String {
+        let what: String
+        if device.transport == .bluetooth {
+            what = device.name.localizedCaseInsensitiveContains("AirPods") ? "AirPods mics" : "Bluetooth mics"
+        } else {
+            what = "\(device.name) records at \(MicStyle.rate(device.sampleRate) ?? "a low rate") and"
+        }
+        let problem = device.transport == .bluetooth
+            ? "\(what) record in call quality and make what you hear worse."
+            : "\(what) sounds like a phone call."
+        guard let alternative else { return "\(problem) A built-in or wired mic sounds much better." }
+        return "\(problem) Use \(alternative.name) instead?"
     }
 
     private func allowButton(_ title: String, _ p: Permission) -> some View {
@@ -494,4 +545,139 @@ struct DeviceMenu: View {
         .fixedSize()
         .frame(maxWidth: 170, alignment: .trailing)
     }
+}
+
+/// Icons and subtitles for microphones in the picker.
+enum MicStyle {
+    static func symbol(_ d: MediaDevice) -> String {
+        switch d.transport {
+        case .builtIn: "laptopcomputer"
+        case .interface: d.isCameraMic ? "web.camera" : "cable.connector"
+        case .bluetooth: d.name.localizedCaseInsensitiveContains("AirPods") ? "airpods" : "headphones"
+        case .continuity: "iphone"
+        case .display: "display"
+        case .virtual: "waveform"
+        case .unknown: "mic"
+        }
+    }
+
+    static func rate(_ hz: Double?) -> String? {
+        guard let hz, hz > 0 else { return nil }
+        let k = hz / 1000
+        return k == k.rounded() ? "\(Int(k)) kHz" : String(format: "%.1f kHz", k)
+    }
+
+    /// "Built-in · 48 kHz", "Bluetooth · 24 kHz, call quality", "Virtual, not picked automatically".
+    static func subtitle(_ d: MediaDevice) -> String {
+        let kind: String = switch d.transport {
+        case .builtIn: "Built-in"
+        case .interface: d.isCameraMic ? "Webcam" : "Wired"
+        case .bluetooth: "Bluetooth"
+        case .continuity: "iPhone"
+        case .display: "Display"
+        case .virtual: "Virtual"
+        case .unknown: "Microphone"
+        }
+        if MicPolicy.isVirtual(d.micCandidate) { return "\(kind == "Microphone" ? "Virtual" : kind), not picked automatically" }
+        var parts = [kind]
+        if let r = rate(d.sampleRate) { parts.append(r) }
+        var text = parts.joined(separator: " · ")
+        if d.isCallQuality { text += ", call quality" }
+        return text
+    }
+}
+
+/// The microphone picker: "Automatic (best mic)" first, then every input with its connection icon and
+/// sample rate. A native menu (titles with subtitles) anchored to a compact label.
+struct MicrophoneMenu: View {
+    let devices: [MediaDevice]
+    @Binding var selection: String
+    @ViewState private var anchor = MenuAnchor()
+
+    var body: some View {
+        let resolved = devices.resolveMicrophone(selection)
+        let automatic = selection == MicPolicy.automaticID
+        Button {
+            anchor.popUp(makeMenu())
+        } label: {
+            HStack(spacing: 5) {
+                if let resolved {
+                    Image(systemName: MicStyle.symbol(resolved))
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                }
+                Text(resolved?.name ?? "None")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 150)
+                // Same indicator as the native borderless menus beside it.
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8.5, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(MenuAnchorView(anchor: anchor))
+        .fixedSize()
+        .help(automatic ? "Automatic: the best connected mic, kept for the whole take" : "Microphone")
+        .accessibilityLabel("Microphone")
+        .accessibilityValue(automatic ? "Automatic, \(resolved?.name ?? "none")" : resolved?.name ?? "None")
+    }
+
+    private func makeMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let target = MenuTarget { id in selection = id }
+        anchor.target = target
+        func item(_ title: String, subtitle: String?, symbol: String?, id: String) -> NSMenuItem {
+            let i = NSMenuItem(title: title, action: #selector(MenuTarget.pick(_:)), keyEquivalent: "")
+            i.target = target
+            i.representedObject = id
+            if let subtitle { i.subtitle = subtitle }
+            if let symbol { i.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
+            i.state = selection == id ? .on : .off
+            return i
+        }
+        let best = devices.bestMicrophone
+        menu.addItem(item(best.map { "Automatic (\($0.name))" } ?? "Automatic", subtitle: "Best connected mic, kept for the whole take",
+                          symbol: best.map(MicStyle.symbol), id: MicPolicy.automaticID))
+        menu.addItem(.separator())
+        for d in devices {
+            menu.addItem(item(d.name, subtitle: MicStyle.subtitle(d), symbol: MicStyle.symbol(d), id: d.id))
+        }
+        return menu
+    }
+}
+
+@MainActor final class MenuTarget: NSObject {
+    let onPick: (String) -> Void
+    init(onPick: @escaping (String) -> Void) { self.onPick = onPick }
+    @objc func pick(_ item: NSMenuItem) {
+        if let id = item.representedObject as? String { onPick(id) }
+    }
+}
+
+/// Remembers the NSView under a SwiftUI control so a native menu can pop up from it.
+@MainActor final class MenuAnchor {
+    weak var view: NSView?
+    var target: MenuTarget?
+
+    func popUp(_ menu: NSMenu) {
+        guard let view else { return }
+        let selected = menu.items.first { $0.state == .on }
+        menu.popUp(positioning: selected, at: NSPoint(x: -8, y: view.isFlipped ? view.bounds.maxY - 2 : 2), in: view)
+    }
+}
+
+struct MenuAnchorView: NSViewRepresentable {
+    let anchor: MenuAnchor
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        anchor.view = v
+        return v
+    }
+    func updateNSView(_ nsView: NSView, context: Context) { anchor.view = nsView }
 }

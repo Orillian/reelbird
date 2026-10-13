@@ -10,6 +10,11 @@ import ReelbirdCore
     private(set) var phase: Phase = .idle
     private(set) var status = RecorderStatus()
     private(set) var countdownValue = 3
+    /// Live microphone peak/RMS for the control bar meter's target zone.
+    private(set) var micLevels = MicLevelReading()
+    /// Warnings closed with ×, by episode (`HealthWarning.kind` + `since`): a condition that ends and
+    /// comes back shows again.
+    private(set) var dismissedWarnings: Set<String> = []
     let picker: SourcePickerModel
 
     @ObservationIgnored private unowned let app: AppModel
@@ -144,7 +149,13 @@ import ReelbirdCore
         o.frameRate = p.frameRate
         o.quality = p.quality
         o.captureSystemAudio = p.systemAudio
-        o.microphoneID = p.microphoneEnabled ? p.microphoneID : nil
+        if p.microphoneEnabled {
+            // Lock the take to one explicit device, so macOS switching to AirPods mid-take changes nothing.
+            picker.refreshMicrophones()
+            o.microphoneID = picker.lockedMicrophoneID()
+        } else {
+            o.microphoneID = nil
+        }
         o.cameraID = p.cameraEnabled ? (p.cameraID ?? picker.cameras.first?.id) : nil
         o.captureKeystrokes = p.captureKeystrokes
         o.shareWhileRecording = p.shareWhileRecording && app.shareConfigured
@@ -245,13 +256,35 @@ import ReelbirdCore
         statusTask = Task { [weak self] in
             for await st in s.status {
                 guard let self else { return }
+                self.announceNewWarnings(st.warnings)
                 self.status = st
+                self.micLevels = s.microphoneLevels
                 if st.phase == .failed {
                     self.teardown()
                     self.app.present(RecordingFailure(warnings: st.warnings), title: "Recording stopped")
                     self.app.library.reload()
                 }
             }
+        }
+    }
+
+    // MARK: Warnings
+
+    static func episodeKey(_ w: HealthWarning) -> String { "\(w.kind.rawValue)@\(w.since)" }
+
+    /// Warnings to show on the control bar (dismissed episodes left out).
+    var visibleWarnings: [HealthWarning] {
+        status.warnings.filter { !dismissedWarnings.contains(Self.episodeKey($0)) }
+    }
+
+    func dismiss(_ w: HealthWarning) { dismissedWarnings.insert(Self.episodeKey(w)) }
+
+    /// VoiceOver hears each new warning once (the control bar never takes focus).
+    private func announceNewWarnings(_ warnings: [HealthWarning]) {
+        let old = Set(status.warnings.map(Self.episodeKey))
+        for w in warnings where !old.contains(Self.episodeKey(w)) {
+            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                                 userInfo: [.announcement: w.message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
         }
     }
 
@@ -284,15 +317,66 @@ import ReelbirdCore
         Task {
             do {
                 let bundle = try await session.stop()
+                let silentTake = session.microphoneTakeSummary?.isEssentiallySilent == true
                 self.teardown()
                 self.app.library.reload()
-                if openEditor && self.app.prefs.openEditorAfterRecording { self.app.open(bundle: bundle) }
+                let editor = openEditor && self.app.prefs.openEditorAfterRecording
+                if editor { self.app.open(bundle: bundle) }
+                if silentTake && openEditor { self.promptSilentTake(bundle) }
             } catch {
                 self.teardown()
                 self.app.present(error, title: "The recording couldn't be finished. Its segments are kept and will be recovered next launch.")
             }
             completion?()
         }
+    }
+
+    // MARK: Silent take
+
+    /// "Your mic didn't pick anything up": offered right after stop, on the editor window when it opened.
+    private func promptSilentTake(_ bundle: ProjectBundle) {
+        let alert = NSAlert()
+        alert.messageText = "Your mic didn't pick anything up in this take."
+        let mic = lastOptions?.microphoneID.flatMap { id in picker.microphones.first { $0.id == id }?.name }
+        alert.informativeText = mic.map { "Check that \($0) is the right microphone and isn't muted, then record again." }
+            ?? "Check that the right microphone is selected and isn't muted, then record again."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Record Again")
+        alert.addButton(withTitle: "Keep Anyway")
+        let handle: @MainActor (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            if response == .alertFirstButtonReturn { self?.recordAgain(discarding: bundle) }
+        }
+        // Wait a beat so the editor window is on screen and key.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            let key = bundle.url.standardizedFileURL
+            let editor = NSApp.windows.first { w in
+                (w.windowController as? EditorWindowController)?.model.bundle.url.standardizedFileURL == key && w.isVisible
+            }
+            if let editor, editor.attachedSheet == nil {
+                alert.beginSheetModal(for: editor) { r in MainActor.assumeIsolated { handle(r) } }
+            } else {
+                alert.present(handle)
+            }
+        }
+    }
+
+    /// Moves the silent take to the Trash (restorable) and reopens the picker with the same settings.
+    func recordAgain(discarding bundle: ProjectBundle) {
+        if (try? bundle.readManifest())?.share != nil {
+            // It has a share link: the usual Trash flow asks whether to delete the link too.
+            app.moveToTrash(bundle)
+            showPicker()
+            return
+        }
+        app.windows.closeEditor(for: bundle)
+        do {
+            try FileManager.default.trashItem(at: bundle.url, resultingItemURL: nil)
+        } catch {
+            app.present(error, title: "Couldn't move the silent take to the Trash")
+        }
+        app.library.reload()
+        showPicker()
     }
 
     func restart() {
@@ -342,6 +426,8 @@ import ReelbirdCore
         session = nil
         phase = .idle
         status = RecorderStatus()
+        micLevels = MicLevelReading()
+        dismissedWarnings = []
         pausedForSleep = false
         recordedAppName = nil
         previousApp = nil

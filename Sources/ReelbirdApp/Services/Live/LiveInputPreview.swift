@@ -1,6 +1,7 @@
 import AppKit
 @preconcurrency import AVFoundation
 import ReelbirdCapture
+import ReelbirdCore
 import Synchronization
 
 /// Real input monitoring for the source picker: a microphone meter on the chosen device and a live
@@ -42,7 +43,8 @@ private final class MicrophoneMeter: NSObject, AVCaptureAudioDataOutputSampleBuf
     init(deviceID: String, onLevel: @escaping @MainActor (Double) -> Void) {
         self.onLevel = onLevel
         super.init()
-        let device = deviceID == "default" ? AVCaptureDevice.default(for: .audio) : AVCaptureDevice(uniqueID: deviceID)
+        let resolved = deviceID == MicPolicy.automaticID ? (Devices.resolveMicrophone(deviceID)?.id ?? "default") : deviceID
+        let device = resolved == "default" ? AVCaptureDevice.default(for: .audio) : AVCaptureDevice(uniqueID: resolved)
         guard let device, let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else { return }
         let output = AVCaptureAudioDataOutput()
         output.audioSettings = [

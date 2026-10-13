@@ -50,6 +50,7 @@ import SwiftUI
         for tab in SourceTab.allCases {
             scenes.append(Scene(name: "picker-\(tab.rawValue)", size: CGSize(width: 620, height: 600), backdrop: true) {
                 prefs.sourceTab = tab
+                prefs.microphoneID = MicPolicy.automaticID
                 let picker = SourcePickerModel(services: services, prefs: prefs)
                 picker.apply(sources)
                 picker.selectedWindowID = "win-102"
@@ -71,6 +72,21 @@ import SwiftUI
             return AnyView(SourcePickerView(model: picker, controller: nil, prefs: prefs))
         })
 
+        // Microphone notes in the picker: a Bluetooth mic, and a chosen mic that isn't plugged in.
+        for (name, mic) in [("picker-mic-bluetooth", "airpods"), ("picker-mic-missing", "unplugged-usb-mic")] {
+            scenes.append(Scene(name: name, size: CGSize(width: 620, height: 640), backdrop: true) {
+                prefs.sourceTab = .display
+                prefs.microphoneEnabled = true
+                prefs.microphoneID = mic
+                let picker = SourcePickerModel(services: services, prefs: prefs)
+                picker.apply(sources)
+                picker.setMicLevelForSnapshot(0.38)
+                picker.shareAvailable = true
+                prefs.shareWhileRecording = false
+                return AnyView(SourcePickerView(model: picker, controller: nil, prefs: prefs))
+            })
+        }
+
         // Recording overlays
         func status(elapsed: Double, level: Double, warnings: [HealthWarning] = [], share: Bool = false, backlog: Int = 0) -> RecorderStatus {
             var s = RecorderStatus()
@@ -87,6 +103,39 @@ import SwiftUI
                                                   share: true, backlog: 2),
                                    phase: .recording))
         })
+        // Microphone warnings (one scene each) and the meter's target zone.
+        let micWarnings: [(String, HealthWarning, RecordingController.Phase, MicLevelReading)] = [
+            ("clipping", HealthWarning(kind: .microphoneClipping, message: "Your mic is clipping. Move back or lower its input level.", since: 40),
+             .recording, MicLevelReading(peakDB: -0.2, rmsDB: -9)),
+            ("tooquiet", HealthWarning(kind: .microphoneTooQuiet, message: "Your voice is very quiet. Move closer to the mic.", since: 52),
+             .recording, MicLevelReading(peakDB: -36, rmsDB: -48)),
+            ("disconnected", HealthWarning(kind: .microphoneDisconnected, message: "Shure MV7+ disconnected. Your voice may be missing until it's back.", since: 61),
+             .recording, MicLevelReading()),
+            ("changed", HealthWarning(kind: .microphoneChanged, message: "macOS switched to AirPods Pro. Still recording from MacBook Pro Microphone.", since: 70),
+             .recording, MicLevelReading(peakDB: -12, rmsDB: -24)),
+            ("silent", HealthWarning(kind: .microphoneSilent, message: "Your mic is silent. Is it muted or in use by another app?", since: 9),
+             .recording, MicLevelReading()),
+            ("talking-paused", HealthWarning(kind: .talkingWhilePaused, message: "You're talking while paused.", since: 88),
+             .paused, MicLevelReading(peakDB: -14, rmsDB: -26)),
+        ]
+        for (name, w, phase, levels) in micWarnings {
+            scenes.append(Scene(name: "controlbar-mic-\(name)", size: CGSize(width: 620, height: 200), backdrop: true) {
+                var st = status(elapsed: w.since + 2.4, level: MicLevelReading.meterPosition(levels.rmsDB), warnings: [w])
+                st.phase = phase == .paused ? .paused : .recording
+                return AnyView(ControlBarView(controller: nil, prefs: prefs, status: st, phase: phase, levels: levels))
+            })
+        }
+        scenes.append(Scene(name: "controlbar-mic-stack", size: CGSize(width: 620, height: 240), backdrop: true) {
+            AnyView(ControlBarView(controller: nil, prefs: prefs,
+                                   status: status(elapsed: 75, level: 0.6, warnings: [micWarnings[3].1, micWarnings[0].1]),
+                                   phase: .recording, levels: MicLevelReading(peakDB: -3, rmsDB: -14)))
+        })
+        for (name, db) in [("quiet", -30.0), ("zone", -11.0), ("hot", -4.0)] {
+            scenes.append(Scene(name: "controlbar-meter-\(name)", size: CGSize(width: 620, height: 120), backdrop: true) {
+                AnyView(ControlBarView(controller: nil, prefs: prefs, status: status(elapsed: 74, level: 0.6), phase: .recording,
+                                       levels: MicLevelReading(peakDB: db, rmsDB: db - 12)))
+            })
+        }
         scenes.append(Scene(name: "controlbar-paused", size: CGSize(width: 620, height: 170), backdrop: true) {
             AnyView(ControlBarView(controller: nil, prefs: prefs, status: status(elapsed: 202, level: 0, share: true), phase: .paused))
         })

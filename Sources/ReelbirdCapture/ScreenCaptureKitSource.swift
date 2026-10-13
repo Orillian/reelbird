@@ -104,7 +104,10 @@ public final class ScreenCaptureKitSource: NSObject, FrameSource, SCStreamOutput
         if let mic = options.microphoneID {
             guard Permissions.status(.microphone) == .granted else { throw CaptureError.permissionDenied(.microphone) }
             config.captureMicrophone = true
-            if mic != "default" { config.microphoneCaptureDeviceID = mic }
+            // The session passes an explicit device ID (locked at start, so macOS switching to AirPods
+            // mid-take changes nothing); resolve the placeholders here too for direct callers.
+            let id = (mic == MicPolicy.automaticID || mic == MicPolicy.systemDefaultID) ? Devices.resolveMicrophone(mic)?.id : mic
+            if let id { config.microphoneCaptureDeviceID = id }
             hasMic = true
         }
         if let cameraID = options.cameraID {

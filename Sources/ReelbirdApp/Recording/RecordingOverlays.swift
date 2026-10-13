@@ -118,7 +118,8 @@ struct KeyCatcher: NSViewRepresentable {
 
 @MainActor final class ControlBarPanel {
     private let panel: FloatingPanel
-    static let size = NSSize(width: 520, height: 140)
+    /// Room for the bar plus up to three warnings above it (transparent where empty).
+    static let size = NSSize(width: 560, height: 230)
 
     init(controller: RecordingController, app: AppModel) {
         panel = FloatingPanel(size: Self.size, level: .statusBar, allowsKey: false)
@@ -146,16 +147,23 @@ struct ControlBarView: View {
     var permissions: (any PermissionsService)? = nil
     var status: RecorderStatus? = nil
     var phase: RecordingController.Phase? = nil
+    /// Snapshot override for the meter's dBFS reading.
+    var levels: MicLevelReading? = nil
     @Environment(\.isSnapshot) private var snapshot
     @ViewState private var confirmingDiscard = false
 
     private var st: RecorderStatus { status ?? controller?.status ?? RecorderStatus() }
     private var ph: RecordingController.Phase { phase ?? controller?.phase ?? .recording }
+    private var warnings: [HealthWarning] { status == nil ? (controller?.visibleWarnings ?? []) : st.warnings }
+    private var meterLevels: MicLevelReading {
+        levels ?? controller?.micLevels
+            ?? MicLevelReading(peakDB: MicLevelReading.floorDB + st.microphoneLevel * 60 + 10, rmsDB: MicLevelReading.floorDB + st.microphoneLevel * 60)
+    }
 
     var body: some View {
         VStack(spacing: 8) {
             Spacer(minLength: 0)
-            ForEach(st.warnings) { w in
+            ForEach(warnings) { w in
                 warning(w)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -164,7 +172,7 @@ struct ControlBarView: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 10)
-        .animation(Theme.gentle, value: st.warnings)
+        .animation(Theme.gentle, value: warnings)
         .animation(Theme.snappy, value: confirmingDiscard)
     }
 
@@ -195,8 +203,8 @@ struct ControlBarView: View {
                 } else {
                     Image(systemName: "mic.fill").font(.system(size: 11)).foregroundStyle(.secondary)
                         .accessibilityHidden(true)
-                    LevelMeter(level: st.microphoneLevel, segments: 8, height: 5, active: ph == .recording)
-                        .frame(width: 40)
+                    MicMeter(reading: meterLevels, active: ph == .recording)
+                        .frame(width: 56)
                 }
             }
             if let _ = st.shareURL {
@@ -247,27 +255,66 @@ struct ControlBarView: View {
         .fixedSize()
     }
 
+    /// One line when it fits the bar's width, otherwise wrapped.
     private func warning(_ w: HealthWarning) -> some View {
-        HStack(spacing: 8) {
+        ViewThatFits(in: .horizontal) {
+            warningRow(w, wrapWidth: nil)
+            warningRow(w, wrapWidth: action(for: w) == nil ? 430 : 330)
+        }
+    }
+
+    private func warningRow(_ w: HealthWarning, wrapWidth: CGFloat?) -> some View {
+        HStack(alignment: .center, spacing: 8) {
             Image(systemName: symbol(for: w.kind))
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.warning)
-            Text(w.message)
-                .font(.system(size: 12, weight: .medium))
-            if w.kind == .microphoneSilent {
-                Button("Check Sound Settings") {
-                    if let u = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension?input") { NSWorkspace.shared.open(u) }
+                .foregroundStyle(w.kind == .microphoneChanged ? Color.secondary : Theme.warning)
+                .frame(width: 16)
+            Group {
+                if let wrapWidth {
+                    Text(w.message).fixedSize(horizontal: false, vertical: true).frame(width: wrapWidth, alignment: .leading)
+                } else {
+                    Text(w.message).fixedSize()
                 }
-                .buttonStyle(.link)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.accentText)
             }
+            .font(.system(size: 12, weight: .medium))
+            if let action = action(for: w) {
+                Button(action.title, action: action.run)
+                    .buttonStyle(.link)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.accentText)
+                    .fixedSize()
+            }
+            Button { controller?.dismiss(w) } label: {
+                Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+            }
+            .buttonStyle(IconButtonStyle(size: 18))
+            .help("Dismiss")
+            .accessibilityLabel("Dismiss warning")
         }
-        .padding(.horizontal, 12)
-        .frame(height: 32)
+        .padding(.leading, 12)
+        .padding(.trailing, 7)
+        .padding(.vertical, 7)
+        .frame(minHeight: 32)
         .floatingSurface(cornerRadius: 10, snapshot: snapshot)
         .fixedSize()
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+    }
+
+    private struct WarningAction {
+        let title: String
+        let run: () -> Void
+    }
+
+    private func action(for w: HealthWarning) -> WarningAction? {
+        let soundSettings = {
+            if let u = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension?input") { NSWorkspace.shared.open(u) }
+        }
+        switch w.kind {
+        case .talkingWhilePaused: return WarningAction(title: "Resume") { controller?.togglePause() }
+        case .microphoneSilent: return WarningAction(title: "Check Sound Settings", run: soundSettings)
+        case .microphoneClipping, .microphoneTooQuiet: return WarningAction(title: "Input Level…", run: soundSettings)
+        default: return nil
+        }
     }
 
     private var discardConfirm: some View {
@@ -292,7 +339,65 @@ struct ControlBarView: View {
         case .uploadBacklog: "icloud.and.arrow.up.fill"
         case .shareFailed: "icloud.slash.fill"
         case .permissionMissing: "lock.fill"
+        case .microphoneDisconnected: "mic.badge.xmark"
+        case .microphoneChanged: "arrow.triangle.swap"
+        case .microphoneClipping: "waveform.path.badge.minus"
+        case .microphoneTooQuiet: "speaker.wave.1.fill"
+        case .talkingWhilePaused: "waveform"
         }
+    }
+}
+
+/// The control bar's microphone meter: the recent peak on a −60…0 dBFS scale, with the speech target
+/// zone (−18…−6 dBFS) marked. Green inside the zone, amber above it, coral when clipping.
+struct MicMeter: View {
+    var reading: MicLevelReading
+    var active = true
+    var height: CGFloat = 6
+
+    private static let band = (lo: MicLevelReading.meterPosition(MicLevelReading.targetPeakRange.lowerBound),
+                               hi: MicLevelReading.meterPosition(MicLevelReading.targetPeakRange.upperBound))
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let fill = active ? reading.peakPosition : 0
+            ZStack(alignment: .leading) {
+                Rectangle().fill(Color.primary.opacity(0.12))
+                Rectangle().fill(Theme.success.opacity(0.2))
+                    .frame(width: (Self.band.hi - Self.band.lo) * w)
+                    .offset(x: Self.band.lo * w)
+                Rectangle().fill(color)
+                    .frame(width: fill * w)
+                // Zone edges stay visible over the fill.
+                ForEach([Self.band.lo, Self.band.hi], id: \.self) { x in
+                    Rectangle().fill(Color.primary.opacity(0.35)).frame(width: 1).offset(x: x * w - 0.5)
+                }
+            }
+            .clipShape(Capsule())
+        }
+        .frame(height: height)
+        .animation(.linear(duration: 0.08), value: reading.peakDB)
+        .help("Aim for speech peaks in the green zone")
+        .accessibilityElement()
+        .accessibilityLabel("Microphone level")
+        .accessibilityValue(accessibilityValue)
+    }
+
+    private var color: Color {
+        let db = reading.peakDB
+        if db >= -1 { return Theme.recording }
+        if db > MicLevelReading.targetPeakRange.upperBound { return Theme.warning }
+        if db >= MicLevelReading.targetPeakRange.lowerBound { return Theme.success }
+        return Color.primary.opacity(0.45)
+    }
+
+    private var accessibilityValue: String {
+        guard active, reading.peakDB > MicLevelReading.floorDB else { return "Silent" }
+        let db = Int(reading.peakDB.rounded())
+        let zone = reading.peakDB > MicLevelReading.targetPeakRange.upperBound ? "too loud"
+            : reading.peakDB >= MicLevelReading.targetPeakRange.lowerBound ? "in the target range" : "quiet"
+        return "\(db) decibels, \(zone)"
     }
 }
 

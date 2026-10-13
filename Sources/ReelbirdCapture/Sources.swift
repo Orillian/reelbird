@@ -144,15 +144,66 @@ public struct MediaDevice: Identifiable, Hashable, Sendable {
     /// `AVCaptureDevice.uniqueID`: what goes in `RecordingOptions.microphoneID` / `cameraID`.
     public var id: String
     public var name: String
+    /// macOS's current default device of this kind.
     public var isDefault: Bool
-    public init(id: String, name: String, isDefault: Bool) { self.id = id; self.name = name; self.isDefault = isDefault }
+    /// How a microphone is connected (`.unknown` for cameras).
+    public var transport: MicTransport
+    /// A microphone's nominal input sample rate in Hz, when known. Bluetooth headsets report 16 or
+    /// 24 kHz while their mic is in use.
+    public var sampleRate: Double?
+    /// A webcam's microphone.
+    public var isCameraMic: Bool
+
+    public init(id: String, name: String, isDefault: Bool, transport: MicTransport = .unknown, sampleRate: Double? = nil,
+                isCameraMic: Bool = false) {
+        self.id = id; self.name = name; self.isDefault = isDefault
+        self.transport = transport; self.sampleRate = sampleRate; self.isCameraMic = isCameraMic
+    }
+
+    /// The device as `MicPolicy` sees it.
+    public var micCandidate: MicCandidate {
+        MicCandidate(id: id, name: name, transport: transport, sampleRate: sampleRate, isSystemDefault: isDefault, isCameraMic: isCameraMic)
+    }
+
+    /// Records in call quality (Bluetooth, or 24 kHz and below).
+    public var isCallQuality: Bool { MicPolicy.isCallQuality(micCandidate) }
+}
+
+extension Array where Element == MediaDevice {
+    /// The device `MicPolicy.resolve` picks for a preference value ("auto", "default" or a device ID).
+    public func resolveMicrophone(_ id: String?) -> MediaDevice? {
+        guard let c = MicPolicy.resolve(id, in: map(\.micCandidate)) else { return nil }
+        return first { $0.id == c.id }
+    }
+
+    /// The device "Automatic" records with.
+    public var bestMicrophone: MediaDevice? { resolveMicrophone(MicPolicy.automaticID) }
+
+    /// The best full-quality microphone to offer instead of `device`.
+    public func alternative(to device: MediaDevice) -> MediaDevice? {
+        guard let c = MicPolicy.bestAlternative(to: device.micCandidate, in: map(\.micCandidate)) else { return nil }
+        return first { $0.id == c.id }
+    }
 }
 
 public enum Devices {
+    /// Audio inputs with their transport type and sample rate (CoreAudio).
     public static func microphones() -> [MediaDevice] {
         let session = AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external], mediaType: .audio, position: .unspecified)
-        let def = AVCaptureDevice.default(for: .audio)?.uniqueID
-        return session.devices.map { MediaDevice(id: $0.uniqueID, name: $0.localizedName, isDefault: $0.uniqueID == def) }
+        let def = CoreAudioDevices.defaultInput()?.uid ?? AVCaptureDevice.default(for: .audio)?.uniqueID
+        let video = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera],
+                                                     mediaType: .video, position: .unspecified).devices
+        let cameraModels = Set(video.map(\.modelID).filter { !$0.isEmpty })
+        return session.devices.map { d in
+            let ca = CoreAudioDevices.deviceID(forUID: d.uniqueID)
+            var transport = ca.flatMap(CoreAudioDevices.transport) ?? MicTransport(coreAudio: UInt32(bitPattern: d.transportType))
+            if transport == .unknown { transport = MicTransport(coreAudio: UInt32(bitPattern: d.transportType)) }
+            let lower = d.localizedName.lowercased()
+            let cameraMic = transport == .interface
+                && (cameraModels.contains(d.modelID) || lower.contains("webcam") || lower.contains("camera"))
+            return MediaDevice(id: d.uniqueID, name: d.localizedName, isDefault: d.uniqueID == def, transport: transport,
+                               sampleRate: ca.flatMap(CoreAudioDevices.nominalSampleRate), isCameraMic: cameraMic)
+        }
     }
 
     public static func cameras() -> [MediaDevice] {
@@ -160,6 +211,17 @@ public enum Devices {
                                                        mediaType: .video, position: .unspecified)
         let def = AVCaptureDevice.default(for: .video)?.uniqueID
         return session.devices.map { MediaDevice(id: $0.uniqueID, name: $0.localizedName, isDefault: $0.uniqueID == def) }
+    }
+
+    /// Resolves a microphone preference ("auto", "default" or a device ID) to the connected device to
+    /// lock the recording to. An explicit device that isn't connected falls back to the best one.
+    public static func resolveMicrophone(_ id: String?) -> MediaDevice? { microphones().resolveMicrophone(id) }
+
+    /// Whether the microphone with this UID is still connected, and the current system default input.
+    public static func microphonePresence(uid: String) -> MicrophonePresence {
+        let connected = CoreAudioDevices.deviceID(forUID: uid).map { CoreAudioDevices.isAlive($0) && CoreAudioDevices.hasInput($0) } ?? false
+        let def = CoreAudioDevices.defaultInput()
+        return MicrophonePresence(connected: connected, systemDefaultID: def?.uid, systemDefaultName: def?.name)
     }
 
     /// Resolves a device ID ("default" or a uniqueID) to a device.

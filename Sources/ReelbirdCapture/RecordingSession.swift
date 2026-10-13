@@ -15,6 +15,7 @@ import Synchronization
 public final class RecordingSession: Sendable {
     private let engine: SessionEngine
     private let broadcaster: StatusBroadcaster
+    private let micMonitor = MicrophoneMonitor()
     /// The bundle being written.
     public let bundle: ProjectBundle
 
@@ -28,8 +29,17 @@ public final class RecordingSession: Sendable {
         let broadcaster = StatusBroadcaster()
         self.broadcaster = broadcaster
         bundle = ProjectBundle(url: bundleURL)
-        engine = SessionEngine(options: options, bundle: bundle, sink: shareSink, source: frameSource, broadcaster: broadcaster)
+        engine = SessionEngine(options: options, bundle: bundle, sink: shareSink, source: frameSource, broadcaster: broadcaster,
+                               micMonitor: micMonitor)
     }
+
+    /// Live microphone peak and RMS in dBFS, for a meter with a target zone. Silence when there is no
+    /// microphone or it stopped delivering.
+    public var microphoneLevels: MicLevelReading { micMonitor.reading() }
+
+    /// After `stop()`: how much of the take the microphone picked up (`nil` without a microphone).
+    /// `isEssentiallySilent` means the voice is almost certainly missing.
+    public var microphoneTakeSummary: MicTakeSummary? { micMonitor.summary }
 
     /// Live status (~10 Hz while recording). Each access returns a new stream that starts with the
     /// current status and finishes after the recording ends.
@@ -55,6 +65,11 @@ public final class RecordingSession: Sendable {
 
     /// Test hook: stops capture without finalizing anything, as if the app had crashed.
     func simulateCrash() async { await engine.simulateCrash() }
+
+    /// Test hook: locks the take to a named microphone and replaces the device-presence probe.
+    func setMicrophoneProbe(id: String, name: String, probe: @escaping @Sendable () -> MicrophonePresence) async {
+        await engine.setMicrophoneProbe(id: id, name: name, probe: probe)
+    }
 
     /// Test hook: replaces the free-disk-space probe.
     func setFreeDiskProbe(_ probe: @escaping @Sendable () -> Int64?) async { await engine.setFreeDiskProbe(probe) }
@@ -153,8 +168,15 @@ actor SessionEngine {
     private var discardRequested = false
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
 
+    let micMonitor: MicrophoneMonitor
+    /// The microphone the take is locked to (an explicit device, resolved at start).
+    private var lockedMic: (id: String, name: String)?
+    private var micProbe: (@Sendable () -> MicrophonePresence)?
+    private var micPresence: MicrophonePresence?
+
     init(options: RecordingOptions, bundle: ProjectBundle, sink: (any ShareSegmentSink)?, source: (any FrameSource)?,
-         broadcaster: StatusBroadcaster) {
+         broadcaster: StatusBroadcaster, micMonitor: MicrophoneMonitor) {
+        self.micMonitor = micMonitor
         self.options = options
         self.bundle = bundle
         self.sink = sink
@@ -169,6 +191,11 @@ actor SessionEngine {
     }
 
     func setFreeDiskProbe(_ probe: @escaping @Sendable () -> Int64?) { freeDiskProbe = probe }
+
+    func setMicrophoneProbe(id: String, name: String, probe: @escaping @Sendable () -> MicrophonePresence) {
+        lockedMic = (id, name)
+        micProbe = probe
+    }
 
     /// Below this much free space the recording stops by itself, leaving room for project.json and
     /// for the writers to close their last segments.
@@ -209,7 +236,16 @@ actor SessionEngine {
     }
 
     private func startCapture() async throws {
-        let src = providedSource ?? ScreenCaptureKitSource(options: options)
+        var sourceOptions = options
+        if providedSource == nil, let requested = options.microphoneID, let device = Devices.resolveMicrophone(requested) {
+            // Lock the take to one explicit device: macOS switching its default input (AirPods
+            // reconnecting) never changes what this take records.
+            sourceOptions.microphoneID = device.id
+            lockedMic = (device.id, device.name)
+            let uid = device.id
+            micProbe = { Devices.microphonePresence(uid: uid) }
+        }
+        let src = providedSource ?? ScreenCaptureKitSource(options: sourceOptions)
         source = src
         let fmt = try await src.prepare()
         try checkNotDiscarded()
@@ -226,13 +262,14 @@ actor SessionEngine {
         var tracks = [TrackInfo(kind: .screen, directory: TrackKind.screen.rawValue, codec: screenSpec.codec.rawValue,
                                 pixelSize: fmt.pixelSize)]
 
-        func audioFeed(_ kind: TrackKind, _ spec: AudioSpec) throws -> AudioTrackFeed {
+        func audioFeed(_ kind: TrackKind, _ spec: AudioSpec, monitor: MicrophoneMonitor? = nil) throws -> AudioTrackFeed {
             let w = try SegmentedWriter(kind: kind, directory: bundle.directory(for: kind), video: nil, audio: spec, realTime: fmt.isRealTime)
             try w.start(at: 0)
             tracks.append(TrackInfo(kind: kind, directory: kind.rawValue, codec: "aac", sampleRate: spec.sampleRate, channels: spec.channels))
-            return AudioTrackFeed(writer: w, channels: spec.channels)
+            return AudioTrackFeed(writer: w, channels: spec.channels, monitor: monitor)
         }
-        let mic = fmt.hasMicrophone ? try audioFeed(.microphone, EncoderSettings.microphone) : nil
+        let mic = fmt.hasMicrophone ? try audioFeed(.microphone, EncoderSettings.microphone, monitor: micMonitor) : nil
+        if mic != nil { micMonitor.enable(realTime: fmt.isRealTime) }
         let system = fmt.hasSystemAudio ? try audioFeed(.systemAudio, EncoderSettings.systemAudio) : nil
 
         let title = bundle.url.deletingPathExtension().lastPathComponent
@@ -458,6 +495,7 @@ actor SessionEngine {
         manifest = m
         try bundle.writeManifest(m)
 
+        if fmt.hasMicrophone { micMonitor.finish(activeSeconds: max(0, endTime - pausedTotal)) }
         ticker?.cancel()
         phase = failed ? .failed : .finished
         if failed { status.warnings = failureWarnings(at: endTime) }
@@ -575,6 +613,7 @@ actor SessionEngine {
                 return
             }
         }
+        if n % 10 == 5, let micProbe { micPresence = micProbe() }
         if n % 20 == 19, var man = manifest {
             man.duration = t
             man.pauses = pipeline.pauses
@@ -602,6 +641,19 @@ actor SessionEngine {
         inputs.screenQuietFor = host - max(origin, m.lastScreenActivityHost)
         inputs.inputSinceLastFrame = lastInput > m.lastScreenActivityHost + 0.3
         inputs.audioCorrection = (pipeline.microphone?.correctionSeconds ?? 0) + (pipeline.systemAudio?.correctionSeconds ?? 0)
+        if fmt.hasMicrophone {
+            let h = micMonitor.health(now: fmt.isRealTime ? host : nil)
+            inputs.microphoneClipEvents = h.clipEvents
+            inputs.microphoneTooQuiet = h.tooQuiet
+            inputs.talkingWhilePaused = h.talkingWhilePaused
+            inputs.lockedMicrophoneID = lockedMic?.id
+            inputs.lockedMicrophoneName = lockedMic?.name
+            if let p = micPresence {
+                inputs.microphoneMissing = !p.connected
+                inputs.systemDefaultMicrophoneID = p.systemDefaultID
+                inputs.systemDefaultMicrophoneName = p.systemDefaultName
+            }
+        }
         inputs.freeDiskBytes = freeDisk
         inputs.uploadBacklog = backlog
         inputs.shareFailure = shareFailure

@@ -49,9 +49,10 @@ struct MockCaptureSources: CaptureSourceService {
     func thumbnail(for source: AvailableSource, maxPixelWidth: Int) async -> CGImage? { source.thumbnail }
 
     func microphones() -> [MediaDevice] {
-        [MediaDevice(id: "default", name: "MacBook Pro Microphone", isDefault: true),
-         MediaDevice(id: "shure-mv7", name: "Shure MV7+", isDefault: false),
-         MediaDevice(id: "airpods", name: "AirPods Pro", isDefault: false)]
+        [MediaDevice(id: "builtin-mic", name: "MacBook Pro Microphone", isDefault: true, transport: .builtIn, sampleRate: 48_000),
+         MediaDevice(id: "airpods", name: "AirPods Pro", isDefault: false, transport: .bluetooth, sampleRate: 24_000),
+         MediaDevice(id: "iphone-mic", name: "iPhone Microphone", isDefault: false, transport: .continuity, sampleRate: 48_000),
+         MediaDevice(id: "zoom", name: "ZoomAudioDevice", isDefault: false, transport: .virtual, sampleRate: 48_000)]
     }
 
     func cameras() -> [MediaDevice] {
@@ -90,6 +91,10 @@ final class MockRecordingSession: RecordingSessionHandle, @unchecked Sendable {
     private var pauseStart: Date?
     private var pauses: [TimeRange] = []
     private var shareInfo: ShareInfo?
+    private var levels = MicLevelReading()
+    private var summary: MicTakeSummary?
+    /// Seconds of the simulated silent stretch (9–15 s) that were recorded.
+    private var silentSeconds = 0.0
 
     init(options: RecordingOptions, bundleURL: URL, shareSink: (any ShareSegmentSink)?) {
         self.options = options; self.bundleURL = bundleURL; self.shareSink = shareSink
@@ -138,6 +143,12 @@ final class MockRecordingSession: RecordingSessionHandle, @unchecked Sendable {
                 let silent = hasMic && e > 9 && e < 15
                 let speech = 0.5 + 0.5 * sin(Double(tick) * 0.37) * sin(Double(tick) * 0.11)
                 let level = paused || !hasMic || silent ? 0 : max(0.05, min(1, speech * 0.85 + Double.random(in: 0...0.15)))
+                // Speech peaks sit ~12 dB above the RMS meter value, mostly inside the target zone.
+                let peakDB = level > 0 ? min(-1, -60 + level * 60 + 4) : MicLevelReading.floorDB
+                self.lock.withLock {
+                    self.levels = MicLevelReading(peakDB: peakDB, rmsDB: level > 0 ? -60 + level * 60 - 8 : MicLevelReading.floorDB)
+                    if silent && !paused { self.silentSeconds += 0.05 }
+                }
                 let backlog = self.shareSink == nil ? 0 : (tick % 40 < 6 ? 2 : 0)
                 self.publish { s in
                     s.elapsed = e
@@ -175,6 +186,10 @@ final class MockRecordingSession: RecordingSessionHandle, @unchecked Sendable {
         ticker?.cancel()
         publish { $0.phase = .finishing }
         let duration = max(4, Date().timeIntervalSince(lock.withLock { startDate }))
+        if options.microphoneID != nil {
+            let active = elapsed
+            lock.withLock { summary = MicTakeSummary(activeSeconds: active, soundSeconds: max(0, active - silentSeconds)) }
+        }
         let bundle = ProjectBundle(url: bundleURL)
         let pixel: PixelSize
         switch options.source {
@@ -211,6 +226,9 @@ final class MockRecordingSession: RecordingSessionHandle, @unchecked Sendable {
         finishStreams()
         return bundle
     }
+
+    var microphoneLevels: MicLevelReading { lock.withLock { pauseStart == nil ? levels : MicLevelReading() } }
+    var microphoneTakeSummary: MicTakeSummary? { lock.withLock { summary } }
 
     func discard() async {
         ticker?.cancel()
