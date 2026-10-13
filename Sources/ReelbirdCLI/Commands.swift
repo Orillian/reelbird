@@ -33,7 +33,9 @@ enum CLI {
             .value("trim", "START-END", "Keep only this range (seconds or m:ss; END may be 'end'); 'none' clears"),
             .value("cut", "START-END", "Remove a range", repeatable: true),
             .flag("clear-cuts", "Remove all cuts first"),
-        ], discussion: "PROJECT is a .reelbird path, a name from `reelbird list`, or \"latest\"."),
+            .flag("crop-toolbar", "Hide the browser toolbar (tabs, address and bookmarks bars), detected from the video"),
+            .flag("no-crop", "Show the whole screen again"),
+        ], discussion: "PROJECT is a .reelbird path, a name from `reelbird list`, or \"latest\". Crop by hand with --set crop.y=0.08 (normalized to the screen video; x, y, width, height)."),
         CommandSpec(name: "export", summary: "Render the edited video to a file.", positionals: ["PROJECT"], options: [
             .value("format", "mp4|hevc|prores|gif", "Output format (default mp4, H.264)"),
             .value("height", "PIXELS", "Output height, e.g. 1080 (default: source)"),
@@ -151,7 +153,11 @@ enum CLI {
             return ops.list(limit: try a.int("limit"))
         case "edit":
             let sets = try a.all("set").map(EditSetter.assignment)
-            return try ops.edit(project, sets: sets, trim: a.value("trim"), cuts: a.all("cut"), clearCuts: a.has("clear-cuts"))
+            if a.has("crop-toolbar") && a.has("no-crop") { throw CLIError.usage("Use either --crop-toolbar or --no-crop.") }
+            var crop: Operations.CropChange?
+            if a.has("crop-toolbar") { crop = .set(try await ops.toolbarCrop(project)) }
+            if a.has("no-crop") { crop = .clear }
+            return try ops.edit(project, sets: sets, trim: a.value("trim"), cuts: a.all("cut"), clearCuts: a.has("clear-cuts"), crop: crop)
         case "export":
             var req = ExportRequest()
             if let f = a.value("format") {

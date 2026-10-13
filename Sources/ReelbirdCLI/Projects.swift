@@ -135,6 +135,7 @@ enum ProjectSummary {
                 "zoom": ["mode": .string(e.zoom.mode.rawValue), "intensity": JSONValue(e.zoom.intensity), "regions": .int(e.zoom.regions.count)],
                 "background": .string(e.background.kind.rawValue),
                 "aspect": .string(e.canvas.aspect.rawValue),
+                "crop": e.crop.map { ["x": JSONValue($0.x), "y": JSONValue($0.y), "width": JSONValue($0.width), "height": JSONValue($0.height)] } ?? .null,
                 "captionsFile": JSONValue(e.captions.file),
                 "annotations": .int(e.annotations.count),
                 "audio": [

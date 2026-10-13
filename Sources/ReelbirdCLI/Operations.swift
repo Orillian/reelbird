@@ -134,7 +134,27 @@ struct Operations: Sendable {
 
     // MARK: Edit
 
-    func edit(_ project: String, sets: [EditSetter.Assignment], trim: String?, cuts: [String], clearCuts: Bool) throws -> Report {
+    /// A crop given outside `--set`: the detected toolbar crop, or none.
+    enum CropChange: Sendable { case set(NormRect), clear }
+
+    /// The crop that hides the recording's browser toolbar, or a clear error when none was found.
+    func toolbarCrop(_ project: String) async throws -> NormRect {
+        let bundle = try locator.resolve(project)
+        guard let manifest = try? bundle.readManifest(), manifest.track(.screen)?.file != nil else {
+            throw CLIError("This project has no screen video to look for a toolbar in.", code: .dataError)
+        }
+        guard let s = try await engine.cropSuggestion(bundle: bundle) else {
+            throw CLIError("Couldn't read the screen video to look for a toolbar.", code: .dataError)
+        }
+        guard s.isConfident, let crop = s.crop else {
+            throw CLIError("No browser toolbar found in this recording.", code: .dataError,
+                           hint: "Crop by hand with --set crop.y=0.1 (the share of the height to hide at the top).")
+        }
+        return crop
+    }
+
+    func edit(_ project: String, sets: [EditSetter.Assignment], trim: String?, cuts: [String], clearCuts: Bool,
+              crop cropChange: CropChange? = nil) throws -> Report {
         let bundle = try locator.resolve(project)
         let manifest: ProjectManifest
         do { manifest = try bundle.readManifest() } catch {
@@ -144,8 +164,20 @@ struct Operations: Sendable {
         do { edit = try bundle.readEdit() } catch {
             throw CLIError("Can't read edit.json: \(error.localizedDescription)", code: .dataError)
         }
-        let changed = !sets.isEmpty || trim != nil || !cuts.isEmpty || clearCuts
+        let changed = !sets.isEmpty || trim != nil || !cuts.isEmpty || clearCuts || cropChange != nil
+        let cropBefore = edit.crop
         if !sets.isEmpty { edit = try EditSetter.apply(sets, to: edit) }
+        switch cropChange {
+        case .set(let r)?: edit.crop = r.sanitizedCrop
+        case .clear?: edit.crop = nil
+        case nil: break
+        }
+        // Automatic zooms follow the crop (clicks in a hidden toolbar no longer zoom).
+        if edit.crop != cropBefore, edit.zoom.mode == .auto, edit.zoom.regions.contains(where: { $0.source == .auto }) {
+            let events = (try? bundle.readEvents()) ?? []
+            edit.zoom.regions = AutoZoomPlanner.merged(existing: edit.zoom.regions, events: events, duration: manifest.duration,
+                                                       intensity: edit.zoom.intensity, crop: edit.crop)
+        }
         let duration = manifest.duration > 0 ? manifest.duration : nil
         if let trim {
             if ["none", "off", "clear"].contains(trim.lowercased()) { edit.trim = nil } else {

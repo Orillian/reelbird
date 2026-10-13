@@ -1,5 +1,6 @@
 import Foundation
 import ReelbirdCore
+import ReelbirdRender
 
 // The CLI reaches capture, rendering and sharing only through `Engine` (`LiveEngine` in production,
 // `DemoEngine` for flow tests), so those modules stay behind one small adapter. Everything that needs only ReelbirdCore
@@ -88,6 +89,15 @@ protocol Engine: Sendable {
     func hasShareSecret() -> Bool
     func saveShareDestination(_ destination: ShareDestination, secret: String) throws
     func testShareConnection(_ destination: ShareDestination, secret: String) async throws
+
+    /// The detected browser toolbar (`crop-suggestion.json`, detected on first use). Permission-free.
+    func cropSuggestion(bundle: ProjectBundle) async throws -> CropSuggestion?
+}
+
+extension Engine {
+    func cropSuggestion(bundle: ProjectBundle) async throws -> CropSuggestion? {
+        await ToolbarDetector.suggestion(bundle: bundle)
+    }
 }
 
 enum EngineFactory {

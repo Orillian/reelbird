@@ -234,8 +234,10 @@ final class MCPServer: Sendable {
                 }
                 cuts = items.compactMap(\.stringValue)
             }
-            return try ops.edit(try a.requiredString("project"), sets: sets, trim: try a.string("trim"), cuts: cuts,
-                                clearCuts: try a.bool("clear_cuts") ?? false)
+            let project = try a.requiredString("project")
+            let crop: Operations.CropChange? = try a.bool("crop_toolbar") == true ? .set(try await ops.toolbarCrop(project)) : nil
+            return try ops.edit(project, sets: sets, trim: try a.string("trim"), cuts: cuts,
+                                clearCuts: try a.bool("clear_cuts") ?? false, crop: crop)
         case "export":
             var req = ExportRequest()
             if let f = try a.string("format") {

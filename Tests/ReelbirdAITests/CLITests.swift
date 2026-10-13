@@ -196,6 +196,41 @@ private func tempDir() throws -> URL {
     #expect(try !bundle.readEdit().audio.autoLevel && bundle.readEdit().audio.microphoneGainDB == 4.5)
 }
 
+@Test(.enabled(if: binaryAvailable)) func editSetsCropByKeyAndFromTheDetectedToolbar() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let bundle = try makeProject(in: dir)
+
+    // Dotted key: a partial crop reaches the far edges.
+    let r = try CLI.run(["edit", bundle.url.path, "--set", "crop.y=0.08", "--json"])
+    #expect(r.code == 0, "\(r.err)")
+    #expect((r.json?["crop"] as? [String: Any])?["height"] as? Double == 0.92)
+    #expect(try bundle.readEdit().crop == NormRect(x: 0, y: 0.08, width: 1, height: 0.92))
+    let out = try CLI.run(["edit", bundle.url.path, "--set", "crop.y=1.5"])
+    #expect(out.code == 65, "out of range is rejected: \(out.err)")
+    #expect(try CLI.run(["edit", bundle.url.path, "--set", "crop=null"]).code == 0)
+    #expect(try bundle.readEdit().crop == nil)
+
+    // --crop-toolbar applies the detected toolbar (here from the cache, keyed by the screen file).
+    try FileManager.default.createDirectory(at: bundle.directory(for: .screen), withIntermediateDirectories: true)
+    try Data(repeating: 7, count: 4096).write(to: bundle.resolve("screen/screen.mp4"))
+    try bundle.writeCropSuggestion(CropSuggestion(file: "screen/screen.mp4", fileSize: 4096, height: 1080, topPixels: 162, confidence: 0.92))
+    let tb = try CLI.run(["edit", bundle.url.path, "--crop-toolbar", "--json"])
+    #expect(tb.code == 0, "\(tb.err)")
+    let crop = try #require(try bundle.readEdit().crop)
+    #expect(abs(crop.y - 0.15) < 1e-9 && abs(crop.height - 0.85) < 1e-9 && crop.x == 0 && crop.width == 1)
+    let info = try CLI.run(["info", bundle.url.path, "--json"])
+    #expect(((info.json?["edit"] as? [String: Any])?["crop"] as? [String: Any])?["y"] as? Double == 0.15)
+    #expect(try CLI.run(["edit", bundle.url.path, "--no-crop"]).code == 0)
+    #expect(try bundle.readEdit().crop == nil)
+
+    // No confident toolbar: a clear data error, edit unchanged.
+    try bundle.writeCropSuggestion(CropSuggestion(file: "screen/screen.mp4", fileSize: 4096, height: 1080, topPixels: 0, confidence: 0))
+    let none = try CLI.run(["edit", bundle.url.path, "--crop-toolbar"])
+    #expect(none.code == 65 && none.err.contains("No browser toolbar"), "\(none.err)")
+    #expect(try bundle.readEdit().crop == nil)
+}
+
 @Test(.enabled(if: binaryAvailable)) func infoAndListFindProjects() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }

@@ -62,7 +62,8 @@ enum EditSetter {
 
     /// Optional keys that are absent from a default document but settable.
     static let optionalKeys: Set<String> = ["trim", "trim.start", "trim.end", "title", "background.imagePath",
-                                            "canvas.outputHeight", "canvas.frameRate", "captions.file"]
+                                            "canvas.outputHeight", "canvas.frameRate", "captions.file",
+                                            "crop", "crop.x", "crop.y", "crop.width", "crop.height"]
 
     /// Every leaf key of a default document, e.g. "zoom.intensity".
     static func knownKeys() -> [String] {
