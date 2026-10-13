@@ -57,12 +57,14 @@ public struct EditDocument: Codable, Hashable, Sendable {
     }
 
     /// The initial edit with the camera placed where the live bubble was during the recording (the `camera`
-    /// events: its first place, then a glide for each later move).
+    /// events: its first place, then a glide for each later move), in its shape and at its size relative to the
+    /// captured screen (scaled to the padded screen card, so it matches what was on screen).
     public static func initial(for manifest: ProjectManifest, events: [InputEvent]) -> EditDocument {
         var e = initial(for: manifest)
         if manifest.track(.camera) != nil {
             let screen = manifest.track(.screen)?.pixelSize ?? manifest.capture.pixelSize
-            CameraPlacement.apply(events: events, screen: screen, crop: e.crop, to: &e.camera)
+            CameraPlacement.apply(events: events, screen: screen, crop: e.crop, duration: manifest.duration,
+                                  sizeScale: CameraPlacement.cardScale(source: screen, background: e.background), to: &e.camera)
         }
         return e
     }
@@ -195,7 +197,7 @@ public struct CameraLayout: Codable, Hashable, Sendable {
     /// Preset place, used for whichever of `x` / `y` is `nil`.
     public var corner: Corner = .bottomRight
     /// Gap between the bubble and the canvas edge it is against, as a fraction of the shorter output side.
-    public var inset: Double = 0.035
+    public var inset: Double = 0.025
     /// Where the bubble sits, 0...1 across the room it can move in on the canvas: 0 = against the left (top)
     /// edge at `inset`, 1 = against the right (bottom) edge, 0.5 = centred. `nil` = from `corner`. Stays put
     /// relative to the frame when the aspect, padding, crop or zoom change, and never leaves the canvas.

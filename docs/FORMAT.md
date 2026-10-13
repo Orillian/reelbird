@@ -55,7 +55,7 @@ Positions in events and edits are normalized to the captured area: `(0, 0)` top-
 `edit.json → camera` places the camera bubble, an overlay on the output canvas (it never zooms with the screen):
 
 ```json
-{"visible": true, "shape": "circle", "size": 0.22, "corner": "bottomRight", "inset": 0.035,
+{"visible": true, "shape": "circle", "size": 0.22, "corner": "bottomRight", "inset": 0.025,
  "x": 0.5, "y": 1, "moves": [{"t": 12.4, "x": 0, "y": 0}], "mirror": true, "blurBackground": false}
 ```
 
@@ -63,9 +63,9 @@ Positions in events and edits are normalized to the captured area: `(0, 0)` top-
 - `size`: the circle's diameter (and the square's side) as a fraction of the canvas's shorter side. The portrait tile is 1.15 × that tall and 3:4, about the same area.
 - `x`, `y`: where the bubble sits, 0…1 across the room it can move in: 0 = against the left (top) edge at `inset`, 1 = against the right (bottom) edge, 0.5 = centred. The corners are (0, 0), (1, 0), (0, 1), (1, 1). Measured in that room, the bubble keeps its spot relative to the frame through any aspect, padding, crop or zoom, and never leaves the canvas. Either may be absent: it then comes from `corner` (`topLeft`, `topRight`, `bottomLeft`, `bottomRight`), so files written before free placement place it exactly as before.
 - `moves`: changes of place on the recording timeline, sorted by `t`: from `t` the bubble glides to (`x`, `y`) over 300 ms (cubic ease in and out); a move that starts mid-glide sets off from wherever the bubble is. Empty = it stays in one place.
-- `inset`: the gap to the edge it is against, as a fraction of the shorter side.
+- `inset`: the gap to the edge it is against, as a fraction of the shorter side (default 0.025).
 
-The first time a recording opens (no `edit.json` yet), the place comes from its `camera` events: the first is the start place, each later one a move. The recorded frame maps to `x`, `y` by how far the bubble was across the room it could move in on the visible screen, measured with the same proportional inset; within 2% of an edge (1% of the centre) it lands exactly there. So the live bubble's default spot, bottom right at 3.5% of the screen's shorter side, becomes the editor's default corner.
+The first time a recording opens (no `edit.json` yet), the place comes from its `camera` events: the first is the start place, each later one a move. The recorded frame maps to `x`, `y` by how far the bubble was across the room it could move in on the visible screen, measured with the same proportional inset; within 2% of an edge (1% of the centre) it lands exactly there. So the live bubble's default spot, bottom right at 2.5% of the screen's shorter side, becomes the editor's default corner. The shape follows the live bubble's, and `size` is the live size it had longest, measured against the captured screen and scaled to the padded screen card, so the bubble keeps its size relative to the screen.
 
 ## Crop
 

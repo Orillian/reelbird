@@ -183,7 +183,7 @@ struct HotKeyField: View {
             MainActor.assumeIsolated {
                 if code == 53 { stop(); return }
                 if code == 51 { key = defaultKey; stop(); return }
-                if let hk { key = hk; stop() } else { NSSound.beep() }
+                if let hk { key = hk; stop() } else { Beep.play() }
             }
             return nil
         }

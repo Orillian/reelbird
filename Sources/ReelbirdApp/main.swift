@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ReelbirdCore
 
 // Entry point. `--snapshot <dir> [filter]` renders the UI to PNGs (design review) and exits;
 // `--selftest` / `--selftest-live` drive the app's models against mock / real services and exit;
@@ -8,6 +9,7 @@ let args = CommandLine.arguments
 if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
     let dir = URL(fileURLWithPath: args[i + 1], isDirectory: true)
     let filter = i + 2 < args.count && !args[i + 2].hasPrefix("--") ? args[i + 2] : nil
+    AutomatedRun.begin()
     MainActor.assumeIsolated {
         _ = NSApplication.shared
         SnapshotRunner.run(dir: dir, filter: filter, live: args.contains("--live"))
@@ -28,6 +30,7 @@ if let i = args.firstIndex(of: "--probe-thumbnails"), i + 1 < args.count {
 
 if args.contains("--selftest") || args.contains("--selftest-live") {
     let live = args.contains("--selftest-live")
+    AutomatedRun.begin()
     MainActor.assumeIsolated {
         _ = NSApplication.shared
         Task { @MainActor in exit(await (live ? LiveSelfTest.run() : SelfTest.run()) ? 0 : 1) }

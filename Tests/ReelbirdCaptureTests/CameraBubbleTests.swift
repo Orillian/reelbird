@@ -16,7 +16,7 @@ import Testing
     var o = options()
     o.cameraID = "synthetic"
     let session = RecordingSession(options: o, bundleURL: url, frameSource: SyntheticFrameSource(configuration: config))
-    let d = 200.0, inset = 0.035 * 1080
+    let d = 200.0, inset = 0.025 * 1080
     // Countdown: first somewhere else, then the default corner; only the place at the start counts.
     session.updateCameraBubble(frame: CGRect(x: 400, y: 300, width: d, height: d), shape: .circle)
     session.updateCameraBubble(frame: CGRect(x: 1920 - inset - d, y: 1080 - inset - d, width: d, height: d), shape: .portrait)

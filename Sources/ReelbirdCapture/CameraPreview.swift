@@ -1,16 +1,18 @@
 import AppKit
 @preconcurrency import AVFoundation
 import QuartzCore
+import ReelbirdCore
 
 /// Live camera preview for the floating camera bubble (before and during recording).
 ///
 /// The bubble is UI only: it is excluded from the screen capture (our own app's windows are filtered
 /// out) and the camera is recorded to its own track, so layout can change after recording.
 public enum CameraPreview {
-    /// A layer-backed view showing the camera, mirrored, filling its bounds (aspect fill).
+    /// A layer-backed view showing the camera, filling its bounds (aspect fill). Mirrored like the editor's and
+    /// the export's default (`CameraLayout.mirror`), so the bubble shows what the video will.
     /// Keep the returned controller alive while the view is visible.
     @MainActor
-    public static func makeView(deviceID: String = "default", mirrored: Bool = true) throws -> CameraPreviewController {
+    public static func makeView(deviceID: String = "default", mirrored: Bool = CameraLayout().mirror) throws -> CameraPreviewController {
         try CameraPreviewController(deviceID: deviceID, mirrored: mirrored)
     }
 }
@@ -45,6 +47,8 @@ public final class CameraPreviewController {
         view.layer = CALayer()
         previewLayer.frame = view.bounds
         previewLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        // Follow the bubble's own spring frame by frame: no implicit 0.25 s layer animation lagging behind it.
+        previewLayer.actions = ["bounds": NSNull(), "position": NSNull(), "frame": NSNull()]
         view.layer?.addSublayer(previewLayer)
         self.view = view
     }

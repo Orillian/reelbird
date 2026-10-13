@@ -24,6 +24,9 @@ private func waitFor(_ what: String, timeout: Double = 5, _ cond: () -> Bool) as
     defer { try? FileManager.default.removeItem(at: bundle.url) }
 
     let player = try PreviewPlayer(bundle: bundle)
+    // Test runs are silent: the preview plays muted (its audio taps still run).
+    #expect(AutomatedRun.isTestProcess && AutomatedRun.isSilent)
+    #expect(player.isMuted)
     var ready = false
     var readyError: (any Error)?
     player.onReady = { e in ready = true; readyError = e }

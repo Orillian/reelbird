@@ -20,6 +20,8 @@ public enum CameraPlacement {
     public static let portraitAspect = 0.75
     /// A recorded place this close (0...1) to an edge or the centre lands exactly on it.
     static let snapTolerance = 0.02
+    /// The sizes the editor offers (`CameraLayout.size`).
+    public static let sizeRange = 0.1...0.45
 
     public static func clampUnit(_ v: Double) -> Double { v.isFinite ? min(1, max(0, v)) : 0.5 }
 
@@ -57,6 +59,14 @@ public enum CameraPlacement {
     /// the same shape outside Metal. `perCorner` points per corner arc.
     public static func outline(shape: CameraLayout.Shape, width w: Double, height h: Double, perCorner: Int = 24) -> [(x: Double, y: Double)] {
         let (r, n) = corner(shape: shape, width: w, height: h)
+        return outline(width: w, height: h, radius: r, exponent: n, perCorner: perCorner)
+    }
+
+    /// The outline for any corner radius (clamped to half the shorter side) and superellipse exponent, so the
+    /// live bubble can morph smoothly between shapes (circle: half the shorter side, exponent 2).
+    public static func outline(width w: Double, height h: Double, radius: Double, exponent: Double,
+                               perCorner: Int = 24) -> [(x: Double, y: Double)] {
+        let r = min(max(0, radius), min(w, h) / 2), n = max(1, exponent)
         let k = max(2, perCorner)
         // Corner centres, going clockwise: top-right, bottom-right, bottom-left, top-left.
         let centres = [(w - r, r, 1.0, -1.0), (w - r, h - r, 1.0, 1.0), (r, h - r, -1.0, 1.0), (r, r, -1.0, -1.0)]
@@ -172,21 +182,64 @@ public enum CameraPlacement {
         return NormPoint(x: axis(v.x, v.width, vw), y: axis(v.y, v.height, vh))
     }
 
+    /// The size (`CameraLayout.size`: a share of the shorter side) of a bubble recorded at `bubble` (normalized to
+    /// the captured screen) with this shape, measured on the visible screen (`crop`). `nil` for a point (older logs).
+    public static func size(recorded bubble: NormRect, shape: CameraLayout.Shape, screen: PixelSize,
+                            crop: CropSpace = .identity) -> Double? {
+        let v = crop.toView(bubble)
+        let vw = Double(max(1, screen.width)) * crop.rect.width, vh = Double(max(1, screen.height)) * crop.rect.height
+        let w = v.width * vw, h = v.height * vh
+        guard w > 1, h > 1, w.isFinite, h.isFinite else { return nil }
+        // Undo `bubbleSize`: the portrait tile is 1.15× the circle's diameter tall.
+        let d = shape == .portrait ? h / 1.15 : w
+        return d / min(vw, vh)
+    }
+
+    /// The screen card's shorter side as a share of the canvas's shorter side, for a canvas with the source's
+    /// aspect (the first edit's): 1 without a background, smaller as padding grows. A bubble recorded at a size
+    /// relative to the captured screen is scaled by this, so it keeps that size relative to the screen in the video.
+    public static func cardScale(source: PixelSize, background: BackgroundSettings) -> Double {
+        let W = Double(max(1, source.width)), H = Double(max(1, source.height)), short = min(W, H)
+        let pad = background.kind == .none ? 0 : min(0.45, max(0, background.padding)) * short
+        let availW = max(1, W - 2 * pad), availH = max(1, H - 2 * pad)
+        var w = availW, h = availW * H / W
+        if h > availH { h = availH; w = h * W / H }
+        return min(w, h) / short
+    }
+
     /// Places the camera from the recording's `camera` events: the first is where it starts, each later one
-    /// a move. The shape follows the live bubble's. Does nothing without camera events.
-    public static func apply(events: [InputEvent], screen: PixelSize, crop: NormRect?, to layout: inout CameraLayout) {
+    /// a move. The shape follows the live bubble's, and the size is the one it had longest (relative to the
+    /// captured screen, times `sizeScale`: see `cardScale`). `duration` ends the last size's run (defaults to
+    /// the last event). Does nothing without camera events.
+    public static func apply(events: [InputEvent], screen: PixelSize, crop: NormRect?, duration: Double? = nil,
+                             sizeScale: Double = 1, to layout: inout CameraLayout) {
         let space = CropSpace(crop)
         var places: [(t: Double, p: NormPoint)] = []
         var shape: CameraLayout.Shape?
+        var sizes: [(t: Double, size: Double)] = []
         for e in events where e.type == .camera {
             let rect = e.rect ?? e.point.map { NormRect(x: $0.x, y: $0.y, width: 0, height: 0) }
             guard let rect else { continue }
             if let s = e.shape.flatMap(CameraLayout.Shape.init(rawValue:)) { shape = s }
+            if let d = size(recorded: rect, shape: shape ?? layout.shape, screen: screen, crop: space) { sizes.append((e.t, d)) }
             let p = position(recorded: rect, screen: screen, crop: space, inset: layout.inset)
             if let last = places.last, abs(last.p.x - p.x) < 1e-3, abs(last.p.y - p.y) < 1e-3 { continue }
             places.append((e.t, p))
         }
         if let shape { layout.shape = shape }
+        if !sizes.isEmpty {
+            // Time held by each size (sizes within 1% count as one).
+            let end = max(duration ?? 0, sizes.last?.t ?? 0)
+            var held: [(size: Double, time: Double)] = []
+            for (i, s) in sizes.enumerated() {
+                let until = i + 1 < sizes.count ? sizes[i + 1].t : end
+                let time = max(0, until - s.t) + 1e-6
+                if let j = held.firstIndex(where: { abs($0.size - s.size) <= 0.01 * s.size }) { held[j].time += time } else { held.append((s.size, time)) }
+            }
+            if let best = held.max(by: { $0.time < $1.time }), sizeScale.isFinite, sizeScale > 0 {
+                layout.size = min(sizeRange.upperBound, max(sizeRange.lowerBound, best.size * sizeScale))
+            }
+        }
         guard let first = places.first else { return }
         if let corner = CameraLayout.Corner.allCases.first(where: { $0.position == first.p }) {
             layout.pin(to: corner)
@@ -195,6 +248,19 @@ public enum CameraPlacement {
         }
         layout.moves = places.dropFirst().map { CameraLayout.Move(t: $0.t, x: $0.p.x, y: $0.p.y) }
     }
+}
+
+/// How the camera bubble is drawn, shared by the live bubble, the editor preview and the renderer so the
+/// bubble looks the same everywhere: a soft drop shadow and a faint hairline rim, both in proportion to the
+/// bubble's width (points live, pixels in the video). No heavy ring.
+public enum CameraBubbleStyle {
+    /// The rim: white at this opacity, drawn just inside the edge.
+    public static let rimOpacity = 0.18
+    public static func rimWidth(bubbleWidth w: Double) -> Double { max(1, 0.006 * w) }
+    /// The shadow: black at this opacity, fading out over `shadowRadius` past the edge, dropped by `shadowOffset`.
+    public static let shadowOpacity = 0.3
+    public static func shadowRadius(bubbleWidth w: Double) -> Double { 0.06 * w }
+    public static func shadowOffset(bubbleWidth w: Double) -> Double { 0.02 * w }
 }
 
 /// The bubble's place over recording time: the start place, then an eased glide for each move. Built once;

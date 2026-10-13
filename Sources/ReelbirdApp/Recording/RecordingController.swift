@@ -114,10 +114,10 @@ import ReelbirdCore
             beginAreaSelection()
             return
         }
-        guard let source = picker.captureSource() else { NSSound.beep(); return }
+        guard let source = picker.captureSource() else { Beep.play(); return }
         Task {
-            guard await picker.stillAvailable(source), phase == .picking else { NSSound.beep(); return }
-            guard await picker.bringOnScreenIfNeeded(source), phase == .picking else { NSSound.beep(); return }
+            guard await picker.stillAvailable(source), phase == .picking else { Beep.play(); return }
+            guard await picker.bringOnScreenIfNeeded(source), phase == .picking else { Beep.play(); return }
             if case .window(_, let appName, _) = source { recordedAppName = appName } else { recordedAppName = nil }
             pickerPanel?.dismiss()
             picker.stopMeters()

@@ -376,7 +376,8 @@ actor SessionEngine {
             let composer = pipeline.composer, screen = fmt.pixelSize
             cameraLog.begin(writer: eventLog, origin: origin, realTime: fmt.isRealTime, area: area,
                             isPaused: { [weak pipeline] t in pipeline?.isPaused(t) ?? false }) { rect, shape, t in
-                composer?.setCamera(position: CameraPlacement.position(recorded: rect, screen: screen), shape: shape, at: t)
+                composer?.setCamera(position: CameraPlacement.position(recorded: rect, screen: screen), shape: shape,
+                                    size: CameraPlacement.size(recorded: rect, shape: shape, screen: screen), at: t)
             }
         }
         phase = .recording

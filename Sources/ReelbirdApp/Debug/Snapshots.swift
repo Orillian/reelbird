@@ -18,6 +18,8 @@ import SwiftUI
         let size: CGSize?
         let backdrop: Bool
         let build: () -> AnyView
+        /// Animation frames: light appearance only.
+        var lightOnly = false
     }
 
     static func run(dir: URL, filter: String?, live: Bool = false) {
@@ -174,16 +176,7 @@ import SwiftUI
         scenes.append(Scene(name: "toast", size: CGSize(width: 520, height: 140), backdrop: true) {
             AnyView(ToastView(title: "Link copied", detail: "Still uploading 2 segments…", symbol: "link"))
         })
-        scenes.append(Scene(name: "camera-bubble", size: CGSize(width: 320, height: 300), backdrop: true) {
-            AnyView(CameraBubbleView(camera: MockCameraView(frame: .zero), size: .medium, onResize: { _ in }).frame(width: 212, height: 212))
-        })
-        for shape in [CameraLayout.Shape.roundedSquare, .portrait] {
-            let s = CameraBubbleSize.medium.size(shape)
-            scenes.append(Scene(name: "camera-bubble-\(shape.rawValue)", size: CGSize(width: 320, height: 320), backdrop: true) {
-                AnyView(CameraBubbleView(camera: MockCameraView(frame: .zero), size: .medium, shape: shape, onResize: { _ in }, showControls: true)
-                    .frame(width: s.width + 12, height: s.height + 12))
-            })
-        }
+        scenes += CameraBubbleScenes.scenes(animations: filter?.contains("camera-anim") == true)
 
         // Editor
         func editor(_ section: InspectorSection, variant: String? = nil, bundle: ProjectBundle? = nil,
@@ -417,7 +410,7 @@ import SwiftUI
         // `filter` may list several name fragments separated by commas.
         let fragments = filter?.split(separator: ",").map(String.init)
         for scene in scenes where fragments == nil || fragments!.contains(where: { scene.name.contains($0) }) {
-            for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] where !(scene.lightOnly && suffix == "dark") {
                 let url = dir.appendingPathComponent("\(scene.name)-\(suffix).png")
                 render(scene, appearance: appearance, to: url)
                 count += 1

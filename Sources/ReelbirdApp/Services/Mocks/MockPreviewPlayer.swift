@@ -27,6 +27,8 @@ import ReelbirdCore
 
     func setHearOriginal(_ on: Bool) {}
     func voiceStemDidChange() {}
+    /// Draws only; it never makes a sound.
+    var isMuted: Bool { true }
 
     func update(edit: EditDocument) {
         timeline = EditTimeline(duration: sourceDuration, trim: edit.trim, cuts: edit.cuts)
@@ -296,7 +298,9 @@ final class MockPreviewView: NSView {
         path.addLines(between: outline.map { CGPoint(x: rect.minX + $0.x, y: rect.minY + $0.y) })
         path.closeSubpath()
         ctx.saveGState()
-        ctx.setShadow(offset: CGSize(width: 0, height: d * 0.03), blur: d * 0.12, color: NSColor.black.withAlphaComponent(0.4).cgColor)
+        ctx.setShadow(offset: CGSize(width: 0, height: CameraBubbleStyle.shadowOffset(bubbleWidth: d)),
+                      blur: CameraBubbleStyle.shadowRadius(bubbleWidth: d) * 2,
+                      color: NSColor.black.withAlphaComponent(CameraBubbleStyle.shadowOpacity).cgColor)
         ctx.addPath(path); ctx.setFillColor(NSColor.black.cgColor); ctx.fillPath()
         ctx.restoreGState()
         ctx.saveGState()
@@ -309,6 +313,14 @@ final class MockPreviewView: NSView {
         v.frame = CGRect(origin: .zero, size: rect.size)
         v.draw(v.bounds)
         NSGraphicsContext.restoreGraphicsState()
+        ctx.restoreGState()
+        // The hairline rim, just inside the edge.
+        ctx.saveGState()
+        ctx.addPath(path); ctx.clip()
+        ctx.addPath(path)
+        ctx.setStrokeColor(NSColor.white.withAlphaComponent(CameraBubbleStyle.rimOpacity).cgColor)
+        ctx.setLineWidth(CameraBubbleStyle.rimWidth(bubbleWidth: d) * 2)
+        ctx.strokePath()
         ctx.restoreGState()
     }
 

@@ -520,7 +520,7 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
                               pixelSize: PixelSize(width: 1280, height: 720), duration: 30))
     try bundle.writeManifest(m)
     // The recorder's log: the bubble starts in the bottom-right corner and is dragged to the top left at 12 s.
-    let d = 200.0, inset = 0.035 * 1080
+    let d = 200.0, inset = 0.025 * 1080
     let log = try EventLogWriter(url: bundle.eventsURL)
     log.append(.camera(0, frame: NormRect(x: (1920 - inset - d) / 1920, y: (1080 - inset - d) / 1080, width: d / 1920, height: d / 1080)))
     log.append(.camera(12, frame: NormRect(x: 0, y: 0, width: d / 1920, height: d / 1080)))

@@ -148,8 +148,8 @@ private func render(_ bundle: ProjectBundle, _ edit: EditDocument, at t: Double,
     e.camera.shape = .circle
     e.camera.corner = .bottomRight
     let px = try await render(bundle, e, at: 1)
-    // 0.22 × 540 = 118.8 px circle, inset 0.035 × 540 = 18.9 px from the bottom-right.
-    let d = 0.22 * 540.0, inset = 0.035 * 540.0
+    // 0.22 × 540 = 118.8 px circle, inset 0.025 × 540 = 13.5 px from the bottom-right.
+    let d = 0.22 * 540.0, inset = 0.025 * 540.0
     let cx = Int(960 - inset - d / 2), cy = Int(540 - inset - d / 2)
     let c = px[cx, cy]
     #expect(c.g > 150 && c.r < 90 && c.b < 90, "bubble centre \(c)")
