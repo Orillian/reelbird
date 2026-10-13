@@ -446,11 +446,14 @@ struct MockAI: AIService {
 
 /// Placeholder "camera": a soft warm backdrop with a head-and-shoulders silhouette.
 final class MockCameraView: NSView {
+    /// A bright room (white wall) instead of the default dim one.
+    var light = false
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let b = bounds
-        let colors = [NSColor(hex: 0x6B5B53).cgColor, NSColor(hex: 0x3A3330).cgColor] as CFArray
+        let colors = (light ? [NSColor(hex: 0xF4F1EC).cgColor, NSColor(hex: 0xDCD6CE).cgColor]
+                            : [NSColor(hex: 0x6B5B53).cgColor, NSColor(hex: 0x3A3330).cgColor]) as CFArray
         if let g = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors, locations: [0, 1]) {
             ctx.drawLinearGradient(g, start: CGPoint(x: b.midX, y: b.minY), end: CGPoint(x: b.midX, y: b.maxY), options: [])
         }

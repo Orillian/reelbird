@@ -103,6 +103,7 @@ import ReelbirdRender
         trashForgetsDeletedLink(bundle: bundle, root: root, check: check)
 
         microphoneChoice(services: services, prefs: prefs, check: check)
+        await cameraBubble(services: services, prefs: prefs, check: check)
         await windowSections(services: services, prefs: prefs, check: check)
 
         // Library
@@ -395,5 +396,116 @@ extension SelfTest {
         check(store.selection == [id[5]], "library: select all covers only matching recordings")
         store.clearSelection()
         check(store.selection.isEmpty, "library: clear")
+    }
+}
+
+extension SelfTest {
+    /// The live camera bubble on a stand-in screen off to the side: each toolbar control takes a real click
+    /// (mouse events through the window, as AppKit delivers them), springs the bubble to its new size or shape
+    /// growing away from the nearest edges, stays on screen, keeps the same camera view, and reports its place
+    /// once per change.
+    static func cameraBubble(services: Services, prefs: Preferences, check: (Bool, String) -> Void) async {
+        prefs.cameraShape = .circle
+        prefs.cameraBubbleSize = .medium
+        let screen = CGRect(x: -30000, y: -30000, width: 1600, height: 1000)
+        let visible = CGRect(x: screen.minX, y: screen.minY, width: 1600, height: 975) // menu bar 25 pt
+        let bubble = CameraBubbleController(services: services, prefs: prefs)
+        bubble.screenOverride = (screen, visible)
+        var reports: [CGRect?] = []
+        bubble.onPlace = { frame, _, _ in reports.append(frame) }
+        bubble.show(deviceID: "facetime")
+        defer { bubble.hide() }
+        guard let start = bubble.bubbleFrame, let window = bubble.panelsForTesting.bubble else { check(false, "camera bubble shows"); return }
+        let inset = CameraLayout().inset * 1000
+        check(abs(start.maxX - (screen.maxX - inset)) < 0.5 && abs(start.minY - (screen.minY + inset)) < 0.5 && start.width == 200,
+              "camera bubble starts bottom right at the editor's inset (\(start))")
+        let camera = (window.contentView as? FirstMouseHostingView<CameraBubbleView>)?.rootView.camera
+        bubble.pinsToolbar = true
+        guard let toolbar = bubble.panelsForTesting.toolbar else { check(false, "toolbar shows"); return }
+        try? await Task.sleep(for: .milliseconds(350)) // it fades in
+        check(abs(toolbar.frame.minY + CameraBubbleController.toolbarPadding - (start.maxY + CameraBubbleController.toolbarGap)) < 0.5
+              && bubble.model?.toolbarAbove == true, "toolbar sits just above the bubble near the bottom of the screen")
+        let tbSize = CameraBubbleController.toolbarPanelSize
+        check(CameraBubbleToolbar.buttonCenter(0).x - CameraBubbleToolbar.button / 2 >= 0 && CameraBubbleToolbar.button >= 24,
+              "toolbar targets are at least 24 pt")
+
+        func click(_ i: Int) async {
+            let c = CameraBubbleToolbar.buttonCenter(i)
+            let p = NSPoint(x: CameraBubbleController.toolbarPadding + c.x, y: tbSize.height - CameraBubbleController.toolbarPadding - c.y)
+            func event(_ type: NSEvent.EventType) -> NSEvent? {
+                NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                   windowNumber: toolbar.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                                   pressure: type == .leftMouseDown ? 1 : 0)
+            }
+            guard let down = event(.leftMouseDown), let up = event(.leftMouseUp) else { return }
+            // Queue the release first, in case the control tracks the mouse after the press.
+            NSApp.postEvent(up, atStart: false)
+            toolbar.sendEvent(down)
+            if let queued = NSApp.nextEvent(matching: .leftMouseUp, until: Date(), inMode: .default, dequeue: true) { toolbar.sendEvent(queued) }
+            for _ in 0..<100 {
+                try? await Task.sleep(for: .milliseconds(20))
+                if !bubble.isAnimating { break }
+            }
+            try? await Task.sleep(for: .milliseconds(40))
+        }
+
+        let bounds = BubbleLayout.bounds(frame: screen, visible: visible)
+        func inside(_ r: CGRect) -> Bool { bounds.insetBy(dx: -0.5, dy: -0.5).contains(r) }
+        // Controls 0–2: circle, square, portrait; 3–5: S, M, L.
+        let steps: [(Int, CameraLayout.Shape, CameraBubbleSize)] = [
+            (5, .circle, .large), (2, .portrait, .large), (1, .roundedSquare, .large), (3, .roundedSquare, .small),
+            (0, .circle, .small), (4, .circle, .medium),
+        ]
+        for (i, shape, size) in steps {
+            let before = bubble.bubbleFrame ?? .zero
+            let n = reports.count
+            await click(i)
+            let after = bubble.bubbleFrame ?? .zero
+            let want = size.size(shape)
+            check(prefs.cameraShape == shape && prefs.cameraBubbleSize == size && bubble.model?.shape == shape && bubble.model?.size == size,
+                  "toolbar click \(i) selects \(shape.title) \(size.title)")
+            check(abs(after.width - want.width) < 0.5 && abs(after.height - want.height) < 0.5, "bubble springs to \(want) (\(after.size))")
+            // Near the bottom right: the right and bottom edges stay put.
+            check(abs(after.maxX - before.maxX) < 0.5 && abs(after.minY - before.minY) < 0.5 && inside(after),
+                  "bubble grows away from the bottom-right edges and stays on screen (\(after))")
+            check(reports.count == n + 1 && reports.last??.size == after.size, "one place report per change (\(reports.count - n))")
+            let corner = bubble.model?.corner ?? CameraBubbleCorner(radius: 0, exponent: 0)
+            check(corner == CameraBubbleCorner(shape), "outline ends on the \(shape.title) corner")
+        }
+        check((window.contentView as? FirstMouseHostingView<CameraBubbleView>)?.rootView.camera === camera,
+              "the camera view is never rebuilt by a resize or a shape change")
+
+        // Top left, partly off screen: growing keeps the top-left corner and pulls it fully on screen.
+        bubble.placeForTesting(CGRect(x: visible.minX - 40, y: visible.maxY - 150, width: 200, height: 200))
+        await click(5)
+        if let r = bubble.bubbleFrame {
+            check(inside(r) && abs(r.minX - bounds.minX) < 0.5 && abs(r.maxY - visible.maxY) < 0.5,
+                  "a bubble hanging off the top left grows on screen, below the menu bar (\(r))")
+            check(abs(toolbar.frame.maxY - CameraBubbleController.toolbarPadding - (r.minY - CameraBubbleController.toolbarGap)) < 0.5
+                  && bubble.model?.toolbarAbove == false, "near the top, the toolbar moves below the bubble")
+        }
+        // Middle of the screen: grows from its centre.
+        bubble.placeForTesting(CGRect(x: screen.midX - 70, y: screen.midY - 70, width: 140, height: 140))
+        prefs.cameraBubbleSize = .small
+        await click(4)
+        if let r = bubble.bubbleFrame {
+            check(abs(r.midX - screen.midX) < 0.5 && abs(r.midY - screen.midY) < 0.5, "a centred bubble grows from its centre")
+        }
+        // Dropped near an edge line: snaps onto the editor's inset.
+        let snapped = BubbleLayout.snapped(CGRect(x: screen.maxX - inset - 200 - 15, y: screen.minY + inset + 12, width: 200, height: 200),
+                                           frame: screen, visible: visible, tolerance: CameraBubbleController.snapDistance)
+        check(abs(snapped.maxX - (screen.maxX - inset)) < 0.01 && abs(snapped.minY - (screen.minY + inset)) < 0.01, "a drop near the corner snaps to it")
+        let free = CGRect(x: screen.minX + 400, y: screen.minY + 300, width: 200, height: 200)
+        check(BubbleLayout.snapped(free, frame: screen, visible: visible, tolerance: CameraBubbleController.snapDistance) == free,
+              "a drop away from the lines stays where it is")
+
+        // The resize spring overshoots a little (the bob) and settles quickly; the shape morph barely overshoots.
+        let tol = [0.2, 0.2, 0.2, 0.2, 0.002, 0.01]
+        let grow = BubbleSpring.frames(from: [0, 0, 200, 200, 0.5, 2], to: [0, 0, 280, 280, 0.5, 2], style: BubbleSpring.resize, tolerance: tol)
+        let peak = grow.map { $0[2] }.max() ?? 0
+        check(peak > 281 && peak < 280 * 1.06 && grow.count <= 45, "resize bobs \(String(format: "%.1f", peak - 280)) pt past and settles in \(grow.count) frames")
+        let morph = BubbleSpring.frames(from: [0, 0, 200, 200, 0.5, 2], to: [0, 0, 173, 230, 0.31, 4], style: BubbleSpring.morph, tolerance: tol)
+        let first = morph.firstIndex { abs($0[3] - 230) < 2 } ?? 99
+        check((14...21).contains(first), "shape morph is visually done in \(first) frames (about \(first * 1000 / 60) ms)")
     }
 }
