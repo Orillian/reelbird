@@ -49,6 +49,8 @@ import AppKit
         file.addItem(item("Export…", #selector(AppDelegate.exportRecording(_:)), key: "e", target: target))
         file.addItem(item("Share Link…", #selector(AppDelegate.shareRecording(_:)), key: "e", mods: [.command, .shift], target: target))
         file.addItem(item("Show in Finder", #selector(AppDelegate.revealRecording(_:)), key: "r", mods: [.command, .shift], target: target))
+        file.addItem(.separator())
+        file.addItem(item("Move to Trash…", #selector(AppDelegate.trashRecording(_:)), key: "\u{8}", target: target))
         add(file, title: "File", to: main)
 
         // Edit

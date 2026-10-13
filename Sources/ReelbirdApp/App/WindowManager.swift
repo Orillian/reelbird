@@ -30,6 +30,11 @@ import SwiftUI
         !editors.isEmpty || library?.isVisible == true || settings?.window?.isVisible == true || onboarding?.isVisible == true
     }
 
+    /// Closes the editor showing `bundle`, if any (it saves on close).
+    func closeEditor(for bundle: ProjectBundle) {
+        editors[bundle.url.standardizedFileURL]?.window?.close()
+    }
+
     func openEditor(bundle: ProjectBundle) {
         let key = bundle.url.standardizedFileURL
         if let existing = editors[key] { bring(existing.window); return }

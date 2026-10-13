@@ -72,6 +72,21 @@ struct EditorTopBar: View {
             if let err = model.saveError {
                 StatusLine(tone: .error, text: err).lineLimit(1).frame(maxWidth: 280)
             }
+            Menu {
+                Button("Library") { app?.openLibrary() }
+                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.bundle.url]) }
+                Divider()
+                Button("Move to Trash…", role: .destructive) { app?.moveToTrash(model.bundle) }
+            } label: {
+                Image(systemName: "ellipsis.circle").font(.system(size: 15))
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .tint(.secondary)
+            .foregroundStyle(.secondary)
+            .fixedSize()
+            .help("More")
+            .accessibilityLabel("More")
             HStack(spacing: 2) {
                 Button { model.undoManager.undo() } label: { Image(systemName: "arrow.uturn.backward") }
                     .buttonStyle(IconButtonStyle(size: 28))

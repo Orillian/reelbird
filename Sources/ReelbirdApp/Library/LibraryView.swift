@@ -25,7 +25,7 @@ struct LibraryView: View {
                     .onKeyPress(.return) { open(store.selectedItem); return .handled }
                     .onKeyPress(keys: [.delete]) { press in
                         guard press.modifiers.contains(.command), let item = store.selectedItem else { return .ignored }
-                        store.moveToTrash(item); return .handled
+                        trash(item); return .handled
                     }
                     .onKeyPress(keys: [.leftArrow, .upArrow]) { _ in store.moveSelection(-1); return .handled }
                     .onKeyPress(keys: [.rightArrow, .downArrow]) { _ in store.moveSelection(1); return .handled }
@@ -122,6 +122,10 @@ struct LibraryView: View {
         }
     }
 
+    private func trash(_ item: LibraryItem) {
+        if let app { app.moveToTrash(item.bundle) } else { store.moveToTrash(item) }
+    }
+
     private func open(_ item: LibraryItem?) {
         guard let item else { return }
         app?.open(bundle: item.bundle)
@@ -133,7 +137,7 @@ struct LibraryView: View {
         Button("Show in Finder") { store.reveal(item) }
         Button("Duplicate") { store.duplicate(item) }
         Divider()
-        Button("Move to Trash", role: .destructive) { store.moveToTrash(item) }
+        Button("Move to Trash…", role: .destructive) { trash(item) }
     }
 }
 

@@ -163,6 +163,9 @@ import ReelbirdCore
 
     @objc func exportRecording(_ sender: Any?) { editor?.showExport = true }
     @objc func shareRecording(_ sender: Any?) { editor?.showShare = true }
+    @objc func trashRecording(_ sender: Any?) {
+        if let e = editor { model.moveToTrash(e.bundle) }
+    }
     @objc func revealRecording(_ sender: Any?) {
         if let e = editor { NSWorkspace.shared.activateFileViewerSelecting([e.bundle.url]) }
     }
@@ -205,7 +208,7 @@ import ReelbirdCore
         case #selector(shareRecording(_:)):
             item.title = e?.shareInfo == nil ? "Share Link…" : "Copy Link…"
             return e != nil
-        case #selector(revealRecording(_:)), #selector(goToStart(_:)), #selector(splitAtPlayhead(_:)),
+        case #selector(revealRecording(_:)), #selector(trashRecording(_:)), #selector(goToStart(_:)), #selector(splitAtPlayhead(_:)),
              #selector(addZoom(_:)), #selector(zoomTimelineIn(_:)), #selector(zoomTimelineOut(_:)):
             return e != nil
         case #selector(togglePlay(_:)):
