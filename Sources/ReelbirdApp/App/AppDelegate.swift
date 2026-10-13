@@ -164,10 +164,10 @@ import ReelbirdCore
     @objc func exportRecording(_ sender: Any?) { editor?.showExport = true }
     @objc func shareRecording(_ sender: Any?) { editor?.showShare = true }
     @objc func trashRecording(_ sender: Any?) {
-        if let e = editor { model.moveToTrash(e.bundle) }
+        if let e = editor { model.moveToTrash(e.bundle) } else if libraryHasSelection { model.moveToTrash(model.library.selectedItems.map(\.bundle)) }
     }
     @objc func revealRecording(_ sender: Any?) {
-        if let e = editor { NSWorkspace.shared.activateFileViewerSelecting([e.bundle.url]) }
+        if let e = editor { NSWorkspace.shared.activateFileViewerSelecting([e.bundle.url]) } else if libraryHasSelection { model.library.reveal(model.library.selectedItems) }
     }
     @objc func togglePlay(_ sender: Any?) { editor?.togglePlay() }
     @objc func goToStart(_ sender: Any?) { editor?.seek(source: 0) }
@@ -187,6 +187,13 @@ import ReelbirdCore
 
     @objc func libraryAsGrid(_ sender: Any?) { model.library.gridLayout = true }
     @objc func libraryAsList(_ sender: Any?) { model.library.gridLayout = false }
+    /// Edit ▸ Select All reaches here (end of the responder chain) only when no text field took it.
+    @objc func selectAll(_ sender: Any?) { if model.windows.libraryIsKey { model.library.selectAll() } }
+
+    /// The library is key, has a selection, and isn't editing text (where ⌘⌫ deletes to the line start).
+    private var libraryHasSelection: Bool {
+        model.windows.libraryIsKey && !model.library.selectedItems.isEmpty && !(NSApp.keyWindow?.firstResponder is NSText)
+    }
 
     // MARK: Menu state
 
@@ -208,7 +215,11 @@ import ReelbirdCore
         case #selector(shareRecording(_:)):
             item.title = e?.shareInfo == nil ? "Share Link…" : "Copy Link…"
             return e != nil
-        case #selector(revealRecording(_:)), #selector(trashRecording(_:)), #selector(goToStart(_:)), #selector(splitAtPlayhead(_:)),
+        case #selector(revealRecording(_:)), #selector(trashRecording(_:)):
+            return e != nil || libraryHasSelection
+        case #selector(selectAll(_:)):
+            return model.windows.libraryIsKey && !model.library.filtered.isEmpty
+        case #selector(goToStart(_:)), #selector(splitAtPlayhead(_:)),
              #selector(addZoom(_:)), #selector(zoomTimelineIn(_:)), #selector(zoomTimelineOut(_:)):
             return e != nil
         case #selector(togglePlay(_:)):

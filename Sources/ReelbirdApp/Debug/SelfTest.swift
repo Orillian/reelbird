@@ -51,6 +51,7 @@ import ReelbirdRender
         let store = LibraryStore(services: services, prefs: prefs)
         store.reload()
         check(store.items.count == 1, "library lists the recording")
+        librarySelection(services: services, prefs: prefs, check: check)
 
         // Editor
         guard let editor = try? EditorModel(bundle: bundle, services: services) else { check(false, "editor opens"); return false }
@@ -192,5 +193,42 @@ import ReelbirdRender
 
         print(failures.isEmpty ? "SELFTEST-LIVE PASS" : "SELFTEST-LIVE FAIL (\(failures.count))")
         return failures.isEmpty
+    }
+}
+
+extension SelfTest {
+    /// Library multi-selection: click, ⌘-click, ⇧-click ranges, ⇧-arrows, select all, rubber band, trash neighbour.
+    static func librarySelection(services: Services, prefs: Preferences, check: (Bool, String) -> Void) {
+        let store = LibraryStore(services: services, prefs: prefs)
+        let items = (0..<6).map { i in
+            LibraryItem(bundle: ProjectBundle(url: URL(fileURLWithPath: "/tmp/sel-\(i).reelbird")), title: "Take \(i)", duration: 10,
+                        createdAt: Date(), shareURL: nil, sharePolished: false, recovered: false, cameraIncluded: false)
+        }
+        store.setForSnapshot(items, posters: [:])
+        let id = items.map(\.id)
+        store.click(id[1], modifiers: [])
+        check(store.selection == [id[1]], "library: click selects one")
+        store.click(id[4], modifiers: .shift)
+        check(store.selection == Set(id[1...4]), "library: ⇧-click selects the range from the anchor")
+        store.click(id[2], modifiers: .command)
+        check(store.selection == Set([id[1], id[3], id[4]]), "library: ⌘-click toggles")
+        store.click(id[0], modifiers: [])
+        store.moveSelection(1, extend: true)
+        store.moveSelection(1, extend: true)
+        check(store.selection == Set(id[0...2]), "library: ⇧-arrows extend from the anchor")
+        store.moveSelection(1)
+        check(store.selection == [id[3]], "library: arrow moves a single selection")
+        store.selectAll()
+        check(store.selectedItems.count == 6, "library: select all")
+        store.setMarqueeSelection([id[4], id[5]], base: [id[0]])
+        check(store.selection == Set([id[0], id[4], id[5]]), "library: ⌘ rubber band adds to the selection")
+        store.selection = [id[2], id[3]]
+        store.selectNeighbour(afterRemoving: [id[2], id[3]])
+        check(store.selection == [id[4]], "library: trashing the selection selects the next item")
+        store.query = "Take 5"
+        store.selectAll()
+        check(store.selection == [id[5]], "library: select all covers only matching recordings")
+        store.clearSelection()
+        check(store.selection.isEmpty, "library: clear")
     }
 }

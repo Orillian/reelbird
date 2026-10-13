@@ -2,23 +2,35 @@ import AppKit
 import ReelbirdCore
 
 extension AppModel {
-    /// Asks, then moves a recording to the Trash: closes its editor first and, if it was shared,
-    /// can delete the share link too. Restorable from the Trash in Finder.
-    func moveToTrash(_ bundle: ProjectBundle) {
-        let manifest = try? bundle.readManifest()
-        let editTitle = (try? bundle.readEdit())?.title
-        let title = (editTitle?.isEmpty == false ? editTitle : nil) ?? manifest?.title
-            ?? bundle.url.deletingPathExtension().lastPathComponent
+    /// Asks, then moves a recording to the Trash (see `moveToTrash(_:)` for several).
+    func moveToTrash(_ bundle: ProjectBundle) { moveToTrash([bundle]) }
+
+    /// Asks once, then moves recordings to the Trash: closes their editors first and, if any were
+    /// shared, can delete their share links too. Restorable from the Trash in Finder.
+    func moveToTrash(_ bundles: [ProjectBundle]) {
+        guard !bundles.isEmpty else { return }
+        let manifests = bundles.map { try? $0.readManifest() }
+        let shared = manifests.compactMap { $0?.share }
 
         let alert = NSAlert()
-        alert.messageText = "Move “\(title)” to the Trash?"
-        alert.informativeText = "You can put it back from the Trash in Finder."
+        if bundles.count == 1, let only = bundles.first {
+            let editTitle = (try? only.readEdit())?.title
+            let title = (editTitle?.isEmpty == false ? editTitle : nil) ?? manifests.first??.title
+                ?? only.url.deletingPathExtension().lastPathComponent
+            alert.messageText = "Move “\(title)” to the Trash?"
+            alert.informativeText = "You can put it back from the Trash in Finder."
+        } else {
+            alert.messageText = "Move \(bundles.count) recordings to the Trash?"
+            alert.informativeText = "You can put them back from the Trash in Finder."
+        }
         alert.addButton(withTitle: "Move to Trash")
         alert.addButton(withTitle: "Cancel")
         alert.buttons.first?.hasDestructiveAction = true
         var unshare: NSButton?
-        if manifest?.share != nil, services.share.loadDestination() != nil {
-            let box = NSButton(checkboxWithTitle: "Also delete its share link", target: nil, action: nil)
+        if !shared.isEmpty, services.share.loadDestination() != nil {
+            let label = bundles.count == 1 ? "Also delete its share link"
+                : shared.count == 1 ? "Also delete the share link" : "Also delete their \(shared.count) share links"
+            let box = NSButton(checkboxWithTitle: label, target: nil, action: nil)
             box.state = .on
             alert.accessoryView = box
             unshare = box
@@ -26,21 +38,46 @@ extension AppModel {
         NSApp.activate()
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        windows.closeEditor(for: bundle)
-        do {
-            try FileManager.default.trashItem(at: bundle.url, resultingItemURL: nil)
-        } catch {
-            present(error, title: "Couldn't move the recording to the Trash")
-            return
+        bundles.forEach { windows.closeEditor(for: $0) }
+        var trashedShares: [ShareInfo] = []
+        var failure: (any Error)?
+        var failed = 0
+        var trashed: Set<URL> = []
+        for (bundle, manifest) in zip(bundles, manifests) {
+            do {
+                try FileManager.default.trashItem(at: bundle.url, resultingItemURL: nil)
+                trashed.insert(bundle.url)
+                if let info = manifest?.share { trashedShares.append(info) }
+            } catch {
+                failure = failure ?? error
+                failed += 1
+            }
         }
+        library.selectNeighbour(afterRemoving: trashed)
         library.reload()
-        if unshare?.state == .on, let info = manifest?.share,
-           let dest = services.share.loadDestination(), let secret = services.share.secret() {
-            let share = services.share
-            Task {
+        if let failure {
+            present(failure, title: failed == bundles.count
+                ? (failed == 1 ? "Couldn't move the recording to the Trash" : "Couldn't move the recordings to the Trash")
+                : "Couldn't move \(failed) of the \(bundles.count) recordings to the Trash")
+        }
+
+        guard unshare?.state == .on, !trashedShares.isEmpty,
+              let dest = services.share.loadDestination(), let secret = services.share.secret() else { return }
+        let share = services.share
+        Task {
+            var firstError: (any Error)?
+            var errors = 0
+            for info in trashedShares {
                 do { try await share.unpublish(info, destination: dest, secret: secret) } catch {
-                    self.present(error, title: "The recording is in the Trash, but its link couldn't be deleted")
+                    firstError = firstError ?? error
+                    errors += 1
                 }
+            }
+            if let firstError {
+                let title = trashedShares.count == 1
+                    ? "The recording is in the Trash, but its link couldn't be deleted"
+                    : "The recordings are in the Trash, but \(errors) of their links couldn't be deleted"
+                self.present(firstError, title: title)
             }
         }
     }

@@ -216,6 +216,33 @@ import SwiftUI
             store.gridLayout = false
             return AnyView(LibraryView(store: store, app: nil))
         })
+        scenes.append(Scene(name: "library-multiselect", size: CGSize(width: 1080, height: 700), backdrop: false) {
+            let store = LibraryStore(services: services, prefs: prefs)
+            store.setForSnapshot(libraryItems, posters: posters)
+            store.selection = Set([1, 2, 4].map { libraryItems[$0].id })
+            return AnyView(LibraryView(store: store, app: nil))
+        })
+        scenes.append(Scene(name: "library-multiselect-list", size: CGSize(width: 1080, height: 700), backdrop: false) {
+            let store = LibraryStore(services: services, prefs: prefs)
+            store.setForSnapshot(libraryItems, posters: posters)
+            store.gridLayout = false
+            store.selection = Set([1, 2, 3].map { libraryItems[$0].id })
+            return AnyView(LibraryView(store: store, app: nil))
+        })
+        scenes.append(Scene(name: "library-marquee", size: CGSize(width: 1080, height: 700), backdrop: false) {
+            let store = LibraryStore(services: services, prefs: prefs)
+            store.setForSnapshot(libraryItems, posters: posters)
+            store.selection = Set([1, 2, 5, 6].map { libraryItems[$0].id })
+            store.marquee = CGRect(x: 380, y: 150, width: 430, height: 270)
+            return AnyView(LibraryView(store: store, app: nil))
+        })
+        scenes.append(Scene(name: "library-hover-menu", size: CGSize(width: 1080, height: 700), backdrop: false) {
+            let store = LibraryStore(services: services, prefs: prefs)
+            store.setForSnapshot(libraryItems, posters: posters)
+            store.selection = [libraryItems[0].id]
+            store.snapshotHover = libraryItems[2].id
+            return AnyView(LibraryView(store: store, app: nil))
+        })
         scenes.append(Scene(name: "library-empty", size: CGSize(width: 1080, height: 700), backdrop: false) {
             AnyView(LibraryView(store: LibraryStore(services: services, prefs: prefs), app: nil))
         })

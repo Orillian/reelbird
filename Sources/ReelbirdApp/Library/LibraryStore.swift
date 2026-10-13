@@ -20,8 +20,16 @@ struct LibraryItem: Identifiable, Equatable {
     private(set) var posters: [URL: CGImage] = [:]
     var query = ""
     var gridLayout = true
-    /// The highlighted recording (click to select, Return to open, ⌘⌫ to trash).
-    var selection: URL?
+    /// The selected recordings (click, ⌘-click, ⇧-click, ⌘A, rubber band; Return opens, ⌘⌫ trashes).
+    var selection: Set<URL> = []
+    /// Where ⇧-click and ⇧-arrow ranges start: the last item clicked without ⇧.
+    private(set) var anchor: URL?
+    /// The end of the current ⇧ range, moved by the arrow keys.
+    @ObservationIgnored private var lead: URL?
+    /// The rubber-band rectangle while dragging, in the library's content coordinates.
+    var marquee: CGRect?
+    /// Snapshots only: draws this tile as if the pointer were over it.
+    @ObservationIgnored var snapshotHover: URL?
 
     @ObservationIgnored private let services: Services
     @ObservationIgnored private let prefs: Preferences
@@ -41,6 +49,9 @@ struct LibraryItem: Identifiable, Equatable {
         let bundles = prefs.library.list()
         items = bundles.compactMap(Self.item(for:))
         loadedAt = Date()
+        let ids = Set(items.map(\.id))
+        if !selection.isSubset(of: ids) { selection.formIntersection(ids) }
+        if let a = anchor, !ids.contains(a) { anchor = nil; lead = nil }
         loadPosters()
     }
 
@@ -108,8 +119,6 @@ struct LibraryItem: Identifiable, Equatable {
         if !items.contains(where: { $0.id == b.url }) { reload() }
     }
 
-    func reveal(_ item: LibraryItem) { NSWorkspace.shared.activateFileViewerSelecting([item.bundle.url]) }
-
     func duplicate(_ item: LibraryItem) {
         let base = item.bundle.url.deletingPathExtension().lastPathComponent
         var dest = item.bundle.url.deletingLastPathComponent().appendingPathComponent("\(base) copy.\(ProjectBundle.pathExtension)")
@@ -136,30 +145,114 @@ struct LibraryItem: Identifiable, Equatable {
         }
     }
 
-    func moveToTrash(_ item: LibraryItem) {
-        do {
-            try FileManager.default.trashItem(at: item.bundle.url, resultingItemURL: nil)
-            if selection == item.id {
-                let list = filtered
-                let i = list.firstIndex { $0.id == item.id } ?? 0
-                selection = list.indices.contains(i + 1) ? list[i + 1].id : (i > 0 ? list[i - 1].id : nil)
+    /// Trashes without asking (snapshots and previews; the app goes through `AppModel.moveToTrash`).
+    func moveToTrash(_ trashed: [LibraryItem]) {
+        var gone: Set<URL> = []
+        for item in trashed {
+            do {
+                try FileManager.default.trashItem(at: item.bundle.url, resultingItemURL: nil)
+                gone.insert(item.id)
+            } catch {
+                NSSound.beep()
             }
-            items.removeAll { $0.id == item.id }
-            posters[item.id] = nil
-        } catch {
-            NSSound.beep()
+        }
+        selectNeighbour(afterRemoving: gone)
+        items.removeAll { gone.contains($0.id) }
+        for id in gone { posters[id] = nil }
+    }
+
+    /// Before `ids` leave the library: if they were the selection, selects the next item after them
+    /// (or the one before), so the keyboard can carry on.
+    func selectNeighbour(afterRemoving ids: Set<URL>) {
+        guard !ids.isEmpty, !selection.isEmpty, selection.isSubset(of: ids) else { selection.subtract(ids); return }
+        let list = filtered
+        let last = list.lastIndex { ids.contains($0.id) } ?? -1
+        let first = list.firstIndex { ids.contains($0.id) } ?? 0
+        let next = list[(last + 1)...].first { !ids.contains($0.id) } ?? list[..<first].last
+        if let next { select(next.id) } else { clearSelection() }
+    }
+
+    // MARK: Selection
+
+    /// The selected recordings that are visible, in display order.
+    var selectedItems: [LibraryItem] { filtered.filter { selection.contains($0.id) } }
+
+    /// The first selected recording in display order (Return opens it).
+    var selectedItem: LibraryItem? { filtered.first { selection.contains($0.id) } }
+
+    func isSelected(_ id: URL) -> Bool { selection.contains(id) }
+
+    /// Selects one recording and makes it the anchor.
+    func select(_ id: URL) {
+        selection = [id]
+        anchor = id
+        lead = id
+    }
+
+    /// A click on a recording: plain selects it alone, ⌘ toggles it, ⇧ selects the range from the anchor.
+    func click(_ id: URL, modifiers: NSEvent.ModifierFlags) {
+        if modifiers.contains(.shift), let a = anchor {
+            let range = self.range(from: a, to: id)
+            selection = modifiers.contains(.command) ? selection.union(range) : range
+            lead = id
+        } else if modifiers.contains(.command) {
+            if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
+            anchor = id
+            lead = id
+        } else {
+            select(id)
         }
     }
 
-    /// Moves the selection by `delta` places in the visible list.
-    func moveSelection(_ delta: Int) {
+    func selectAll() {
         let list = filtered
-        guard !list.isEmpty else { return }
-        let i = list.firstIndex { $0.id == selection } ?? (delta > 0 ? -1 : list.count)
-        selection = list[min(max(0, i + delta), list.count - 1)].id
+        selection = Set(list.map(\.id))
+        anchor = list.first?.id
+        lead = list.last?.id
     }
 
-    var selectedItem: LibraryItem? { filtered.first { $0.id == selection } }
+    func clearSelection() {
+        if !selection.isEmpty { selection = [] }
+        anchor = nil
+        lead = nil
+    }
+
+    /// Sets the selection from a rubber band (`base` is what was selected before the drag, kept with ⌘).
+    func setMarqueeSelection(_ hits: Set<URL>, base: Set<URL>) {
+        let next = base.union(hits)
+        if next != selection { selection = next }
+        if let first = filtered.first(where: { hits.contains($0.id) }) {
+            anchor = first.id
+            lead = filtered.last { hits.contains($0.id) }?.id
+        }
+    }
+
+    /// Moves the selection by `delta` places in the visible list; `extend` (⇧) grows the range from the anchor.
+    func moveSelection(_ delta: Int, extend: Bool = false) {
+        let list = filtered
+        guard !list.isEmpty else { return }
+        let from = lead.flatMap { l in list.firstIndex { $0.id == l } }
+            ?? list.firstIndex { selection.contains($0.id) }
+        let i = from ?? (delta > 0 ? -1 : list.count)
+        let target = list[min(max(0, i + delta), list.count - 1)].id
+        if extend, let a = anchor, from != nil {
+            selection = range(from: a, to: target)
+            lead = target
+        } else {
+            select(target)
+        }
+    }
+
+    private func range(from a: URL, to b: URL) -> Set<URL> {
+        let list = filtered
+        guard let i = list.firstIndex(where: { $0.id == a }), let j = list.firstIndex(where: { $0.id == b }) else { return [b] }
+        return Set(list[min(i, j)...max(i, j)].map(\.id))
+    }
+
+    func reveal(_ items: [LibraryItem]) {
+        guard !items.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(items.map(\.bundle.url))
+    }
 
     func copyLink(_ item: LibraryItem) {
         guard let url = item.shareURL else { return }

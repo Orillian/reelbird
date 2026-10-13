@@ -90,10 +90,12 @@ extension View {
     /// capture glass). Used only for the floating controls layer the HIG reserves glass for: the
     /// recording control bar, its warnings and toasts. Content (editor, library, settings) stays on
     /// solid surfaces. `glass: false` keeps a solid panel on every version: the source picker is dense content
-    /// (thumbnails, small labels) that has to stay legible over any desktop.
-    @MainActor @ViewBuilder func floatingSurface(cornerRadius: CGFloat, snapshot: Bool, glass: Bool = true) -> some View {
+    /// (thumbnails, small labels) that has to stay legible over any desktop. `movesWindow: false` is for
+    /// bars floating inside a window (the library's selection bar), which shouldn't drag it.
+    @MainActor @ViewBuilder func floatingSurface(cornerRadius: CGFloat, snapshot: Bool, glass: Bool = true,
+                                                 movesWindow: Bool = true) -> some View {
         // Empty space on every floating panel drags it (SwiftUI's hosting view never moves the window itself).
-        let draggable = self.background(WindowDragArea())
+        let draggable = self.background { if movesWindow { WindowDragArea() } }
         if #available(macOS 26, *), glass, !snapshot || GlassOverride.inSnapshots {
             draggable.glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         } else {
