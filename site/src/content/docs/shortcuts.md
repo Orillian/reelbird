@@ -3,7 +3,7 @@ title: "Keyboard shortcuts"
 seoTitle: "Reelbird keyboard shortcuts"
 description: "Every Reelbird keyboard shortcut: start and stop from any app, the picker, the countdown, and the editor timeline."
 order: 3
-updated: "2026-10-12"
+updated: "2026-10-13"
 source: "README.md"
 ---
 

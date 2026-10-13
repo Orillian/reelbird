@@ -3,7 +3,7 @@ title: "The .reelbird project format"
 seoTitle: "The .reelbird project format"
 description: "A folder of standard MP4 files, JSON and an event log with relative paths. Spec for tools that read or write Reelbird projects."
 order: 7
-updated: "2026-10-12"
+updated: "2026-10-13"
 source: "docs/FORMAT.md"
 ---
 
@@ -54,9 +54,27 @@ Positions in events and edits are normalized to the captured area: `(0, 0)` top-
 {"t":2.500,"type":"cursor","image":"a1b2c3"}
 {"t":3.000,"type":"pause"}
 {"t":5.000,"type":"resume"}
+{"t":6.120,"type":"camera","x":0.0521,"y":0.0926,"rect":{"x":0,"y":0,"width":0.1042,"height":0.1852},"shape":"circle"}
 ```
 
-`button` is 0 for left, 1 for right, 2 for other. `key` events appear only when keystroke recording was on; for a window recording, only keys typed while that window's app was in front. `cursor` names a file stem in `cursors/`. A `focus` event with a `rect` (normalized) is reserved for focused-element frames; current builds don't write it.
+`button` is 0 for left, 1 for right, 2 for other. `key` events appear only when keystroke recording was on; for a window recording, only keys typed while that window's app was in front. `cursor` names a file stem in `cursors/`. `camera` is the live camera bubble (recordings with a camera): logged when recording starts (`t` 0, where the bubble was when the countdown ended), then whenever a drag or a resize ends, on the same clock as the pointer; a move made while paused is logged at the resume. `rect` is the bubble's frame and `x`, `y` its centre, normalized to the captured area and moved to the nearest place fully inside it (a bubble beside a recorded window or area, or on another display, lands at its edge); `shape` is its shape. A `focus` event with a `rect` (normalized) is reserved for focused-element frames; current builds don't write it.
+
+## Camera
+
+`edit.json → camera` places the camera bubble, an overlay on the output canvas (it never zooms with the screen):
+
+```json
+{"visible": true, "shape": "circle", "size": 0.22, "corner": "bottomRight", "inset": 0.035,
+ "x": 0.5, "y": 1, "moves": [{"t": 12.4, "x": 0, "y": 0}], "mirror": true, "blurBackground": false}
+```
+
+- `shape`: `circle` (default), `roundedSquare` (a square with continuous "squircle" corners: superellipse arcs of exponent 4 with a radius of 31% of the side, like a macOS app icon) or `portrait` (a 3:4 tile with the same corners). Older files' `roundedRect` reads as `roundedSquare`. The camera frame is cropped around its centre to the shape's aspect, never stretched.
+- `size`: the circle's diameter (and the square's side) as a fraction of the canvas's shorter side. The portrait tile is 1.15 × that tall and 3:4, about the same area.
+- `x`, `y`: where the bubble sits, 0…1 across the room it can move in: 0 = against the left (top) edge at `inset`, 1 = against the right (bottom) edge, 0.5 = centred. The corners are (0, 0), (1, 0), (0, 1), (1, 1). Measured in that room, the bubble keeps its spot relative to the frame through any aspect, padding, crop or zoom, and never leaves the canvas. Either may be absent: it then comes from `corner` (`topLeft`, `topRight`, `bottomLeft`, `bottomRight`), so files written before free placement place it exactly as before.
+- `moves`: changes of place on the recording timeline, sorted by `t`: from `t` the bubble glides to (`x`, `y`) over 300 ms (cubic ease in and out); a move that starts mid-glide sets off from wherever the bubble is. Empty = it stays in one place.
+- `inset`: the gap to the edge it is against, as a fraction of the shorter side.
+
+The first time a recording opens (no `edit.json` yet), the place comes from its `camera` events: the first is the start place, each later one a move. The recorded frame maps to `x`, `y` by how far the bubble was across the room it could move in on the visible screen, measured with the same proportional inset; within 2% of an edge (1% of the centre) it lands exactly there. So the live bubble's default spot, bottom right at 3.5% of the screen's shorter side, becomes the editor's default corner.
 
 ## Crop
 
