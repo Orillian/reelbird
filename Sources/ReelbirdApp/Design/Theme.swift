@@ -92,10 +92,12 @@ extension View {
     /// solid surfaces. `glass: false` keeps a solid panel on every version: the source picker is dense content
     /// (thumbnails, small labels) that has to stay legible over any desktop.
     @MainActor @ViewBuilder func floatingSurface(cornerRadius: CGFloat, snapshot: Bool, glass: Bool = true) -> some View {
+        // Empty space on every floating panel drags it (SwiftUI's hosting view never moves the window itself).
+        let draggable = self.background(WindowDragArea())
         if #available(macOS 26, *), glass, !snapshot || GlassOverride.inSnapshots {
-            self.glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            draggable.glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         } else {
-            self.background(
+            draggable.background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(Color(nsColor: .rbPanel).opacity(snapshot || !glass ? 1 : 0.92))
                     .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -122,3 +124,20 @@ enum TimeFormat {
 /// `@State` is a macro in the macOS 27 SDK and the Command Line Tools ship without the
 /// SwiftUI macro plugin, so views use the property wrapper through this alias instead.
 typealias ViewState<T> = SwiftUI.State<T>
+
+/// A view that moves its window when dragged. Placed behind panel content, so buttons keep their clicks
+/// and everything else picks up the panel.
+struct WindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { DragView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class DragView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func mouseDown(with event: NSEvent) {
+            // Title-bar behaviour: double-click zooms a titled window; anything else drags it.
+            if event.clickCount == 2, let w = window, w.styleMask.contains(.titled) { w.performZoom(nil); return }
+            window?.performDrag(with: event)
+        }
+    }
+}

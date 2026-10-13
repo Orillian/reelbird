@@ -10,6 +10,7 @@ struct EditorView: View {
     var body: some View {
         VStack(spacing: 0) {
             EditorTopBar(model: model, app: app)
+                .background(WindowDragArea())
             Divider()
             HStack(spacing: 0) {
                 VStack(spacing: 0) {

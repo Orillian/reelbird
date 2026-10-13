@@ -10,6 +10,7 @@ struct LibraryView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+                .background(WindowDragArea())
             Divider()
             if store.items.isEmpty {
                 empty

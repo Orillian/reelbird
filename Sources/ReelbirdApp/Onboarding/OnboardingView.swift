@@ -170,6 +170,7 @@ struct OnboardingView: View {
             .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(x: 24)), removal: .opacity))
         }
         .frame(width: 620, height: 520)
+        .background(WindowDragArea())
         .background(Theme.panel)
         .tint(Theme.accent)
     }
