@@ -5,7 +5,7 @@ const { code, label = "Copy", prompt = true, class: cls = "" } = Astro.props;
 const lines = code.trim().split("\n");
 ---
 <div class:list={["code", cls]}>
-  <pre><code>{lines.map((l) => {
+  <pre tabindex="0"><code>{lines.map((l) => {
     const m = l.match(/^(.*?)(\s+#.*)?$/)!;
     return <span class="ln">{prompt && !l.startsWith("#") && <span class="p" aria-hidden="true">$ </span>}{m[1]}{m[2] && <span class="c">{m[2]}</span>}{"\n"}</span>;
   })}</code></pre>

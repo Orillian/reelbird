@@ -106,7 +106,7 @@ Not needed. The viewer page, playlist and video are all served from the same ori
 
 R2 pricing as of October 2026 ([Cloudflare R2 pricing](https://developers.cloudflare.com/r2/pricing/)):
 
-| | Free each month | Then |
+| Item | Free each month | Then |
 |---|---|---|
 | Storage (Standard) | 10 GB | $0.015 per GB-month |
 | Writes (Class A: uploads) | 1 million | $4.50 per million |

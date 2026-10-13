@@ -192,7 +192,7 @@ const facts: [string, string, string?][] = [
       </header>
       <div class="term" data-reveal>
         <div class="term-bar" aria-hidden="true"><span></span><span></span><span></span></div>
-        <pre class="term-body"><code><span class="t-dim">$</span> claude mcp add reelbird -- \
+        <pre class="term-body" tabindex="0"><code><span class="t-dim">$</span> claude mcp add reelbird -- \
     /Applications/Reelbird.app/Contents/Helpers/reelbird mcp
 
 <span class="t-you">› Record a 20-second demo of the settings page you just changed
@@ -244,12 +244,12 @@ const facts: [string, string, string?][] = [
         </ul>
         <p class="more"><a class="link-arrow" href="/privacy/">Privacy in full</a></p>
       </div>
-      <aside class="facts" aria-label="Reelbird at a glance" data-reveal>
+      <div class="facts" data-reveal>
         <h3>Reelbird at a glance</h3>
         <dl>
           {facts.map(([k, v, href]) => (<div><dt>{k}</dt><dd>{href ? <a href={href}>{v}</a> : v}</dd></div>))}
         </dl>
-      </aside>
+      </div>
     </div>
   </section>
 

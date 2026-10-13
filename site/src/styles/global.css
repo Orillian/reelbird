@@ -24,7 +24,7 @@
   --line-strong: light-dark(rgb(26 21 18 / 0.22), rgb(255 244 232 / 0.22));
   --accent-text: light-dark(var(--coral-text), var(--coral));
   --focus: light-dark(var(--coral-text), var(--coral));
-  --code-bg: light-dark(#f6e8d8, #231d1a);
+  --code-bg: light-dark(#fbefe2, #120e0c);
   --shadow-frame: light-dark(
     0 1px 0 rgb(26 21 18 / 0.04), 0 24px 60px -24px rgb(74 40 20 / 0.35), 0 8px 20px -12px rgb(74 40 20 / 0.18),
     0 1px 0 rgb(0 0 0 / 0.2), 0 30px 80px -30px rgb(0 0 0 / 0.8), 0 0 0 1px rgb(255 244 232 / 0.06)
@@ -264,3 +264,6 @@ th { font-weight: 600; color: var(--text-muted); font-size: var(--step--1); }
   background: var(--bg-raised); font-size: 0.975rem;
 }
 .note strong { font-weight: 600; }
+
+/* Shiki's light comment grey is 4.4:1 on our code background; nudge it to AA. */
+pre.astro-code span[style*="--shiki-light:#66707B"] { --shiki-light: #575f69 !important; }

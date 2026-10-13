@@ -16,7 +16,7 @@ const crumbs = [{ name: "Docs", path: "/docs/" }, ...(path === "/docs/" ? [] : [
 <Base title={seoTitle} description={description} og={path === "/docs/" ? "docs" : `docs-${path.split("/")[2]}`} crumbs={crumbs} type="article"
   schema={[techArticle({ title: seoTitle, description, path, dateModified: updated })]}>
   <div class="wrap docs">
-    <nav class="side" aria-label="Docs">
+    <nav class="side" aria-label="Documentation">
       <p class="side-title"><a href="/docs/">Docs</a></p>
       <ul>
         {docs.map((d) => <li><a href={`/docs/${d.id}/`} aria-current={path === `/docs/${d.id}/` ? "page" : undefined}>{d.data.title}</a></li>)}
@@ -56,6 +56,7 @@ const crumbs = [{ name: "Docs", path: "/docs/" }, ...(path === "/docs/" ? [] : [
 <script>
   // Copy buttons for the Markdown code blocks.
   document.querySelectorAll<HTMLPreElement>(".body pre").forEach((pre) => {
+    pre.tabIndex = 0;
     const wrap = document.createElement("div");
     wrap.className = "md-code";
     pre.replaceWith(wrap);

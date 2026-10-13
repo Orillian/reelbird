@@ -22,8 +22,8 @@ const current = (href: string) => (path === href || (href !== "/" && path.starts
     </nav>
     <div class="actions">
       <a class="icon-btn gh" href={GITHUB_URL} aria-label="Reelbird on GitHub"><Icon name="github" /></a>
-      <button class="icon-btn theme" type="button" aria-label="Theme: system" data-theme-toggle>
-        <Icon name="monitor" class="t-system" /><Icon name="sun" class="t-light" /><Icon name="moon" class="t-dark" />
+      <button class="icon-btn theme" type="button" aria-label="Switch theme" data-theme-toggle>
+        <Icon name="sun" class="t-light" /><Icon name="moon" class="t-dark" />
       </button>
       <a class="btn btn-ink btn-sm dl" href="/download/">Download</a>
       <button class="icon-btn menu-btn" type="button" popovertarget="mobile-nav" aria-label="Menu"><Icon name="menu" /></button>
@@ -43,19 +43,27 @@ const current = (href: string) => (path === href || (href !== "/" && path.starts
 </header>
 
 <script>
-  // Cycles system → light → dark. The choice lives in localStorage; "system" removes it.
+  // Flips between light and dark. A choice that matches the system setting is forgotten,
+  // so the site follows the system again; any other choice is kept in localStorage.
   const btn = document.querySelector<HTMLButtonElement>("[data-theme-toggle]");
   const root = document.documentElement;
-  const order = ["system", "light", "dark"] as const;
-  type Mode = (typeof order)[number];
-  const read = (): Mode => (root.dataset.theme === "light" || root.dataset.theme === "dark" ? root.dataset.theme : "system");
-  const show = (m: Mode) => { btn?.setAttribute("data-mode", m); btn?.setAttribute("aria-label", `Theme: ${m}. Change theme`); };
-  show(read());
+  const mq = matchMedia("(prefers-color-scheme: dark)");
+  const effective = () => (root.dataset.theme === "light" || root.dataset.theme === "dark" ? root.dataset.theme : mq.matches ? "dark" : "light");
+  const show = () => {
+    const now = effective();
+    btn?.setAttribute("data-mode", now);
+    btn?.setAttribute("aria-label", now === "dark" ? "Switch to light theme" : "Switch to dark theme");
+  };
+  show();
+  mq.addEventListener("change", show);
   btn?.addEventListener("click", () => {
-    const next = order[(order.indexOf(read()) + 1) % order.length];
-    if (next === "system") delete root.dataset.theme; else root.dataset.theme = next;
-    try { if (next === "system") localStorage.removeItem("theme"); else localStorage.setItem("theme", next); } catch {}
-    show(next);
+    const next = effective() === "dark" ? "light" : "dark";
+    const system = mq.matches ? "dark" : "light";
+    try {
+      if (next === system) { delete root.dataset.theme; localStorage.removeItem("theme"); }
+      else { root.dataset.theme = next; localStorage.setItem("theme", next); }
+    } catch { root.dataset.theme = next; }
+    show();
   });
 </script>
 
@@ -87,8 +95,7 @@ const current = (href: string) => (path === href || (href !== "/" && path.starts
   }
   .icon-btn:hover { color: var(--text); background: var(--bg-raised); }
   .theme :global(svg) { display: none; }
-  .theme:not([data-mode]) :global(.t-system), .theme[data-mode="system"] :global(.t-system),
-  .theme[data-mode="light"] :global(.t-light), .theme[data-mode="dark"] :global(.t-dark) { display: block; }
+  .theme:not([data-mode]) :global(.t-light), .theme[data-mode="light"] :global(.t-light), .theme[data-mode="dark"] :global(.t-dark) { display: block; }
   .dl { margin-left: 0.4rem; }
   .menu-btn { display: none; }
 

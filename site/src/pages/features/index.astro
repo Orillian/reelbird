@@ -15,9 +15,9 @@ import warnL from "../../assets/shots/controlbar-warning-light.webp";
 import warnD from "../../assets/shots/controlbar-warning-dark.webp";
 
 const main = [
-  { href: "/features/auto-zoom/", title: "Auto-zoom and a smooth cursor", text: "Zooms planned from your clicks and typing, a cursor redrawn so it glides, and a frame around it all. Every zoom is editable.", img: zoomL, dark: zoomD, alt: "The Zoom inspector and zoom blocks on the editor timeline." },
-  { href: "/features/share-links/", title: "Instant share links", text: "The link is on your clipboard when you stop. Update it after editing and the URL stays the same. Files live in your own bucket.", img: shareL, dark: shareD, alt: "The Shared popover with the link, Copy and Update Link." },
-  { href: "/features/audio-captions/", title: "Audio and captions", text: "Auto level to −16 LUFS, on-device voice enhance, ducking, Cut Long Silences, and captions made on your Mac.", img: audioL, dark: audioD, alt: "The Audio inspector with Enhance voice, Auto level and ducking." },
+  { href: "/features/auto-zoom/", short: "auto-zoom", title: "Auto-zoom and a smooth cursor", text: "Zooms planned from your clicks and typing, a cursor redrawn so it glides, and a frame around it all. Every zoom is editable.", img: zoomL, dark: zoomD, alt: "The Zoom inspector and zoom blocks on the editor timeline." },
+  { href: "/features/share-links/", short: "share links", title: "Instant share links", text: "The link is on your clipboard when you stop. Update it after editing and the URL stays the same. Files live in your own bucket.", img: shareL, dark: shareD, alt: "The Shared popover with the link, Copy and Update Link." },
+  { href: "/features/audio-captions/", short: "audio and captions", title: "Audio and captions", text: "Auto level to −16 LUFS, on-device voice enhance, ducking, Cut Long Silences, and captions made on your Mac.", img: audioL, dark: audioD, alt: "The Audio inspector with Enhance voice, Auto level and ducking." },
 ];
 const more = [
   ["Display, window or area", "Pick any display, any window (even on another desktop) or drag out an area. Return starts, Esc closes."],
@@ -42,7 +42,7 @@ const crumbs = [{ name: "Features", path: "/features/" }];
         <div>
           <h2><a href={m.href}>{m.title}</a></h2>
           <p>{m.text}</p>
-          <p><a class="link-arrow" href={m.href}>Read more</a></p>
+          <p><a class="link-arrow" href={m.href}>More on {m.short}</a></p>
         </div>
         <Shot src={m.img} dark={m.dark} alt={m.alt} sizes="(min-width: 60rem) 640px, 100vw" widths={[640, 960, 1280, 1920]} />
       </section>
@@ -52,9 +52,9 @@ const crumbs = [{ name: "Features", path: "/features/" }];
       <div>
         <h2><a href="/features/agents/">CLI and MCP for agents</a></h2>
         <p>Claude Code, Codex or Cursor can list screens, record a demo of the change they made, export it and hand you the link.</p>
-        <p><a class="link-arrow" href="/features/agents/">Read more</a></p>
+        <p><a class="link-arrow" href="/features/agents/">More on the CLI and MCP</a></p>
       </div>
-      <pre class="mini"><code><span class="d">$</span> reelbird record --display 1 --duration 20 --share{"\n"}<span class="d">$</span> reelbird edit latest --set zoom.intensity=0.7{"\n"}<span class="d">$</span> reelbird share latest --polished{"\n"}<span class="d"># same link, polished video</span></code></pre>
+      <pre class="mini" tabindex="0"><code><span class="d">$</span> reelbird record --display 1 --duration 20 --share{"\n"}<span class="d">$</span> reelbird edit latest --set zoom.intensity=0.7{"\n"}<span class="d">$</span> reelbird share latest --polished{"\n"}<span class="d"># same link, polished video</span></code></pre>
     </section>
 
     <section class="row flip" data-reveal>

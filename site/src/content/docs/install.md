@@ -32,7 +32,7 @@ Reelbird lives in the menu bar. Look for the robin.
 
 Some Command Line Tools installs ship a stale SwiftPM file that breaks every `Package.swift`. The scripts detect this and work around it on their own (see `scripts/env.sh`), so you don't need to do anything. Run `make` to see every target.
 
-### Permissions on first run
+## Permissions on first run
 
 The welcome tour asks for each permission in turn. You can change them later in **Settings… → Permissions** or in **System Settings → Privacy & Security**.
 
@@ -46,7 +46,7 @@ The welcome tour asks for each permission in turn. You can change them later in 
 
 **Screen Recording takes effect only after Reelbird reopens.** After you turn it on, choose **Quit & Reopen** in Reelbird (or quit it from the menu bar and open it again).
 
-### Keep permissions across rebuilds (optional)
+## Keep permissions across rebuilds (optional)
 
 By default the app is signed ad hoc. That signature changes with every build, so macOS forgets the Screen Recording permission each time you rebuild. If you build often, create a local signing certificate once:
 

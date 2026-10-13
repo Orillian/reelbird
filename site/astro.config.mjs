@@ -42,7 +42,7 @@ export default defineConfig({
   devToolbar: { enabled: false },
   prefetch: false,
   markdown: {
-    shikiConfig: { themes: { light: "github-light", dark: "github-dark-dimmed" }, defaultColor: false },
+    shikiConfig: { themes: { light: "github-light-high-contrast", dark: "github-dark-dimmed" }, defaultColor: false },
   },
   fonts: [
     {

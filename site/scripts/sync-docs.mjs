@@ -46,11 +46,11 @@ function section(md, heading) {
     if (m && m[1].length <= level) { end = i; break; }
     if (/^---\s*$/.test(lines[i])) { end = i; break; }
   }
-  // Promote nested headings by (level - 2) so a ### section reads as ##.
-  const shift = level - 2;
+  // The section becomes its own page under an h1, so its subheadings move up a level (### → ##).
+  const shift = level - 1;
   return lines
     .slice(start + 1, end)
-    .map((l) => (shift > 0 && /^#{3,6} /.test(l) ? l.slice(shift) : l))
+    .map((l) => (shift > 0 && /^#{2,6} /.test(l) && !l.startsWith("#".repeat(level) + " ") ? l.slice(shift) : l))
     .join("\n")
     .trim();
 }
@@ -171,6 +171,7 @@ for (const p of pages) {
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/\[(?:docs\/)?(SHARING|FORMAT|ARCHITECTURE)\.md\]/g, (_, f) => `[${{ SHARING: "Sharing setup", FORMAT: "Project format", ARCHITECTURE: "Architecture" }[f]}]`)
     .replace(/\]\(([^)\s]+)\)/g, (_, href) => `](${rewriteLink(href, p.id)})`)
+    .replace(/^\| \|/gm, "| Item |") // a table header cell must not be empty
     .replace(/\n{3,}/g, "\n\n");
   const fm = [
     "---",
