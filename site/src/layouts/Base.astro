@@ -17,11 +17,13 @@ interface Props {
   schema?: object[];
   noindex?: boolean;
   type?: "website" | "article";
+  /** Append " · Reelbird" to the title (skipped when the title already names it). */
+  brand?: boolean;
 }
-const { title, description, og = "home", crumbs = [], schema = [], noindex = false, type = "website" } = Astro.props;
+const { title, description, og = "home", crumbs = [], schema = [], noindex = false, type = "website", brand = true } = Astro.props;
 const canonical = new URL(Astro.url.pathname, SITE_URL).toString();
 const ogImage = abs(`/og/${og}.png`);
-const fullTitle = title.includes(SITE_NAME) ? title : `${title} · ${SITE_NAME}`;
+const fullTitle = !brand || title.includes(SITE_NAME) ? title : `${title} · ${SITE_NAME}`;
 const nodes = [organization(), website(), ...schema];
 if (crumbs.length) nodes.push(breadcrumbs([{ name: "Home", path: "/" }, ...crumbs]));
 const ld = JSON.stringify(graph(...nodes)).replace(/</g, "\\u003c");
