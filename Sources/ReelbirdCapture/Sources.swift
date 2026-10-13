@@ -54,10 +54,16 @@ public enum CaptureSources {
         }
         let hidden: Set<String> = ["com.apple.dock", "com.apple.WindowManager", "com.apple.controlcenter",
                                    "com.apple.notificationcenterui", "com.apple.Spotlight"]
+        let invisible = transparentWindowIDs()
         for w in content.windows {
-            guard w.windowLayer == 0, w.isOnScreen, w.frame.width >= 64, w.frame.height >= 64 else { continue }
+            // Real app windows only: normal layer, visible, big enough to be worth recording. Small floating
+            // helpers (tool palettes, "controls" panels, badges) and transparent overlays are left out.
+            guard w.windowLayer == 0, w.isOnScreen, w.frame.width >= 160, w.frame.height >= 100,
+                  !invisible.contains(w.windowID) else { continue }
             guard let app = w.owningApplication, app.processID != pid, !hidden.contains(app.bundleIdentifier) else { continue }
-            let title = (w.title?.isEmpty == false ? w.title : nil) ?? app.applicationName
+            let untitled = w.title?.isEmpty != false
+            if untitled && (w.frame.width < 400 || w.frame.height < 300) { continue }
+            let title = (untitled ? nil : w.title) ?? app.applicationName
             guard !title.isEmpty else { continue }
             let scale = scaleForPoint(CGPoint(x: w.frame.midX, y: w.frame.midY))
             out.append(AvailableSource(
@@ -65,6 +71,18 @@ public enum CaptureSources {
                 pixelSize: PixelSize(width: even(w.frame.width * scale), height: even(w.frame.height * scale)),
                 frame: w.frame,
                 source: .window(id: w.windowID, app: app.applicationName, title: title)))
+        }
+        return out
+    }
+
+    /// On-screen windows the window server draws fully transparent (invisible overlays some apps keep).
+    static func transparentWindowIDs() -> Set<CGWindowID> {
+        guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return [] }
+        var out = Set<CGWindowID>()
+        for w in info {
+            if let alpha = w[kCGWindowAlpha as String] as? Double, alpha < 0.05,
+               let id = w[kCGWindowNumber as String] as? Int { out.insert(CGWindowID(id)) }
         }
         return out
     }

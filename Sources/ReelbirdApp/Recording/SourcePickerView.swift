@@ -19,6 +19,12 @@ struct SourcePickerView: View {
                 .padding(.horizontal, Theme.Space.l)
                 .padding(.top, Theme.Space.m)
                 .padding(.bottom, Theme.Space.m)
+            if let notice = model.notice {
+                StatusLine(tone: .warning, text: notice)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Theme.Space.l)
+                    .padding(.bottom, Theme.Space.s)
+            }
             sourceArea
                 .frame(height: 214)
                 .padding(.horizontal, Theme.Space.l)

@@ -20,7 +20,9 @@ struct AreaSelection: Equatable {
     private(set) var cameras: [MediaDevice] = []
     private(set) var micLevel: Double = 0
     var selectedDisplayID: String?
-    var selectedWindowID: String?
+    var selectedWindowID: String? { didSet { if selectedWindowID != oldValue { notice = nil } } }
+    /// A one-line note above the sources (e.g. the chosen window closed); the list stays usable.
+    private(set) var notice: String?
     var area: AreaSelection?
     var shareAvailable = false
     var windowQuery = ""
@@ -166,6 +168,9 @@ struct AreaSelection: Equatable {
     /// Sets sources directly (snapshots).
     func apply(_ list: [AvailableSource]) {
         sources = list
+        // Forget a choice that is gone (window closed, display unplugged) instead of failing at Start.
+        if let id = selectedWindowID, !windows.contains(where: { $0.id == id }) { selectedWindowID = nil }
+        if let id = selectedDisplayID, !displays.contains(where: { $0.id == id }) { selectedDisplayID = nil }
         let last = prefs.lastSourceID
         if selectedDisplayID == nil {
             selectedDisplayID = displays.first(where: { $0.id == last })?.id ?? displays.first?.id
@@ -196,6 +201,16 @@ struct AreaSelection: Equatable {
         microphoneAccess = microphone
         cameraAccess = camera
         lowDiskBytes = lowDisk
+    }
+
+    /// Re-lists sources and reports whether `source` still exists. A window can close while the picker
+    /// is open; then the list refreshes and the picker says so instead of recording failing.
+    func stillAvailable(_ source: CaptureSource) async -> Bool {
+        guard case .window(let id, _, _) = source, let list = try? await services.capture.list() else { return true }
+        apply(list)
+        let found = list.contains { if case .window(let wid, _, _) = $0.source { return wid == id } else { return false } }
+        if !found { notice = "That window has closed. Pick another one." }
+        return found
     }
 
     /// The capture source for the current tab and selection.

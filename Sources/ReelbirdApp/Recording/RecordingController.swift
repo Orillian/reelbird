@@ -108,10 +108,13 @@ import ReelbirdCore
             return
         }
         guard let source = picker.captureSource() else { NSSound.beep(); return }
-        if case .window(_, let appName, _) = source { recordedAppName = appName } else { recordedAppName = nil }
-        pickerPanel?.dismiss()
-        picker.stopMeters()
-        start(options: makeOptions(source: source))
+        Task {
+            guard await picker.stillAvailable(source), phase == .picking else { NSSound.beep(); return }
+            if case .window(_, let appName, _) = source { recordedAppName = appName } else { recordedAppName = nil }
+            pickerPanel?.dismiss()
+            picker.stopMeters()
+            start(options: makeOptions(source: source))
+        }
     }
 
     func beginAreaSelection() {
