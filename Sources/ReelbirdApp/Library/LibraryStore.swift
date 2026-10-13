@@ -148,7 +148,7 @@ struct LibraryItem: Identifiable, Equatable {
             }
             reload()
         } catch {
-            NSSound.beep()
+            Beep.play()
         }
     }
 
@@ -160,7 +160,7 @@ struct LibraryItem: Identifiable, Equatable {
                 try FileManager.default.trashItem(at: item.bundle.url, resultingItemURL: nil)
                 gone.insert(item.id)
             } catch {
-                NSSound.beep()
+                Beep.play()
             }
         }
         selectNeighbour(afterRemoving: gone)

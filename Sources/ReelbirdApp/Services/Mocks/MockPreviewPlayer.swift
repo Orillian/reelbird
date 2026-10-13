@@ -27,6 +27,8 @@ import ReelbirdCore
 
     func setHearOriginal(_ on: Bool) {}
     func voiceStemDidChange() {}
+    /// Draws only; it never makes a sound.
+    var isMuted: Bool { true }
 
     func update(edit: EditDocument) {
         timeline = EditTimeline(duration: sourceDuration, trim: edit.trim, cuts: edit.cuts)

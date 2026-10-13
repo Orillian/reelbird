@@ -78,6 +78,7 @@ struct LiveRecorder: RecorderService {
     }
     func setHearOriginal(_ on: Bool) { player.hearOriginal = on }
     func voiceStemDidChange() { player.voiceStemDidChange() }
+    var isMuted: Bool { player.isMuted }
 }
 
 struct LiveRender: RenderService {

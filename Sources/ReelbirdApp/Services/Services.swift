@@ -80,6 +80,8 @@ extension RecorderService {
     func setHearOriginal(_ on: Bool)
     /// The voice stem was rendered: swap it in at the playhead.
     func voiceStemDidChange()
+    /// Playback is silent (automated runs).
+    var isMuted: Bool { get }
 }
 
 /// `ReelbirdRender` (PreviewPlayer, Exporter, Thumbnailer) and `ReelbirdCore.Motion.AutoZoomPlanner`.

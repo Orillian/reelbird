@@ -53,6 +53,8 @@ public final class PreviewPlayer: @unchecked Sendable {
         state = SharedState(plan: plan)
         loop = try RenderLoop(context: ctx, state: state)
         mainPlayer.automaticallyWaitsToMinimizeStalling = false
+        // Self tests, snapshots and test suites play silently; the audio taps still run.
+        mainPlayer.isMuted = AutomatedRun.isSilent
         loadTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -110,6 +112,9 @@ public final class PreviewPlayer: @unchecked Sendable {
     }
 
     public var isPlaying: Bool { state.isPlaying }
+
+    /// Whether playback is muted (automated runs: see `AutomatedRun`).
+    public var isMuted: Bool { mainPlayer.isMuted }
 
     /// Applies a new edit: re-plans (cached paths are reused when their inputs didn't change) and redraws.
     @MainActor

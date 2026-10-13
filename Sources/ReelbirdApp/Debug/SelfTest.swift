@@ -56,6 +56,10 @@ import ReelbirdRender
         let prefs = Preferences(defaults: defaults)
         prefs.libraryPath = root.path
         let services = Services.mock(permissions: MockPermissions([.screen: .granted]))
+        check(AutomatedRun.isSilent, "self test runs silently (preview muted, beeps skipped)")
+        let skipped = Beep.skipped
+        Beep.play()
+        check(Beep.skipped == skipped + 1, "an alert beep is skipped in the self test")
         let library = prefs.library
         try? FileManager.default.createDirectory(at: library.root, withIntermediateDirectories: true)
 
@@ -273,6 +277,7 @@ import ReelbirdRender
         for _ in 0..<50 where (editor.player?.duration ?? 0) <= 0 { try? await Task.sleep(for: .milliseconds(100)) }
         check(abs((editor.player?.duration ?? 0) - editor.outputDuration) < 0.05,
               "preview player loads (\(String(format: "%.2f", editor.player?.duration ?? 0)) s)")
+        check(AutomatedRun.isSilent && editor.player?.isMuted == true, "preview player is muted in the self test")
         editor.setZoomIntensity(0.8)
         check(editor.edit.zoom.intensity == 0.8, "zoom intensity")
         editor.cut(TimeRange(start: 1, end: 2))
