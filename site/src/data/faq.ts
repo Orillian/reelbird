@@ -30,7 +30,7 @@ export const FAQ: Faq[] = [
   {
     id: "requirements",
     q: "What do I need?",
-    a: "macOS 15 or later and the Command Line Tools with Swift 6.2 or later. Some features need newer systems: SpeechAnalyzer captions need macOS 26 (macOS 15 uses on-device speech recognition), and titles and chapters need macOS 26 with Apple Intelligence.",
+    a: "macOS 15 or later to run it. To build it, the Command Line Tools for Xcode 26 or later (Swift 6.2 and the macOS 26 SDK), which install on macOS 15.6 and later. It's tested on Apple silicon; it compiles for Intel but hasn't been tested there. Some features need newer systems: SpeechAnalyzer captions need macOS 26 (macOS 15 uses on-device speech recognition), and titles and chapters need macOS 26 with Apple Intelligence.",
   },
   {
     id: "windows",
@@ -62,7 +62,7 @@ export const FAQ: Faq[] = [
   {
     id: "auto-zoom",
     q: "Does it have auto-zoom like Screen Studio?",
-    a: "Yes. It plans zooms from your clicks, has a single intensity slider, and every zoom can be edited or deleted on the timeline. Zooms follow clicks today; focus-follow zoom is on the roadmap.",
+    a: "Yes. It plans zooms from your clicks, has a single intensity slider, and every zoom can be edited or deleted on the timeline. With keystroke recording on, typing bursts get zooms too; zooms that track the focused text field are on the roadmap.",
   },
   {
     id: "privacy",

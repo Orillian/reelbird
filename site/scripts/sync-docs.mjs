@@ -7,6 +7,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -20,6 +21,15 @@ if (!existsSync(join(repo, "docs", "SHARING.md")) || !existsSync(join(repo, "REA
 }
 
 const readme = readFileSync(join(repo, "README.md"), "utf8");
+
+/** Last commit date (YYYY-MM-DD) of a repo file, or today when git isn't available. */
+function updated(file) {
+  try {
+    const d = execFileSync("git", ["log", "-1", "--format=%cs", "--", file], { cwd: repo, encoding: "utf8" }).trim();
+    if (d) return d;
+  } catch {}
+  return new Date().toISOString().slice(0, 10);
+}
 
 /** Returns the README section under `## heading` (or `### heading`), without the heading line. */
 function section(md, heading) {
@@ -57,57 +67,73 @@ const slug = (s) =>
 const pages = [
   {
     id: "install",
+    source: "README.md",
     title: "Install from source",
-    description: "Build Reelbird from source on macOS 15 or later with the Command Line Tools, grant permissions, and keep them across rebuilds.",
+    seoTitle: "Install Reelbird from source on macOS 15+",
+    description: "Clone the repo and run make install. Needs macOS 15 or later and Apple’s Command Line Tools; no Xcode. Permissions and local signing explained.",
     order: 1,
     body: section(readme, "Install from source"),
   },
   {
     id: "sharing",
+    source: "docs/SHARING.md",
     title: "Sharing setup with Cloudflare R2",
-    description: "Connect Reelbird to your own Cloudflare R2 bucket (or any S3-compatible storage) for instant share links. Step by step, with costs and privacy notes.",
+    seoTitle: "Set up Reelbird share links on Cloudflare R2",
+    description: "A one-time, ten-minute setup: an R2 bucket, a scoped API token and a public URL. Costs, privacy and other S3-compatible hosts.",
     order: 2,
     body: splitTitle(readFileSync(join(repo, "docs", "SHARING.md"), "utf8"))[1],
   },
   {
     id: "shortcuts",
+    source: "README.md",
     title: "Keyboard shortcuts",
-    description: "Every Reelbird keyboard shortcut: global record and pause, the picker, countdown and the editor timeline.",
+    seoTitle: "Reelbird keyboard shortcuts",
+    description: "Every Reelbird keyboard shortcut: start and stop from any app, the picker, the countdown, and the editor timeline.",
     order: 3,
     body: section(readme, "Keyboard shortcuts"),
   },
   {
     id: "cli",
+    source: "README.md",
     title: "Command line",
-    description: "The reelbird command line tool: list sources, record, edit, export, caption and share from a terminal or script, with JSON output.",
+    seoTitle: "Reelbird command-line tool reference",
+    description: "Record, edit, export, caption and share from the terminal. Every command takes --json for scripts and agents.",
     order: 4,
     body: section(readme, "Command line"),
   },
   {
     id: "mcp",
+    source: "README.md",
     title: "MCP server for Claude Code, Codex and Cursor",
-    description: "Run reelbird mcp so coding agents can record a demo of their change, export it and hand you the share link. Setup for Claude Code, Codex and Cursor.",
+    seoTitle: "Reelbird MCP server: setup for Claude Code and Cursor",
+    description: "Add the Reelbird MCP server to Claude Code, Codex or Cursor and let agents list screens, record, export and share.",
     order: 5,
     body: section(readme, "MCP server"),
   },
   {
     id: "troubleshooting",
+    source: "README.md",
     title: "Troubleshooting",
-    description: "Fixes for Screen Recording permission loops, Keychain prompts, missing keystrokes, captions on older macOS and recovering a take after a crash.",
+    seoTitle: "Reelbird troubleshooting: permissions and fixes",
+    description: "Screen Recording permission after a rebuild, Keychain prompts, keystrokes, captions and recovering a take after a crash.",
     order: 6,
     body: section(readme, "Troubleshooting"),
   },
   {
     id: "format",
+    source: "docs/FORMAT.md",
     title: "The .reelbird project format",
-    description: "How a .reelbird project is laid out: standard MP4 tracks, JSON edits and an event log, with relative paths. The schema for tools that read or write projects.",
+    seoTitle: "The .reelbird project format",
+    description: "A folder of standard MP4 files, JSON and an event log with relative paths. Spec for tools that read or write Reelbird projects.",
     order: 7,
     body: splitTitle(readFileSync(join(repo, "docs", "FORMAT.md"), "utf8"))[1],
   },
   {
     id: "architecture",
+    source: "docs/ARCHITECTURE.md",
     title: "Architecture",
-    description: "How Reelbird is built: ScreenCaptureKit capture, segmented writers, the Metal compositor, serverless sharing, on-device audio and captions.",
+    seoTitle: "How Reelbird is built: architecture",
+    description: "ScreenCaptureKit capture in 2-second segments, a Metal compositor shared by preview and export, serverless sharing, and on-device audio and captions.",
     order: 8,
     body: splitTitle(readFileSync(join(repo, "docs", "ARCHITECTURE.md"), "utf8"))[1],
   },
@@ -149,8 +175,11 @@ for (const p of pages) {
   const fm = [
     "---",
     `title: ${JSON.stringify(p.title)}`,
+    `seoTitle: ${JSON.stringify(p.seoTitle)}`,
     `description: ${JSON.stringify(p.description)}`,
     `order: ${p.order}`,
+    `updated: ${JSON.stringify(updated(p.source))}`,
+    `source: ${JSON.stringify(p.source)}`,
     "---",
     "",
     "<!-- Generated by scripts/sync-docs.mjs from the repo's README.md and docs/. Edit those, not this file. -->",

@@ -14,6 +14,14 @@ export const APP_VERSION = "0.1.0";
 export const RELEASE_DATE = "2026-10-12";
 export const MIN_MACOS = "macOS 15";
 
+/** What it takes to build and run Reelbird. Say it the same way everywhere. */
+export const REQUIREMENTS = {
+  runs: "macOS 15 or later",
+  tools: "Command Line Tools for Xcode 26 or later",
+  toolsDetail: "Swift 6.2 and the macOS 26 SDK. They install on macOS 15.6 and later.",
+  hardware: "Tested on Apple silicon. It also compiles for Intel Macs on macOS 15, but hasn't been tested on one yet.",
+};
+
 /** One-line description, reused by meta tags, JSON-LD and llms.txt. */
 export const SITE_DESCRIPTION =
   "Reelbird is a free, open-source screen recorder for macOS that copies a share link the moment you stop recording, then lets you polish the same take with auto-zoom, a smooth cursor and captions without changing the link.";
@@ -45,9 +53,9 @@ export const LAUNCH_VIDEO = {
  */
 export const PREBUILT = {
   enabled: false,
-  url: `${GITHUB_RELEASES_URL}/latest/download/Reelbird.zip`,
-  label: "Download Reelbird.zip",
-  note: "Signed and notarised. Unzip and move Reelbird to Applications.",
+  url: `${GITHUB_RELEASES_URL}/download/v${"0.1.0"}/Reelbird-0.1.0.zip`,
+  label: "Download Reelbird 0.1.0 (.zip)",
+  note: "Built by scripts/dist.sh. It's signed ad hoc, not notarised: unzip it, move Reelbird to Applications, open it once, then choose Open Anyway in System Settings → Privacy & Security.",
 };
 
 /** Donations. The /support page and nothing else reads these. */

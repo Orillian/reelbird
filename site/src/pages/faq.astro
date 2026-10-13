@@ -1,0 +1,18 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import Faq from "../components/Faq.astro";
+import CtaBand from "../components/CtaBand.astro";
+import { FAQ } from "../data/faq";
+import { faqPage } from "../lib/jsonld";
+const crumbs = [{ name: "FAQ", path: "/faq/" }];
+---
+<Base title="Reelbird FAQ: free, open-source Mac screen recorder" description="Is Reelbird free? Does it need an account? Is it notarized? Does it work on Windows? Straight answers about the open-source Mac screen recorder." og="faq" crumbs={crumbs} schema={[faqPage(FAQ.map(({ q, a }) => ({ q, a })))]}>
+  <PageHead title="Questions, answered" lede="Straight answers about Reelbird, the free, open-source screen recorder for the Mac. Something missing? Ask on GitHub." crumbs={crumbs} />
+  <div class="wrap faqwrap"><Faq items={FAQ} open="free" /></div>
+  <CtaBand mascot={false} />
+</Base>
+
+<style>
+  .faqwrap { max-width: 52rem; padding-bottom: 3rem; }
+</style>

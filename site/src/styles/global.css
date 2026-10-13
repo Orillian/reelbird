@@ -228,3 +228,38 @@ th { font-weight: 600; color: var(--text-muted); font-size: var(--step--1); }
   mask-composite: intersect;
 }
 .shot img { width: 100%; height: auto; }
+
+/* Page head used by inner pages */
+.page-head { padding-block: clamp(3rem, 2rem + 4vw, 5.5rem) clamp(2rem, 1.5rem + 2vw, 3.5rem); }
+.page-head h1 { font-size: clamp(2.3rem, 1.6rem + 3vw, 3.75rem); margin-top: 0.8rem; max-width: 20ch; }
+.page-head .lede { margin-top: 1.25rem; }
+.crumbs { font-size: var(--step--1); color: var(--text-muted); }
+.crumbs ol { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.crumbs li + li::before { content: "/"; margin-right: 0.4rem; opacity: 0.6; }
+.crumbs a { color: inherit; text-decoration: none; }
+.crumbs a:hover { color: var(--text); }
+
+/* Long-form text: docs, guides, privacy, comparisons */
+.prose { max-width: var(--prose); }
+.prose > * + * { margin-top: 1.1em; }
+.prose h2 { font-size: clamp(1.6rem, 1.3rem + 1.2vw, 2.1rem); margin-top: 2.4em; scroll-margin-top: 5.5rem; }
+.prose h3 { font-size: 1.2rem; margin-top: 2em; scroll-margin-top: 5.5rem; }
+.prose h4 { font-size: 1rem; margin-top: 1.6em; }
+.prose h2 + *, .prose h3 + *, .prose h4 + * { margin-top: 0.7em; }
+.prose ul, .prose ol { padding-left: 1.3rem; }
+.prose li + li { margin-top: 0.4em; }
+.prose li::marker { color: var(--text-muted); }
+.prose a { text-decoration-color: var(--line-strong); }
+.prose a:hover { text-decoration-color: var(--accent-text); }
+.prose strong { font-weight: 600; }
+.prose pre { margin-block: 1.4em; }
+.prose table { margin-block: 1.4em; display: block; overflow-x: auto; }
+.prose blockquote { border-left: 2px solid var(--line-strong); padding-left: 1rem; color: var(--text-muted); }
+.prose hr { border: 0; border-top: 1px solid var(--line); margin-block: 2.5em; }
+.prose .heading-anchor { color: var(--text-muted); text-decoration: none; margin-left: 0.35em; opacity: 0; }
+.prose :is(h2, h3):hover .heading-anchor { opacity: 1; }
+.note {
+  border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 1rem 1.2rem;
+  background: var(--bg-raised); font-size: 0.975rem;
+}
+.note strong { font-weight: 600; }

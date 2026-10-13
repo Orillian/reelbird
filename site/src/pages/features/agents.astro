@@ -1,0 +1,68 @@
+---
+import Feature from "../../layouts/Feature.astro";
+import Code from "../../components/Code.astro";
+const tools = [
+  ["list_sources", "Displays, windows, microphones and cameras, with IDs"],
+  ["start_recording / stop_recording", "Record a display, window or area, optionally sharing while recording"],
+  ["list_projects / project_info", "Recent takes and their details"],
+  ["set_edit", "Zoom intensity, trims, crop, background, captions and more"],
+  ["export", "MP4, HEVC, ProRes or GIF"],
+  ["enhance_voice", "Render the enhanced voice track"],
+  ["generate_captions", "On-device captions"],
+  ["suggest_story", "Title and chapters (Apple Intelligence)"],
+  ["detect_silences", "Find long pauses"],
+  ["share / unshare", "Upload and return the link, or delete it"],
+];
+---
+<Feature
+  seoTitle="Screen recorder with CLI and MCP server: Reelbird"
+  description="Let Claude Code, Codex or Cursor record a demo of the change they made, export it and hand you the link. reelbird CLI with JSON output plus MCP server."
+  path="/features/agents/" og="features-agents" name="CLI and MCP"
+  title="A screen recorder your coding agent can use"
+  lede="The reelbird command line tool and its MCP server drive the same engine as the app. Your agent can record a demo of the change it just made, export it and hand you the link."
+>
+  <section class="fsec wrap fgrid">
+    <div>
+      <h2>Add it to your agent</h2>
+      <p>The tool ships inside the app. <code>reelbird mcp</code> runs an MCP server over stdio.</p>
+      <p>Then ask: “Record a 20-second demo of the settings page you just changed and give me the share link.”</p>
+      <p class="small">Recording through an agent needs Screen Recording permission for the app that runs it, such as your terminal or editor.</p>
+      <p><a class="link-arrow" href="/docs/mcp/">Setup for Codex and Cursor</a></p>
+    </div>
+    <div class="stack">
+      <p class="label">Claude Code</p>
+      <Code code="claude mcp add reelbird -- /Applications/Reelbird.app/Contents/Helpers/reelbird mcp" />
+      <p class="label">Codex</p>
+      <Code code="codex mcp add reelbird -- /Applications/Reelbird.app/Contents/Helpers/reelbird mcp" />
+    </div>
+  </section>
+
+  <section class="fsec wrap">
+    <h2>What the MCP server can do</h2>
+    <div class="table-wrap">
+      <table class="tools">
+        <caption class="sr-only">Reelbird MCP tools</caption>
+        <thead><tr><th scope="col">Tool</th><th scope="col">What it does</th></tr></thead>
+        <tbody>{tools.map(([t, d]) => <tr><th scope="row"><code>{t}</code></th><td>{d}</td></tr>)}</tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="fsec wrap fgrid flip">
+    <div>
+      <h2>Or script it</h2>
+      <p>Every command takes <code>--json</code> for machine-readable output and <code>--library DIR</code> for another folder. A project can be a path, a name from <code>reelbird list</code>, or <code>latest</code>.</p>
+      <p><a class="link-arrow" href="/docs/cli/">Command line reference</a></p>
+    </div>
+    <Code code={"reelbird sources\nreelbird record --display 1 --duration 30\nreelbird edit latest --set zoom.intensity=0.7 --trim 0:05-end\nreelbird captions latest\nreelbird export latest --format mp4 --height 1080\nreelbird share latest --polished"} />
+  </section>
+</Feature>
+
+<style>
+  .stack { display: grid; gap: 0.6rem; }
+  .label { font-size: var(--step--1); font-weight: 600; margin-top: 0.6rem !important; color: var(--text) !important; }
+  .small { font-size: var(--step--1); }
+  .tools { margin-top: 1.5rem; }
+  .tools th[scope="row"] { width: 40%; }
+  .tools td { color: var(--text-muted); }
+</style>

@@ -1,0 +1,46 @@
+---
+// Feature detail pages under /features/.
+import Base from "./Base.astro";
+import PageHead from "../components/PageHead.astro";
+import CtaBand from "../components/CtaBand.astro";
+
+interface Props { seoTitle: string; description: string; path: string; og: string; title: string; lede: string; name: string }
+const { seoTitle, description, path, og, title, lede, name } = Astro.props;
+const crumbs = [{ name: "Features", path: "/features/" }, { name, path }];
+const others = [
+  { href: "/features/auto-zoom/", label: "Auto-zoom and smooth cursor" },
+  { href: "/features/share-links/", label: "Instant share links" },
+  { href: "/features/audio-captions/", label: "Audio and captions" },
+  { href: "/features/agents/", label: "CLI and MCP for agents" },
+].filter((o) => o.href !== path);
+---
+<Base title={seoTitle} description={description} og={og} crumbs={crumbs} type="article">
+  <PageHead title={title} lede={lede} crumbs={crumbs} />
+  <slot name="hero" />
+  <div class="feature-body">
+    <slot />
+  </div>
+  <nav class="wrap others" aria-label="Other features">
+    <p class="eyebrow">More features</p>
+    <ul>{others.map((o) => <li><a class="link-arrow" href={o.href}>{o.label}</a></li>)}</ul>
+  </nav>
+  <CtaBand mascot={false} />
+</Base>
+
+<style>
+  .feature-body { padding-bottom: 2rem; }
+  .others { padding-block: 3rem; border-top: 1px solid var(--line); }
+  .others ul { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 1rem 2.5rem; margin-top: 1rem; }
+  .feature-body :global(.fsec) { padding-block: clamp(3rem, 2rem + 3vw, 5rem); border-top: 1px solid var(--line); }
+  .feature-body :global(.fsec:first-child) { border-top: 0; padding-top: 1rem; }
+  .feature-body :global(.fgrid) { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(2rem, 1rem + 4vw, 5rem); align-items: center; }
+  .feature-body :global(.fgrid.flip > :first-child) { order: 2; }
+  .feature-body :global(.fsec h2) { font-size: var(--step-3); }
+  .feature-body :global(.fsec p) { color: var(--text-muted); margin-top: 1rem; }
+  .feature-body :global(.fsec p strong), .feature-body :global(.fsec li strong) { color: var(--text); font-weight: 600; }
+  .feature-body :global(.fsec ul.plain) { margin-top: 1.25rem; padding-left: 1.1rem; display: grid; gap: 0.6rem; color: var(--text-muted); }
+  @media (max-width: 60rem) {
+    .feature-body :global(.fgrid) { grid-template-columns: 1fr; }
+    .feature-body :global(.fgrid.flip > :first-child) { order: 0; }
+  }
+</style>

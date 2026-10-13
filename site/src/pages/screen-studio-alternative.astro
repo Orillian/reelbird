@@ -1,0 +1,42 @@
+---
+import Alt from "../layouts/Alt.astro";
+const faq = [
+  { id: "is-free", q: "Is Screen Studio free?", a: "No. As of 12 October 2026 it costs $29 a month, or $9 a month billed yearly, and one-time licences are no longer sold to new buyers. Reelbird is free and MIT licensed." },
+  { id: "watermark", q: "Does Reelbird add a watermark?", a: "No. There's no watermark, paid tier or export limit." },
+  { id: "edit-zooms", q: "Can I change the automatic zooms?", a: "Yes. One slider sets how strong they are, from subtle to punchy. On the timeline you can add, move, resize or delete any zoom, and set its depth and focus." },
+  { id: "follow", q: "Do zooms follow typing as well as clicks?", a: "Yes, when Record keystrokes is on: a burst of typing gets its own zoom, framed around where you clicked to type. Zooms that track the focused text field as it moves are on the roadmap." },
+  { id: "export", q: "What can it export?", a: "MP4 (H.264), HEVC, ProRes and GIF, with hardware encoding, at your recording's resolution or a height you pick. Landscape, square, vertical or 4:3." },
+  { id: "open-source", q: "Is Reelbird open source?", a: "Yes, MIT. It's a native Swift app with no third-party dependencies, and the code is on GitHub.", html: "Yes, MIT. It's a native Swift app with no third-party dependencies, and the code is on <a href=\"https://github.com/btahir/reelbird\">GitHub</a>." },
+];
+---
+<Alt
+  seoTitle="Free, open-source Screen Studio alternative: Reelbird"
+  description="Auto-zoom on clicks, a smooth cursor, backgrounds and captions, in a native Mac app that costs nothing. MIT licensed, no subscription, no watermark."
+  path="/screen-studio-alternative/"
+  og="screen-studio-alternative"
+  title="A free, open-source Screen Studio alternative"
+  intro="Reelbird plans zooms from your clicks, redraws the cursor so it glides, and frames the recording with a background, padding and shadow. It's a native Mac app with no subscription and no watermark, and it copies a share link the moment you stop."
+  rival="screen-studio"
+  rows={[
+    ["Price", "Free, MIT licensed", "$29 a month, or $9 a month billed yearly"],
+    ["Platforms", "macOS 15 or later", "macOS"],
+    ["Auto-zoom", "Planned from clicks. One intensity slider. Every zoom editable on the timeline", "Yes"],
+    ["Cursor", "Redrawn from the event log: smooth, resizable, can be hidden", "Smoothed cursor"],
+    ["Share links", "Copied the moment you stop, then updated in place after editing. Hosted in your own bucket", "After export. 1080p60, up to 30 minutes"],
+    ["Licence", "MIT, open source", "Proprietary"],
+    ["Install", "Build from source, a few minutes", "Download the app"],
+  ]}
+  better={[
+    "Years of refinement: more presets, a more mature editor and more export options.",
+    "A signed download with updates. Reelbird is build-from-source for now.",
+    "Share links are hosted for you. Reelbird needs a bucket you own.",
+    "Editor features Reelbird doesn't have yet, such as annotations.",
+  ]}
+  ours={[
+    "You want click-driven auto-zoom without a subscription.",
+    "You want a link the moment you stop, before you've polished anything, and the same link after you have.",
+    "You care about the sound: auto level to −16 LUFS, voice enhance and ducking, all on your Mac.",
+    "You want an open project format and a <a href=\"/docs/cli/\">command line</a> and <a href=\"/docs/mcp/\">MCP server</a> your tools and agents can drive.",
+  ]}
+  faq={faq}
+/>

@@ -1,0 +1,80 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import Icon from "../components/Icon.astro";
+import { PRODUCTS, CHECKED_LABEL } from "../data/compare";
+const cols: [keyof (typeof PRODUCTS)[number], string][] = [
+  ["price", "Price"], ["platforms", "Platforms"], ["openSource", "Open source"], ["links", "Instant share links"], ["autoZoom", "Auto-zoom"], ["notes", "Notes"],
+];
+const crumbs = [{ name: "Compare", path: "/compare/" }];
+---
+<Base
+  title="Mac screen recorders compared: Loom, Screen Studio, Cap"
+  description="Prices, platforms, licences, share links and auto-zoom for Reelbird, Loom, Screen Studio, Cap, OpenScreen, CleanShot X and Tella. Checked October 2026."
+  og="compare"
+  crumbs={crumbs}
+  type="article"
+>
+  <PageHead title="Mac screen recorders compared" lede={`Prices, platforms, licences, share links and auto-zoom for seven screen recorders, checked ${CHECKED_LABEL}. Each row links its source. Prices change, so check before you buy.`} crumbs={crumbs} />
+
+  <section class="wrap tablesec" aria-label="Comparison table">
+    <div class="table-wrap">
+      <table class="cmp">
+        <caption class="sr-only">Screen recorders compared, checked {CHECKED_LABEL}</caption>
+        <thead><tr><th scope="col">App</th>{cols.map(([, l]) => <th scope="col">{l}</th>)}<th scope="col">Sources</th></tr></thead>
+        <tbody>
+          {PRODUCTS.map((p) => (
+            <tr class:list={[p.id === "reelbird" && "ours"]}>
+              <th scope="row">{p.name}</th>
+              {cols.map(([k]) => <td>{p[k] as string}</td>)}
+              <td class="src">{p.sources.map((s) => <a href={s.href}>{s.label}</a>)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    <p class="hint muted">Scroll the table sideways on small screens.</p>
+  </section>
+
+  <section class="wrap prose-sec">
+    <div class="prose">
+      <h2>How to choose</h2>
+      <ul>
+        <li><strong>You need Windows, the web or phones:</strong> Loom, Cap, OpenScreen or Tella. Reelbird and Screen Studio are Mac only.</li>
+        <li><strong>You want team features</strong> such as comments, view counts and shared workspaces: Loom or Tella.</li>
+        <li><strong>You want the most mature auto-zoom editor and don't mind a subscription:</strong> Screen Studio.</li>
+        <li><strong>You want a signed, cross-platform open-source app without share links:</strong> OpenScreen.</li>
+        <li><strong>You want a link the moment you stop, auto-zoom polish under the same link, your own storage and no cost:</strong> Reelbird, if you're happy to build it from source for now.</li>
+      </ul>
+      <h2>Reelbird's limits</h2>
+      <ul>
+        <li>Build from source: there's no signed or notarised download yet.</li>
+        <li>Mac only, macOS 15 or later. Windows and Linux aren't planned.</li>
+        <li>Share links need your own S3-compatible bucket. Cloudflare R2's free tier works, and needs a payment method on file.</li>
+        <li>Zooms follow clicks, and typing when keystroke recording is on. Zooms that track the focused text field, annotations and joining clips are on the roadmap.</li>
+      </ul>
+      <p>More detail: <a href="/loom-alternative/">Reelbird as a Loom alternative</a> and <a href="/screen-studio-alternative/">as a Screen Studio alternative</a>.</p>
+    </div>
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/"><Icon name="download" />Get Reelbird — free</a>
+      <span class="muted caveat">Build from source on macOS 15 or later.</span>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .tablesec { padding-bottom: 3rem; }
+  .cmp { min-width: 68rem; font-size: 0.9rem; }
+  .cmp th[scope="row"] { font-weight: 600; white-space: nowrap; }
+  .cmp td { color: var(--text-muted); }
+  .cmp tr.ours th, .cmp tr.ours td { color: var(--text); background: var(--bg-raised); }
+  .cmp tr.ours th { box-shadow: inset 2px 0 0 var(--text); padding-left: 0.75rem; }
+  .cmp th:first-child { padding-left: 0.75rem; }
+  .src { display: grid; gap: 0.25rem; }
+  .src a { color: inherit; font-size: 0.85rem; }
+  .hint { font-size: var(--step--1); margin-top: 0.75rem; display: none; }
+  .prose-sec { padding-bottom: var(--section); border-top: 1px solid var(--line); padding-top: 1rem; }
+  .cta { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; align-items: center; margin-top: 3rem; }
+  .caveat { font-size: var(--step--1); }
+  @media (max-width: 72rem) { .hint { display: block; } }
+</style>

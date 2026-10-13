@@ -46,7 +46,7 @@ export const softwareApplication = () => ({
   applicationCategory: "MultimediaApplication",
   applicationSubCategory: "Screen recorder",
   operatingSystem: `${MIN_MACOS} or later`,
-  softwareRequirements: "Apple Command Line Tools with Swift 6.2 or later",
+  softwareRequirements: "To build: Command Line Tools for Xcode 26 or later (Swift 6.2, macOS 26 SDK), on macOS 15.6 or later",
   license: "https://opensource.org/licenses/MIT",
   isAccessibleForFree: true,
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
