@@ -51,6 +51,8 @@ public final class LiveShareUploader: ShareSegmentSink {
 
     public func cancel() async { await state.cancel() }
 
+    public func waitUntilUploaded() async -> Bool { await state.waitUntilDone() }
+
     public var backlog: Int { get async { await state.backlog } }
 
     /// The share this uploader is writing, once `begin` has run.
@@ -502,6 +504,17 @@ actor UploadState {
 
     private func timeOut(_ id: UUID) { waiters.removeValue(forKey: id)?.resume() }
 
+    /// Waits (no timeout) until the upload completes, is cancelled or halts. `true` when it completed.
+    func waitUntilDone() async -> Bool {
+        guard layout != nil else { return false }
+        if !completed && !cancelled {
+            await withCheckedContinuation { c in
+                if completed || cancelled { c.resume() } else { waiters[UUID()] = c }
+            }
+        }
+        return completed
+    }
+
     private func resumeWaiters() {
         let w = waiters
         waiters = [:]
@@ -568,7 +581,11 @@ actor UploadState {
               let l = ShareLayout(info: share, destination: destination) else { return nil }
         let url = journalDirectory.appendingPathComponent("\(l.id).json")
         guard let data = try? Data(contentsOf: url),
-              let j = try? JSONCoding.decoder.decode(UploadJournal.self, from: data) else { return nil }
+              let j = try? JSONCoding.decoder.decode(UploadJournal.self, from: data) else {
+            // No journal: the upload finished (or can never resume), so nothing reads the segments again.
+            if !FileManager.default.fileExists(atPath: url.path), manifest.status != .recording { bundle.removeSegments(of: .share) }
+            return nil
+        }
         guard j.bucket == destination.bucket else { return nil }
 
         layout = l
@@ -615,6 +632,8 @@ actor UploadState {
         totalDuration = j.totalDuration ?? manifest.duration
         finalizeTask = Task { await self.finalize() }
         await finalizeTask?.value
+        // Done: the bundle's copies of the stream (its consolidated share.mp4 stays) aren't needed any more.
+        if completed, let m = try? bundle.readManifest(), m.status != .recording { bundle.removeSegments(of: .share) }
         return info
     }
 }

@@ -214,33 +214,51 @@ final class AudioTrackFeed: @unchecked Sendable {
     private var lastIngestHost = 0.0
     private var idlePadded = false
 
+    /// Chunks the writer wasn't ready for, in order, retried before anything newer. AAC in fMP4 closes up
+    /// any hole in the input, so a dropped chunk would shift all later audio against the video. A fixed
+    /// ring (allocated once), so the capture queue never allocates for it.
+    private var pending: [CMSampleBuffer?]
+    private var pendingFrame: [Int64]
+    private var pendingCount: [Int]
+    private var pendingHead = 0
+    private var pendingSize = 0
+    /// Timeline frame up to which the writer has received audio (a gap after it is filled with silence).
+    private var writerEnd: Int64 = 0
+    /// Frames whose audio was lost because the encoder stayed busy past the queue (replaced by silence).
+    private(set) var lostFrames: Int64 = 0
+
     /// Analyses the raw input (microphone track only), before pause muting.
     let monitor: MicrophoneMonitor?
 
-    init(writer: SegmentedWriter, channels: Int, monitor: MicrophoneMonitor? = nil) {
+    /// - Parameter pendingCapacity: chunks held while the encoder is busy (256 is a few seconds).
+    init(writer: SegmentedWriter, channels: Int, monitor: MicrophoneMonitor? = nil, pendingCapacity: Int = 256) {
         self.writer = writer
         self.monitor = monitor
         normalizer = PCMNormalizer(channels: channels)
         factory = PCMBufferFactory(channels: channels)
+        let n = max(1, pendingCapacity)
+        pending = Array(repeating: nil, count: n)
+        pendingFrame = Array(repeating: 0, count: n)
+        pendingCount = Array(repeating: 0, count: n)
     }
 
     var channels: Int { normalizer.channels }
     var writtenSeconds: Double { lock.withLock { Double(nextFrame) / Double(AudioPCM.sampleRate) } }
     var correctionSeconds: Double { lock.withLock { Double(correctionFrames) / Double(AudioPCM.sampleRate) } }
 
-    /// Ingests a host-clock buffer. `origin` = host time of timeline zero. `muted` writes silence (pause).
-    /// Returns the input RMS.
+    /// Ingests a buffer. `host` = its host-clock time (the pipeline's, already corrected when the source
+    /// stamped it on another clock; never re-read from the buffer). `origin` = host time of timeline zero.
+    /// `muted` writes silence (pause). Returns the input RMS.
     @discardableResult
-    func ingest(_ sb: CMSampleBuffer, origin: Double, muted: Bool) -> Float? {
+    func ingest(_ sb: CMSampleBuffer, at host: Double, origin: Double, muted: Bool) -> Float? {
         lock.lock(); defer { lock.unlock() }
         guard let (frames, rms) = normalizer.convert(sb) else { return nil }
         lastIngestHost = HostClock.now()
-        monitor?.ingest(normalizer.output, frames: frames, channels: normalizer.channels,
-                        at: sb.presentationTimeStamp.seconds, paused: muted)
+        monitor?.ingest(normalizer.output, frames: frames, channels: normalizer.channels, at: host, paused: muted)
         let afterIdle = idlePadded
         idlePadded = false
         let rate = Double(AudioPCM.sampleRate)
-        var chunkStart = Int64(((sb.presentationTimeStamp.seconds - origin) * rate).rounded())
+        var chunkStart = Int64(((host - origin) * rate).rounded())
         var offset = 0
         if chunkStart + Int64(frames) <= 0 { return rms }
         if chunkStart < 0 { offset = Int(-chunkStart); chunkStart = 0 }
@@ -304,8 +322,7 @@ final class AudioTrackFeed: @unchecked Sendable {
     }
 
     private func emit(frame: Int64, samples: UnsafePointer<Float>?, frames: Int) {
-        guard let sb = factory.make(frame: frame, samples: samples, frames: frames) else { return }
-        writer.append(audio: sb)
+        if let sb = factory.make(frame: frame, samples: samples, frames: frames) { deliver(sb, frame: frame, frames: frames) }
         if let tap {
             if let samples {
                 tap(frame, samples, frames, normalizer.channels)
@@ -315,6 +332,81 @@ final class AudioTrackFeed: @unchecked Sendable {
                     buf.initialize(repeating: 0)
                     tap(frame, UnsafePointer(buf.baseAddress!), frames, normalizer.channels)
                 }
+            }
+        }
+    }
+}
+
+extension AudioTrackFeed {
+    /// Chunks waiting for the encoder (tests).
+    var pendingChunks: Int { lock.withLock { pendingSize } }
+
+    /// Hands a chunk to the writer, after anything still queued. A busy encoder queues it; a full queue
+    /// gives up its oldest chunk (counted in `lostFrames` and `correctionFrames`, so the drift warning
+    /// shows) and that stretch becomes silence, so later audio stays in sync. Called under `lock`.
+    fileprivate func deliver(_ sb: CMSampleBuffer, frame: Int64, frames: Int) {
+        if pendingSize > 0 { drainPending() }
+        if pendingSize == 0 {
+            switch appendFillingGap(sb, frame: frame, frames: frames) {
+            case .appended, .closed: return
+            case .notReady: break
+            }
+        }
+        if pendingSize == pending.count {
+            let lost = pendingCount[pendingHead]
+            pending[pendingHead] = nil
+            pendingHead = (pendingHead + 1) % pending.count
+            pendingSize -= 1
+            lostFrames += Int64(lost)
+            correctionFrames += Int64(lost)
+        }
+        let slot = (pendingHead + pendingSize) % pending.count
+        pending[slot] = sb
+        pendingFrame[slot] = frame
+        pendingCount[slot] = frames
+        pendingSize += 1
+    }
+
+    /// Appends queued chunks in order until the writer is busy again. Called under `lock`.
+    fileprivate func drainPending() {
+        while pendingSize > 0, let sb = pending[pendingHead] {
+            let result = appendFillingGap(sb, frame: pendingFrame[pendingHead], frames: pendingCount[pendingHead])
+            if result == .notReady { return }
+            pending[pendingHead] = nil   // appended, or the writer closed (nothing more can go in)
+            pendingHead = (pendingHead + 1) % pending.count
+            pendingSize -= 1
+        }
+    }
+
+    /// Appends `sb`, first writing silence over any hole a lost chunk left before `frame`.
+    private func appendFillingGap(_ sb: CMSampleBuffer, frame: Int64, frames: Int) -> SegmentedWriter.AppendResult {
+        while writerEnd < frame {
+            let n = Int(min(Int64(4_800), frame - writerEnd))
+            guard let silence = factory.make(frame: writerEnd, samples: nil, frames: n) else { break }
+            let r = writer.append(audio: silence)
+            guard r == .appended else { return r }
+            writerEnd += Int64(n)
+        }
+        let r = writer.append(audio: sb)
+        if r == .appended { writerEnd = max(writerEnd, frame + Int64(frames)) }
+        return r
+    }
+
+    /// At stop: keeps retrying queued chunks for up to `timeout` seconds so the take ends complete.
+    func flushPending(timeout: Double) {
+        let deadline = HostClock.now() + timeout
+        while true {
+            let left = lock.withLock { () -> Int in drainPending(); return pendingSize }
+            if left == 0 || HostClock.now() > deadline { break }
+            usleep(2_000)
+        }
+        lock.withLock {
+            // Whatever the encoder never took is lost; count it so it isn't silent.
+            while pendingSize > 0 {
+                lostFrames += Int64(pendingCount[pendingHead])
+                pending[pendingHead] = nil
+                pendingHead = (pendingHead + 1) % pending.count
+                pendingSize -= 1
             }
         }
     }

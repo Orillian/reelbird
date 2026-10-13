@@ -8,11 +8,12 @@ Demo.reelbird/
   edit.json         every edit (EditDocument)
   events.jsonl      one input event per line
   cursors/          cursor images (<id>.png at 2x) + cursors.json
-  screen/           init.mp4, seg_00001.m4s, …, index.m3u8, and screen.mp4 once finished
+  screen/           screen.mp4 (while recording: init.mp4, seg_00001.m4s, …, index.m3u8)
   camera/           same layout (optional)
   microphone/       same layout, audio only (optional)
   systemAudio/      same layout, audio only (optional)
   share/            the quick-share stream (optional; its timeline skips paused ranges)
+  .lock             empty lock file (see Recovery)
   captions.vtt      optional
   transcript.json   optional, word-timed transcript behind captions.vtt (source timeline)
   analysis.json     optional cache: loudness, noise floor and speech ranges of the audio (AudioAnalysis)
@@ -20,6 +21,8 @@ Demo.reelbird/
   crop-suggestion.json  optional cache: the detected browser toolbar (CropSuggestion)
   exports/          rendered files
 ```
+
+`edit.json` also carries `revision`, a counter every writer (the editor, `reelbird edit`, MCP `set_edit`) raises by one, so an editor with the project open notices outside changes. It picks them up straight away when it has no unsaved changes of its own, and merges them setting by setting when it does. Where both changed the same setting, the editor's choice stays and the other version is saved next to it as `edit.outside-<date>-<time>.json`. Closing the editor writes `edit.json` only if something changed there.
 
 The Swift types in `Sources/ReelbirdCore` are the schema: `ProjectManifest` for `project.json`, `EditDocument` for `edit.json`, `InputEvent` for each line of `events.jsonl`. Readers ignore unknown keys and fill missing keys with defaults, so files written by older or newer versions still open.
 
@@ -44,7 +47,7 @@ Positions in events and edits are normalized to the captured area: `(0, 0)` top-
 {"t":5.000,"type":"resume"}
 ```
 
-`button` is 0 for left, 1 for right, 2 for other. `key` events appear only when keystroke recording was on. `cursor` names a file stem in `cursors/`. A `focus` event with a `rect` (normalized) is reserved for focused-element frames; current builds don't write it.
+`button` is 0 for left, 1 for right, 2 for other. `key` events appear only when keystroke recording was on; for a window recording, only keys typed while that window's app was in front. `cursor` names a file stem in `cursors/`. A `focus` event with a `rect` (normalized) is reserved for focused-element frames; current builds don't write it.
 
 ## Crop
 
@@ -100,6 +103,18 @@ A stem plays while it was made from the current microphone file and chain versio
 
 `project.json → status` is `recording` while a take is being written, `complete` after a clean stop and `recovered` after a crash recovery. If the project was shared, `share` holds its key, link and last update.
 
+## Tracks while recording and after
+
+While recording, each track folder fills with fragmented MP4: `init.mp4`, 2-second `seg_NNNNN.m4s` files written as they are produced, and an HLS playlist `index.m3u8`. Stopping concatenates them into `<track>.mp4` (no re-encoding), flushes it to disk, reads it back to check it and opens it with AVFoundation. Once `project.json` with status `complete` is safely on disk, the segment files are deleted, so a finished project holds one file per track. `share/` keeps its segments until its live upload has finished (an interrupted upload resumes from them), then they go too. A track whose segments couldn't all be used (a damaged one) keeps them.
+
+## Writes
+
+`project.json` and `edit.json` are written to a temporary file, flushed and renamed over the old one, so a crash or power cut leaves the old or the new file, never a torn one. While recording (every 2 s) the flush is a write barrier (`F_BARRIERFSYNC`, about 0.5 ms); the final `project.json` of a take and every `edit.json` are fully flushed (`F_FULLFSYNC`, then the folder; about 8 ms).
+
 ## Recovery
 
-If the app stops while recording, `project.json` still says `"status": "recording"`. On next launch (or with `reelbird recover PROJECT`) the segments on disk are concatenated, a truncated last segment is dropped, the duration is recomputed, and the status becomes `recovered`.
+If the app stops while recording, `project.json` still says `"status": "recording"`. On next launch (or with `reelbird recover PROJECT`) the segments on disk are concatenated, a truncated last segment is dropped, the duration is recomputed, and the status becomes `recovered`. Segments that all went into the rebuilt file are then deleted, as after a normal stop.
+
+If `project.json` itself is unreadable, recovery rebuilds it from what is on disk: tracks from their folders (segments or finished files) and pauses from `events.jsonl`. The capture source, display scale (2) and frame rate (60) aren't stored anywhere else, so those are guesses.
+
+`.lock` is an advisory `flock` shared by the app, the CLI and the MCP server. The recorder holds it for the whole take (including while it consolidates) and recovery holds it while it rebuilds, so two processes never rebuild the same project at once; a second recovery waits and then finds the work done. The file holds what the holder is doing (`recording`, `recovering` or `cleanup`). The system releases it when a process exits, so a crash never leaves a project locked. Don't delete it while Reelbird might be using the project.

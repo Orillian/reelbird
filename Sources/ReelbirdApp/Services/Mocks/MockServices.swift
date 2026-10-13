@@ -92,7 +92,8 @@ struct MockRecorder: RecorderService {
     func makeSession(options: RecordingOptions, bundleURL: URL, shareSink: (any ShareSegmentSink)?) throws -> any RecordingSessionHandle {
         MockRecordingSession(options: options, bundleURL: bundleURL, shareSink: shareSink)
     }
-    func recoverIfNeeded(_ bundle: ProjectBundle) throws -> Bool {
+    func needsRecovery(_ bundle: ProjectBundle) -> Bool { (try? bundle.readManifest())?.status == .recording }
+    func recoverIfNeeded(_ bundle: ProjectBundle, waitForLock: Bool) throws -> Bool {
         guard var m = try? bundle.readManifest(), m.status == .recording else { return false }
         m.status = .recovered
         try bundle.writeManifest(m)
@@ -253,6 +254,7 @@ final class MockRecordingSession: RecordingSessionHandle, @unchecked Sendable {
 
     var microphoneLevels: MicLevelReading { lock.withLock { pauseStart == nil ? levels : MicLevelReading() } }
     var microphoneTakeSummary: MicTakeSummary? { lock.withLock { summary } }
+    var trackIssues: [TrackKind: String] { get async { [:] } }
 
     func discard() async {
         ticker?.cancel()

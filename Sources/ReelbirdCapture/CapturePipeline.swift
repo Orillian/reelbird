@@ -72,6 +72,7 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
     var onSourceStopped: (@Sendable (any Error) -> Void)?
     /// Called when the camera writer is created (the session adds the track to the manifest).
     var onCameraStarted: (@Sendable (PixelSize) -> Void)?
+    /// The camera writer couldn't be created (encoder, disk); the take goes on without a camera track.
     var onCameraError: (@Sendable (String) -> Void)?
     /// A writer failed (disk full, encoder error). Called from the writer's queue.
     var onWriterFailed: (@Sendable (TrackKind, String) -> Void)?
@@ -300,7 +301,7 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
             return (o, Self.paused(s, host - o), s.closed)
         }
         guard let origin, !closed else { return }
-        let rms = feed.ingest(sb, origin: origin, muted: paused)
+        let rms = feed.ingest(sb, at: host, origin: origin, muted: paused)
         let now = HostClock.now()
         metrics.withLock { m in
             if isMic {
@@ -407,6 +408,9 @@ final class CapturePipeline: FrameSourceOutput, @unchecked Sendable {
         }
         microphone?.pad(to: endTime)
         systemAudio?.pad(to: endTime)
+        // Chunks a busy encoder couldn't take yet go in now, so the track ends complete and in sync.
+        microphone?.flushPending(timeout: 2)
+        systemAudio?.flushPending(timeout: 2)
         mixer?.flush()
     }
 

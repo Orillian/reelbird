@@ -106,16 +106,21 @@ struct Operations: Sendable {
         return (o, url)
     }
 
-    func recordingFinished(_ bundle: ProjectBundle) -> Report {
+    /// `issues`: tracks that stopped early or were left out (`RecordingSession.trackIssues`), reported as
+    /// `warnings` in JSON and in the text, so a missing camera or microphone is never a silent surprise.
+    func recordingFinished(_ bundle: ProjectBundle, issues: [TrackKind: String] = [:]) -> Report {
         let m = try? bundle.readManifest()
+        let warnings = issues.sorted { $0.key.rawValue < $1.key.rawValue }.map { "\($0.key.rawValue): \($0.value)" }
         let json: JSONValue = [
             "bundle": .string(bundle.url.path),
             "duration": JSONValue(m?.duration),
             "status": JSONValue(m?.status.rawValue),
             "shareURL": JSONValue(m?.share?.url),
+            "warnings": .array(warnings.map { .string($0) }),
         ]
         var text = bundle.url.path
         if let s = m?.share?.url { text += "\n\(s)" }
+        for (kind, why) in issues.sorted(by: { $0.key.rawValue < $1.key.rawValue }) { text += "\nWarning: \(kind.rawValue) track: \(why)." }
         return Report(json: json, text: text)
     }
 
@@ -226,6 +231,10 @@ struct Operations: Sendable {
 
     func export(_ project: String, request: ExportRequest, progress: @escaping @Sendable (Double) -> Void) async throws -> Report {
         let bundle = try locator.resolve(project)
+        if let out = request.destination, !request.overwrite, FileManager.default.fileExists(atPath: out.path) {
+            throw CLIError("\(Format.path(out)) already exists.", code: .usage,
+                           hint: "Choose another --out path, or pass --force (MCP: overwrite: true) to replace it.")
+        }
         let edit = try bundle.readEdit()
         let url = try await engine.export(bundle: bundle, edit: edit, request: request, progress: progress)
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? nil

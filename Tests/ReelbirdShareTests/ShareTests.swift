@@ -563,7 +563,8 @@ actor ProgressLog {
         #expect(html.contains(#"<meta name="robots" content="noindex, nofollow">"#))
         #expect(html.contains("A 2:14 screen recording."))
         #expect(html.contains("aspect-ratio:1920 / 1080"))
-        #expect(html.contains("https://github.com/btahir/reelbird"))
+        #expect(html.contains(#"<a href="https://reelbird.shiptiffin.app" rel="noopener">"#))   // "Made with Reelbird" goes to the website
+        #expect(!html.contains("github.com"))
         #expect(html.contains("hls.js@\(ViewerPage.hlsVersion)/dist/hls.light.min.js"))
         #expect(html.contains("sha384-"))
         #expect(!html.contains("{{"))
@@ -578,7 +579,7 @@ actor ProgressLog {
 
     @Test func placeholdersInTheTitleStayText() {
         var m = meta()
-        m.title = #"0;url=https://evil.example/#{{TITLE}}" http-equiv=refresh x="{{META}}{{REPO}}"#
+        m.title = #"0;url=https://evil.example/#{{TITLE}}" http-equiv=refresh x="{{META}}{{SITE}}"#
         let html = ViewerPage.html(m)
         // The quote stays escaped in every tag, so no attribute can break out (the JSON block escapes it as \").
         let tags = html.components(separatedBy: "<").filter { $0.hasPrefix("meta ") }

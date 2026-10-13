@@ -88,6 +88,21 @@ public final class RecordingSession: Sendable {
 
     /// Test hook: pipeline metrics.
     func metrics() async -> CapturePipeline.Metrics? { await engine.pipeline?.metrics.withLock { $0 } }
+
+    /// Tracks that stopped early or were left out of the finished project, with the reason (a camera
+    /// that couldn't start, an encoder that failed, a file that didn't open at stop). Empty when every
+    /// requested track made it. Read it after `stop()` to tell the person; the warnings in `status`
+    /// say the same while recording.
+    public var trackIssues: [TrackKind: String] { get async { await engine.trackIssues } }
+
+    /// Test hook: the next `count` audio appends to `kind`'s writer report a busy encoder.
+    func injectAudioRefusals(_ kind: TrackKind, count: Int) async {
+        guard let p = await engine.pipeline else { return }
+        (kind == .microphone ? p.microphone : p.systemAudio)?.writer.injectAudioRefusals(count)
+    }
+
+    /// Test hook: these tracks fail the AVFoundation check at stop.
+    func failVerification(_ kinds: Set<TrackKind>) async { await engine.setFailVerification(kinds) }
 }
 
 /// Fans status out to any number of subscribers.
@@ -159,6 +174,9 @@ actor SessionEngine {
     private var shareFailure: String?
     private var sourceFailure: String?
     private var trackFailures: [TrackKind: String] = [:]
+    private var failVerification: Set<TrackKind> = []
+    var trackIssues: [TrackKind: String] { trackFailures }
+    func setFailVerification(_ kinds: Set<TrackKind>) { failVerification = kinds }
     private var diskFull = false
     private var freeDiskProbe: @Sendable () -> Int64?
     private var stopTask: Task<ProjectBundle, any Error>?
@@ -167,6 +185,9 @@ actor SessionEngine {
     private var recordingStarted = false
     private var discardRequested = false
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Held from the moment the bundle exists until the take is finalized, discarded or abandoned, so
+    /// recovery (app, CLI or MCP) never touches a take its recorder is still writing or consolidating.
+    private var bundleLock: BundleLock?
 
     let micMonitor: MicrophoneMonitor
     /// The microphone the take is locked to (an explicit device, resolved at start).
@@ -251,6 +272,7 @@ actor SessionEngine {
         try checkNotDiscarded()
         format = fmt
         _ = try ProjectBundle.create(at: bundle.url)
+        bundleLock = try BundleLock.acquire(bundle, purpose: .recording, wait: false)
 
         let (screen, screenSpec) = try EncoderSettings.makeWriter(
             EncoderSettings.screen(size: fmt.pixelSize, frameRate: fmt.frameRate, quality: options.quality)) { spec in
@@ -304,6 +326,9 @@ actor SessionEngine {
                                        cameraDirectory: bundle.directory(for: .camera), shareWriter: shareWriter, composer: composer)
         pipeline.onSourceStopped = { [weak self] error in Task { await self?.sourceStopped(error) } }
         pipeline.onCameraStarted = { [weak self] size in Task { await self?.cameraStarted(size) } }
+        pipeline.onCameraError = { [weak self] message in
+            Task { await self?.writerFailed(.camera, "the camera couldn't start (\(message))") }
+        }
         pipeline.onWriterFailed = { [weak self] kind, message in Task { await self?.writerFailed(kind, message) } }
         self.pipeline = pipeline
         eventLog = try EventLogWriter(url: bundle.eventsURL)
@@ -326,8 +351,9 @@ actor SessionEngine {
         let area: @Sendable () -> CGRect? = { src?.capturedArea() }
         var pointer: (@Sendable (Double) -> NormPoint?)?
         if simulated { pointer = { @Sendable t in src?.simulatedPointer(atHostTime: t) } }
-        let config = InputEventRecorder.Configuration(captureKeystrokes: options.captureKeystrokes,
+        var config = InputEventRecorder.Configuration(captureKeystrokes: options.captureKeystrokes,
                                                       capturedArea: area, simulatedPointer: pointer)
+        if options.captureKeystrokes, case .window(let id, _, _) = fmt.source { config.keystrokeOwnerPID = Self.ownerPID(ofWindow: id) }
         let recorder = InputEventRecorder(log: eventLog, bundle: bundle, configuration: config)
         if fmt.isRealTime { recorder.start(origin: origin) { [weak pipeline] t in pipeline?.isPaused(t) ?? false } }
         self.recorder = recorder
@@ -344,6 +370,13 @@ actor SessionEngine {
         }
     }
 
+    /// The process that owns a window (keystrokes are logged only while it's in front).
+    static func ownerPID(ofWindow id: UInt32) -> pid_t? {
+        guard let list = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(id)) as? [[CFString: Any]],
+              let pid = list.first?[kCGWindowOwnerPID] as? pid_t, pid > 0 else { return nil }
+        return pid
+    }
+
     private func teardownAfterFailedStart() async {
         ticker?.cancel()
         await source?.stop()
@@ -351,6 +384,12 @@ actor SessionEngine {
         await pump?.cancel()
         eventLog?.close()
         try? FileManager.default.removeItem(at: bundle.url)
+        releaseLock()
+    }
+
+    private func releaseLock() {
+        bundleLock?.release()
+        bundleLock = nil
     }
 
     // MARK: Pause / resume
@@ -430,6 +469,7 @@ actor SessionEngine {
         // A track whose segments can't be copied (disk full, I/O error) leaves the project in the
         // `.recording` state so ProjectRecovery finishes it later; nothing on disk is removed.
         var tracks: [TrackInfo] = []
+        var verifiedWhole: Set<TrackKind> = []
         var deferred: (any Error)?
         for (kind, writer, _) in writers {
             var info = m.track(kind) ?? TrackInfo(kind: kind, directory: kind.rawValue, codec: "unknown")
@@ -457,7 +497,7 @@ actor SessionEngine {
                 let asset = AVURLAsset(url: url)
                 let duration = try await asset.load(.duration).seconds
                 let assetTracks = try await asset.load(.tracks)
-                guard !assetTracks.isEmpty, duration.isFinite, duration > 0 else {
+                guard !assetTracks.isEmpty, duration.isFinite, duration > 0, !failVerification.contains(kind) else {
                     throw CaptureError.consolidationFailed(kind, "the file has no playable media")
                 }
                 info.file = summary.file
@@ -468,9 +508,15 @@ actor SessionEngine {
                 info.channels = summary.channels ?? info.channels
                 info.segmentCount = summary.segmentCount
                 tracks.append(info)
+                if summary.includesEverySegment { verifiedWhole.insert(kind) }
             } catch {
                 CaptureLog.debug("verify \(kind): \(error)")
                 if kind == .screen { deferred = error; break }
+                // Left out of the project, but never silently: the person is told, and its segments stay
+                // on disk (they are deleted only for verified tracks).
+                if trackFailures[kind] == nil {
+                    trackFailures[kind] = "its file didn't open after recording (\(Self.reason(error))); its segments are kept in the project"
+                }
             }
         }
         if let deferred {
@@ -480,6 +526,7 @@ actor SessionEngine {
             m.share = manifest?.share ?? m.share
             manifest = m
             try? bundle.writeManifest(m)
+            releaseLock()
             ticker?.cancel()
             phase = .failed
             status.warnings = failureWarnings(at: endTime)
@@ -493,16 +540,43 @@ actor SessionEngine {
         m.status = .complete
         m.share = manifest?.share ?? m.share
         manifest = m
-        try bundle.writeManifest(m)
+        try bundle.writeManifest(m)   // fully flushed: the consolidated files are now what the project points at
+        removeFinishedSegments(tracks, verified: verifiedWhole, manifest: m)
+        releaseLock()
 
         if fmt.hasMicrophone { micMonitor.finish(activeSeconds: max(0, endTime - pausedTotal)) }
         ticker?.cancel()
         phase = failed ? .failed : .finished
-        if failed { status.warnings = failureWarnings(at: endTime) }
+        if failed || !trackFailures.isEmpty { status.warnings = failureWarnings(at: endTime) }
         status.elapsed = max(0, endTime - pausedTotal)
         publish()
         broadcaster.finish()
         return bundle
+    }
+
+    /// The take is finished: each track's consolidated file opened with AVFoundation and `project.json`
+    /// (status `.complete`) is on disk, so the segments are only a second copy. Deletes them for every
+    /// track whose file holds all of its segments. The share stream's segments stay while its live upload
+    /// may still need them (resume after a quit reads them) and go once the upload is done.
+    private func removeFinishedSegments(_ tracks: [TrackInfo], verified: Set<TrackKind>, manifest: ProjectManifest) {
+        let bundle = bundle
+        for t in tracks where verified.contains(t.kind) && t.kind != .share {
+            SegmentStore.removeSegments(directory: bundle.directory(for: t.kind), kind: t.kind)
+        }
+        guard verified.contains(.share) else { return }
+        guard let sink, manifest.share != nil || shareFailure == nil else {
+            // No live upload (sharing failed to start): nothing will read them again.
+            SegmentStore.removeSegments(directory: bundle.directory(for: .share), kind: .share)
+            return
+        }
+        Task.detached(priority: .utility) {
+            guard await sink.waitUntilUploaded() else { return }
+            // Only once the project is still there and finished (not trashed or discarded meanwhile).
+            guard let m = try? bundle.readManifest(), m.status != .recording, m.track(.share)?.file != nil,
+                  let lock = try? BundleLock.acquire(bundle, purpose: .cleanup, wait: false) else { return }
+            defer { lock.release() }
+            SegmentStore.removeSegments(directory: bundle.directory(for: .share), kind: .share)
+        }
     }
 
     // MARK: Discard / crash
@@ -523,6 +597,7 @@ actor SessionEngine {
         if wasRunning || recordingStarted || FileManager.default.fileExists(atPath: bundle.manifestURL.path) {
             try? FileManager.default.removeItem(at: bundle.url)
         }
+        releaseLock()
         phase = .idle
         status = RecorderStatus()
         publish()
@@ -536,6 +611,7 @@ actor SessionEngine {
         pipeline?.abandon()
         eventLog?.close()
         pump?.abandon()
+        releaseLock()   // a crashed process's lock goes with it
         phase = .failed
         publish()
         broadcaster.finish()
@@ -676,6 +752,21 @@ actor SessionEngine {
 
     private func setBacklog(_ b: Int) { backlog = b }
 
+    private static func trackName(_ kind: TrackKind) -> String {
+        switch kind {
+        case .screen: "the screen"
+        case .camera: "the camera"
+        case .microphone: "the microphone"
+        case .systemAudio: "system audio"
+        case .share: "the share stream"
+        }
+    }
+
+    private static func reason(_ error: any Error) -> String {
+        if case CaptureError.consolidationFailed(_, let detail) = error { return detail }
+        return error.localizedDescription
+    }
+
     private func failureWarnings(at t: Double) -> [HealthWarning] {
         var out: [HealthWarning] = []
         if diskFull {
@@ -686,9 +777,13 @@ actor SessionEngine {
         } else if let screen = trackFailures[.screen], !diskFull {
             out.append(HealthWarning(kind: .captureStalled, message: "Recording stopped: \(screen). The recording so far is saved.", since: t))
         }
-        let others = trackFailures.filter { $0.key != .screen && !diskFull }.keys.map(\.rawValue).sorted()
+        let others = trackFailures.filter { $0.key != .screen && !diskFull }.sorted { $0.key.rawValue < $1.key.rawValue }
         if !others.isEmpty, sourceFailure == nil {
-            out.append(HealthWarning(kind: .captureStalled, message: "Stopped recording \(others.joined(separator: ", ")) after an error; the screen keeps recording.", since: t))
+            let tail = phase == .recording || phase == .paused ? "The screen keeps recording." : "The rest of the recording is saved."
+            let message = others.count == 1
+                ? "Stopped recording \(Self.trackName(others[0].key)): \(others[0].value). \(tail)"
+                : "Stopped recording \(others.map { Self.trackName($0.key) }.joined(separator: " and ")) after errors (\(others.map(\.value).joined(separator: "; "))). \(tail)"
+            out.append(HealthWarning(kind: .captureStalled, message: message, since: t))
         }
         return out
     }

@@ -41,6 +41,9 @@ public final class SyntheticFrameSource: FrameSource, @unchecked Sendable {
         public var systemAudioGaps: [TimeRange] = []
         /// Delay before `start` returns and the first frame arrives (a slow ScreenCaptureKit start).
         public var startDelay: Double = 0
+        /// Fault injection: seconds added to every microphone timestamp, so the microphone looks like it
+        /// runs on another clock (e.g. `-start` for a zero-based device clock).
+        public var microphoneClockOffset: Double = 0
         public init() {}
     }
 
@@ -168,8 +171,10 @@ public final class SyntheticFrameSource: FrameSource, @unchecked Sendable {
         let chunk = Int64(configuration.audioChunkFrames)
         while audioFrames + chunk <= target {
             let pts = CMTime(value: Int64((start * sampleRate).rounded()) + audioFrames, timescale: CMTimeScale(sampleRate))
+            let micPTS = configuration.microphoneClockOffset == 0 ? pts
+                : CMTimeAdd(pts, CMTime(seconds: configuration.microphoneClockOffset, preferredTimescale: CMTimeScale(sampleRate)))
             if let s = configuration.microphone, let f = micFormat,
-               let sb = makeAudio(signal: s, format: f, channels: configuration.microphoneChannels, firstFrame: audioFrames, count: Int(chunk), pts: pts) {
+               let sb = makeAudio(signal: s, format: f, channels: configuration.microphoneChannels, firstFrame: audioFrames, count: Int(chunk), pts: micPTS) {
                 out.frameSource(didOutput: sb, of: .microphone)
             }
             let chunkTime = Double(audioFrames) / sampleRate

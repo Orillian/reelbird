@@ -105,6 +105,16 @@ enum CaptionState: Equatable {
     @ObservationIgnored private var stemKey: String?
     @ObservationIgnored private var coalesceKey: String?
     @ObservationIgnored private var coalesceUntil = Date.distantPast
+    /// `edit.json` as this editor last read or wrote it: the base for merging someone else's changes.
+    @ObservationIgnored private var savedEdit: EditDocument
+    /// Its `revision` (0 = no file yet).
+    @ObservationIgnored private var savedRevision: Int
+    /// Changes made here that aren't in `edit.json` yet. Closing writes only when this is set, so an
+    /// editor that changed nothing never overwrites a `reelbird edit` / `set_edit` made meanwhile.
+    @ObservationIgnored private(set) var isDirty = false
+    @ObservationIgnored private var saving = false
+    @ObservationIgnored private var watcher: (any DispatchSourceFileSystemObject)?
+    @ObservationIgnored private var watchDebounce: Task<Void, Never>?
 
     /// `cursorDefaults` apply only to a recording opened for the first time (no edit.json yet).
     init(bundle: ProjectBundle, services: Services, cursorDefaults: CursorSettings? = nil) throws {
@@ -113,7 +123,10 @@ enum CaptionState: Equatable {
         let manifest = try bundle.readManifest()
         let events = (try? bundle.readEvents()) ?? []
         let fresh = !FileManager.default.fileExists(atPath: bundle.editURL.path)
-        var edit = (try? bundle.readEdit()) ?? EditDocument.initial(for: manifest)
+        let stamped = (try? bundle.readEditStamped()) ?? (edit: EditDocument.initial(for: manifest), revision: 0)
+        savedEdit = stamped.edit
+        savedRevision = fresh ? 0 : stamped.revision
+        var edit = stamped.edit
         if fresh, let cursorDefaults { edit.cursor = cursorDefaults }
         if edit.title == nil { edit.title = manifest.title }
         if edit.zoom.mode == .auto && !edit.zoom.regions.contains(where: { $0.source == .auto }) {
@@ -123,8 +136,12 @@ enum CaptionState: Equatable {
         self.manifest = manifest
         self.events = events
         self.edit = edit
+        // Defaults filled in on open (first-time cursor, title, auto zooms) are saved like any change.
+        isDirty = fresh || edit != stamped.edit
         transcript = Self.loadTranscript(bundle: bundle, edit: edit)
     }
+
+    deinit { watcher?.cancel() }
 
     /// The word-timed `transcript.json` when present, else the cues of the edit's captions file.
     static func loadTranscript(bundle: ProjectBundle, edit: EditDocument) -> Transcript? {
@@ -140,6 +157,7 @@ enum CaptionState: Equatable {
     /// Creates the preview player and loads the timeline media. Call once the window exists.
     func attachPlayer() {
         guard player == nil else { return }
+        startWatchingEdits()
         do {
             let p = try services.render.makePreviewPlayer(bundle: bundle)
             p.onTimeChange = { [weak self] output in self?.playerTimeChanged(output) }
@@ -237,6 +255,7 @@ enum CaptionState: Equatable {
     }
 
     private func editDidChange() {
+        isDirty = true
         player?.update(edit: previewEdit)
         clampPlayhead()
         scheduleSave()
@@ -623,21 +642,143 @@ enum CaptionState: Equatable {
     private func scheduleSave() {
         guard autosaveEnabled else { return }
         saveTask?.cancel()
-        let doc = edit
-        let bundle = bundle
         saveTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(600))
             guard !Task.isCancelled else { return }
-            let result = await Task.detached { () -> String? in
-                do { try bundle.writeEdit(doc); return nil } catch { return error.localizedDescription }
-            }.value
-            self?.saveError = result.map { "Edits couldn't be saved: \($0)" }
+            await self?.saveInBackground()
         }
     }
 
+    /// Autosave: merges in any change made outside the editor, then writes off the main thread (a full
+    /// flush takes a few milliseconds) only if `edit.json` is still at the revision it merged with.
+    private func saveInBackground() async {
+        guard isDirty, !saving else { return }
+        mergeExternalEdits()
+        guard isDirty else { return }
+        let doc = edit, expected = savedRevision, bundle = bundle
+        saving = true
+        let result = await Task.detached { () -> Result<Int, any Error> in
+            Result { try bundle.writeEdit(doc, ifRevision: expected) }
+        }.value
+        saving = false
+        switch result {
+        case .success(let revision):
+            didSave(doc, revision: revision)
+            if edit != doc { scheduleSave() }   // changed again while writing
+        case .failure(is EditConflict):
+            scheduleSave()                      // someone wrote in between: merge and try again
+        case .failure(let error):
+            saveError = "Edits couldn't be saved: \(error.localizedDescription)"
+        }
+    }
+
+    /// Saves now (closing the window, quitting, before sharing). Writes nothing when nothing changed here,
+    /// so edits made meanwhile with `reelbird edit` or MCP `set_edit` survive; merges them in otherwise.
     func saveNow() {
         saveTask?.cancel()
-        try? bundle.writeEdit(edit)
+        for _ in 0..<3 {
+            mergeExternalEdits()
+            guard isDirty else { return }
+            do {
+                didSave(edit, revision: try bundle.writeEdit(edit, ifRevision: savedRevision))
+                return
+            } catch is EditConflict {
+                continue
+            } catch {
+                saveError = "Edits couldn't be saved: \(error.localizedDescription)"
+                return
+            }
+        }
+    }
+
+    private func didSave(_ doc: EditDocument, revision: Int) {
+        savedEdit = doc
+        savedRevision = revision
+        saveError = nil
+        if edit == doc { isDirty = false }
+    }
+
+    // MARK: Outside edits
+
+    func stopWatchingEdits() {
+        watchDebounce?.cancel()
+        watcher?.cancel()
+        watcher = nil
+    }
+
+    /// Watches the bundle folder (edit.json is replaced by a rename, which changes the folder) and picks
+    /// up edits made by the CLI or an agent while the editor is open.
+    private func startWatchingEdits() {
+        guard watcher == nil else { return }
+        let fd = open(bundle.url.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename], queue: .main)
+        source.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.watchDebounce?.cancel()
+                self.watchDebounce = Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard !Task.isCancelled else { return }
+                    self?.checkForExternalEdits()
+                }
+            }
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        watcher = source
+    }
+
+    /// Picks up a change someone else made to `edit.json`: applied directly when nothing here is
+    /// unsaved, merged with the unsaved changes otherwise. Undo goes back to the version before it.
+    func checkForExternalEdits() {
+        guard !saving, bundle.readEditRevision() != savedRevision else { return }
+        let wasDirty = isDirty
+        mergeExternalEdits()
+        if !wasDirty {
+            Toast.show(title: "Edits updated", detail: "This recording was changed outside the editor.", symbol: "arrow.triangle.2.circlepath")
+        }
+    }
+
+    /// Brings `edit.json` changes made since `savedRevision` into the editor (3-way merge against
+    /// `savedEdit`). Where both sides changed the same setting, the editor's choice stays and the other
+    /// version is kept next to edit.json (`edit.outside-<time>.json`) with a toast saying so.
+    private func mergeExternalEdits() {
+        guard let (theirs, revision) = try? bundle.readEditStamped(), revision != savedRevision else { return }
+        let merged = EditMerge.merge(base: savedEdit, ours: edit, theirs: theirs)
+        if !merged.conflicts.isEmpty, let kept = keepOutsideVersion(theirs) {
+            Toast.show(title: "Edits made outside the editor clashed with yours",
+                       detail: "Yours were kept (\(merged.conflicts.prefix(3).joined(separator: ", "))). The other version is saved as \(kept).",
+                       symbol: "exclamationmark.triangle.fill", duration: 8)
+        }
+        let unsaved = merged.edit != theirs
+        savedEdit = theirs
+        savedRevision = revision
+        if merged.edit != edit {
+            registerUndo(previous: edit, actionName: "Outside Edit")
+            coalesceKey = nil
+            let captionsChanged = merged.edit.captions.file != edit.captions.file
+            edit = merged.edit
+            if captionsChanged { transcript = Self.loadTranscript(bundle: bundle, edit: merged.edit) }
+            player?.update(edit: previewEdit)
+            clampPlayhead()
+            updateVoiceStem(debounce: true)
+        }
+        isDirty = unsaved
+        if unsaved { scheduleSave() }
+    }
+
+    private func keepOutsideVersion(_ doc: EditDocument) -> String? {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        let name = "edit.outside-\(f.string(from: Date())).json"
+        do {
+            try JSONCoding.writeAtomically(doc, to: bundle.url.appendingPathComponent(name), sync: .full)
+            return name
+        } catch {
+            return nil
+        }
     }
 
     // MARK: Export

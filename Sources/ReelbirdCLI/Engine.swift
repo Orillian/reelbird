@@ -41,6 +41,12 @@ protocol RecordingControl: Sendable {
     func stop() async throws -> ProjectBundle
     /// Stops and deletes the bundle (and any live share upload).
     func discard() async
+    /// After `stop()`: tracks that stopped early or were left out, with the reason.
+    var trackIssues: [TrackKind: String] { get async }
+}
+
+extension RecordingControl {
+    var trackIssues: [TrackKind: String] { get async { [:] } }
 }
 
 enum ExportFormat: String, CaseIterable, Codable, Sendable {
@@ -60,6 +66,8 @@ struct ExportRequest: Hashable, Sendable {
     var frameRate: Int?
     /// Output file; `nil` = `exports/` inside the bundle.
     var destination: URL?
+    /// Replace `destination` if it already exists (`--force`, MCP `overwrite`). Off by default.
+    var overwrite = false
 }
 
 /// Capture, render and share operations the CLI needs from the other Reelbird modules.

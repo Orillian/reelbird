@@ -249,6 +249,7 @@ final class MCPServer: Sendable {
             if let h = req.height, !(16...8640).contains(h) { throw CLIError.usage("height must be between 16 and 8640.") }
             if let f = req.frameRate, !(1...240).contains(f) { throw CLIError.usage("fps must be between 1 and 240.") }
             req.destination = try a.string("out").map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+            req.overwrite = try a.bool("overwrite") ?? false
             return try await ops.export(try a.requiredString("project"), request: req, progress: progress)
         case "generate_captions":
             return try await ops.captions(try a.requiredString("project"), locale: try a.string("locale"), srt: try a.bool("srt") ?? false, progress: progress)
@@ -313,7 +314,10 @@ final class MCPServer: Sendable {
                 try? await Task.sleep(nanoseconds: UInt64(d * 1_000_000_000))
                 guard let session = await state.take(id) else { return }
                 let result: Result<Report, CLIError>
-                do { result = .success(ops.recordingFinished(try await session.control.stop())) } catch { result = .failure(CLIError.wrap(error)) }
+                do {
+                    let bundle = try await session.control.stop()
+                    result = .success(ops.recordingFinished(bundle, issues: await session.control.trackIssues))
+                } catch { result = .failure(CLIError.wrap(error)) }
                 await state.finish(id, result)
             }
         }
@@ -332,7 +336,8 @@ final class MCPServer: Sendable {
             await session.control.discard()
             return Report(json: ["session_id": .string(id), "discarded": true], text: "Recording \(id) discarded.")
         }
-        return ops.recordingFinished(try await session.control.stop())
+        let bundle = try await session.control.stop()
+        return ops.recordingFinished(bundle, issues: await session.control.trackIssues)
     }
 }
 

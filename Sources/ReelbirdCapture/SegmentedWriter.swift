@@ -51,6 +51,9 @@ final class SegmentedWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendabl
         var onFailure: (@Sendable (String) -> Void)?
     }
     private let state = Mutex(State())
+    /// Test fault injection: the next N audio appends report `.notReady` (a busy encoder).
+    private let refusedAudioAppends = Atomic<Int>(0)
+    func injectAudioRefusals(_ n: Int) { refusedAudioAppends.store(n, ordering: .relaxed) }
     /// Serializes appends with `finish`/`abandon` so nothing is appended after inputs are marked finished.
     private let appendLock = NSLock()
 
@@ -152,6 +155,10 @@ final class SegmentedWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendabl
         appendLock.lock(); defer { appendLock.unlock() }
         let ok = state.withLock { $0.started && !$0.closed }
         guard ok, writer.status == .writing else { return .closed }
+        if refusedAudioAppends.load(ordering: .relaxed) > 0 {
+            refusedAudioAppends.subtract(1, ordering: .relaxed)
+            return .notReady
+        }
         // Audio must stay continuous (a dropped buffer would shift everything after it), so wait briefly.
         guard waitUntilReady(audioInput, realTimeWait: 0.05) else { return .notReady }
         guard audioInput.append(sampleBuffer) else { reportEncoderFailure(); return .closed }

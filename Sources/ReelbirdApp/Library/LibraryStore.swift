@@ -99,9 +99,11 @@ struct LibraryItem: Identifiable, Equatable {
             let recovered = await Task.detached(priority: .userInitiated) { () -> Int in
                 var count = 0
                 for b in bundles {
-                    // Skips takes another recorder (the CLI) is still writing.
-                    guard let m = try? b.readManifest(), m.status == .recording, !b.isBeingRecorded(m) else { continue }
-                    if (try? recorder.recoverIfNeeded(b)) == true { count += 1 }
+                    // Skips takes another recorder (the CLI) is still writing, or another process is
+                    // already recovering (the lock is taken without waiting). A damaged project.json counts.
+                    guard recorder.needsRecovery(b) else { continue }
+                    if let m = try? b.readManifest(), b.isBeingRecorded(m) { continue }
+                    if (try? recorder.recoverIfNeeded(b, waitForLock: false)) == true { count += 1 }
                 }
                 return count
             }.value
@@ -142,7 +144,7 @@ struct LibraryItem: Identifiable, Equatable {
             }
             if var e = try? copy.readEdit() {
                 e.title = "\(item.title) copy"
-                try? copy.writeEdit(e)
+                _ = try? copy.writeEdit(e)
             }
             reload()
         } catch {
