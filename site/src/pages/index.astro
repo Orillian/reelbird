@@ -1,0 +1,377 @@
+---
+import Base from "../layouts/Base.astro";
+import HeroVideo from "../components/HeroVideo.astro";
+import Shot from "../components/Shot.astro";
+import BeforeAfter from "../components/BeforeAfter.astro";
+import LaunchVideo from "../components/LaunchVideo.astro";
+import Faq from "../components/Faq.astro";
+import CtaBand from "../components/CtaBand.astro";
+import Icon from "../components/Icon.astro";
+import { GITHUB_URL, SITE_DESCRIPTION, APP_VERSION } from "../config/site";
+import { HOME_FAQ } from "../data/faq";
+import { softwareApplication, softwareSourceCode } from "../lib/jsonld";
+import pickerL from "../assets/shots/picker-light.webp";
+import pickerD from "../assets/shots/picker-dark.webp";
+import hudL from "../assets/shots/hud-light.webp";
+import hudD from "../assets/shots/hud-dark.webp";
+import shareL from "../assets/shots/share-light.webp";
+import shareD from "../assets/shots/share-dark.webp";
+import zoomL from "../assets/shots/editor-zoom-light.webp";
+import zoomD from "../assets/shots/editor-zoom-dark.webp";
+import audioL from "../assets/shots/editor-audio-light.webp";
+import audioD from "../assets/shots/editor-audio-dark.webp";
+import sharingL from "../assets/shots/settings-sharing-light.webp";
+import sharingD from "../assets/shots/settings-sharing-dark.webp";
+
+const audio = [
+  { k: "Auto level", v: "Your voice is measured and set to −16 LUFS, so a quiet take comes out at a normal level." },
+  { k: "Voice enhance", v: "Apple's sound isolation takes out room noise and hum where your Mac has it, then a gentle compressor, de-esser and presence lift." },
+  { k: "Ducking", v: "System audio dips about 12 dB while you speak and comes back when you stop." },
+  { k: "Captions", v: "Made on your Mac by Apple's speech recognition. Burn them in, or offer them as a track viewers can turn on." },
+  { k: "Cut Long Silences", v: "Finds the pauses and removes them in one go. You can restore any cut." },
+  { k: "Safe peaks", v: "A limiter on every track and on the mix, with a −1.5 dBFS ceiling, so nothing clips." },
+];
+
+const details = [
+  { t: "Never loses a take", d: "Every track is written to disk in 2-second segments from the first frame. If your Mac crashes, Reelbird recovers the take on next launch, minus at most two seconds." },
+  { t: "Warns you while it matters", d: "A silent microphone, stalled capture, audio drift, a filling disk or uploads falling behind show up during the recording, not after." },
+  { t: "Separate tracks", d: "Screen, camera, microphone and system audio stay apart, so you can move the camera bubble or mute system sound after recording." },
+  { t: "The usual formats", d: "MP4 (H.264), HEVC, ProRes and GIF with hardware encoding. Landscape, square, vertical or 4:3." },
+  { t: "Native and light", d: "Swift, ScreenCaptureKit and Metal. No Electron and no third-party dependencies." },
+  { t: "Open project format", d: "A take is a .reelbird folder of standard MP4s, JSON and an event log. Nothing is locked in." },
+];
+
+const facts: [string, string, string?][] = [
+  ["What", "Screen recorder for the Mac"],
+  ["Price", "Free"],
+  ["Licence", "MIT", `${GITHUB_URL}/blob/main/LICENSE`],
+  ["Platform", "macOS 15 or later"],
+  ["Built with", "Swift, ScreenCaptureKit, Metal"],
+  ["Install", "Build from source", "/download/"],
+  ["Account", "None"],
+  ["Telemetry", "None"],
+  ["Version", `${APP_VERSION}, October 2026`, "/changelog/"],
+  ["Source", "github.com/btahir/reelbird", GITHUB_URL],
+];
+---
+<Base
+  title="Reelbird: free, open-source screen recorder for Mac"
+  description="Record your Mac screen, camera and mic. A share link is on your clipboard when you stop; add auto-zoom and captions later under the same link. Free, MIT."
+  og="home"
+  schema={[softwareApplication(), softwareSourceCode()]}
+>
+  <section class="hero">
+    <div class="wrap hero-copy">
+      <p class="eyebrow">Free and open source · macOS 15 and later</p>
+      <h1>Record. Get a link.<br /> Polish it later.</h1>
+      <p class="lede hero-lede">{SITE_DESCRIPTION}</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="/download/"><Icon name="download" />Get Reelbird — free</a>
+        <a class="btn btn-ghost" href={GITHUB_URL}><Icon name="github" />Source on GitHub</a>
+      </div>
+      <p class="hero-note">Build from source in a few minutes. Needs Apple's Command Line Tools, not Xcode.</p>
+    </div>
+    <div class="wrap hero-media">
+      <HeroVideo src="/media/hero-demo.mp4" alt="A Reelbird export of a task app: the view zooms in on each click, then out again, with a smooth cursor." />
+      <p class="caption">A real export. Every zoom was planned from the clicks in the recording.</p>
+    </div>
+  </section>
+
+  <section class="section how" id="how" aria-labelledby="how-title">
+    <div class="wrap">
+      <header class="head" data-reveal>
+        <p class="eyebrow">How it works</p>
+        <h2 id="how-title">One take, one link.</h2>
+        <p class="lede">Most tools make you choose between a quick link and a polished video. Reelbird gives you the link first and lets the polish catch up.</p>
+      </header>
+
+      <ol class="steps">
+        <li class="step" data-reveal>
+          <div class="step-text">
+            <span class="num" aria-hidden="true">1</span>
+            <h3>Record</h3>
+            <p>Pick a display, a window or an area. Camera, microphone and system audio record as separate tracks. <kbd>⌥</kbd><kbd>⇧</kbd><kbd>R</kbd> starts from any app.</p>
+          </div>
+          <Shot src={pickerL} dark={pickerD} alt="The Reelbird picker on the Window tab: windows to choose from, and switches for microphone, camera, system audio and Share while recording." sizes="(min-width: 60rem) 560px, 100vw" widths={[560, 840, 1120, 1560]} class="step-shot shot-picker" />
+        </li>
+
+        <li class="step" data-reveal>
+          <div class="step-text">
+            <span class="num" aria-hidden="true">2</span>
+            <h3>Stop. The link is on your clipboard.</h3>
+            <p>With <strong>Share while recording</strong> on, Reelbird uploads a 1080p stream to your own bucket as you go. Paste the link anywhere; it plays in any browser a moment later.</p>
+          </div>
+          <div class="step-visual stop-visual">
+            <Shot src={hudL} dark={hudD} alt="The recording bar: timer at 1:14, microphone level, pause, restart, delete and a Stop button." sizes="(min-width: 60rem) 560px, 100vw" widths={[560, 840, 1120, 1480]} />
+            <Shot src={shareL} dark={shareD} alt="The Shared popover after stopping: the link, a Copy button, Open in Browser and Update Link." sizes="(min-width: 60rem) 400px, 80vw" widths={[400, 600, 920]} class="share-shot" />
+          </div>
+        </li>
+
+        <li class="step" data-reveal>
+          <div class="step-text">
+            <span class="num" aria-hidden="true">3</span>
+            <h3>Polish it. Same link.</h3>
+            <p>Open the take when you have time. Auto-zoom follows your clicks, the cursor glides, captions appear. Choose <strong>Update link</strong> and everyone you sent it to sees the new version.</p>
+          </div>
+          <Shot src={zoomL} dark={zoomD} alt="The Reelbird editor with the Zoom inspector open: Auto zoom with a Subtle to Punchy slider, and zoom regions marked on the timeline." sizes="(min-width: 60rem) 680px, 100vw" widths={[680, 1020, 1360, 2040, 2960]} class="step-shot" />
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="section" id="auto-zoom" aria-labelledby="zoom-title">
+    <div class="wrap">
+      <header class="head" data-reveal>
+        <p class="eyebrow">Auto-zoom and a smooth cursor</p>
+        <h2 id="zoom-title">Zooms that follow your clicks.</h2>
+        <p class="lede">Reelbird logs every click, scroll and pointer move beside the video, then plans zooms from them. One slider sets how far it zooms. Add, move or delete any zoom on the timeline.</p>
+      </header>
+      <div data-reveal><BeforeAfter /></div>
+      <ul class="trio" data-reveal>
+        <li><h3>A cursor that glides</h3><p>The cursor is redrawn from the log, so it moves smoothly instead of jittering. Resize it or hide it after recording.</p></li>
+        <li><h3>Preview is the export</h3><p>Preview and export use the same Metal renderer, so the file looks exactly like what you watched.</p></li>
+        <li><h3>Framed for you</h3><p>Background, padding, rounded corners, shadow, and a camera bubble you can move after the fact.</p></li>
+      </ul>
+      <p class="more" data-reveal><a class="link-arrow" href="/features/auto-zoom/">How auto-zoom works</a></p>
+    </div>
+  </section>
+
+  <section class="section" id="audio" aria-labelledby="audio-title">
+    <div class="wrap">
+      <header class="head" data-reveal>
+        <p class="eyebrow">Audio and captions</p>
+        <h2 id="audio-title">Clear sound without a studio.</h2>
+        <p class="lede">Reelbird treats audio as half the video. It all runs on your Mac, and your original tracks are never changed.</p>
+      </header>
+      <div class="audio-grid">
+        <Shot src={audioL} dark={audioD} alt="The editor's Audio inspector: Enhance voice with a strength setting, Auto level, a microphone boost and Lower system audio while speaking." sizes="(min-width: 60rem) 640px, 100vw" widths={[640, 960, 1280, 1920, 2960]} class="audio-shot" />
+        <div data-reveal>
+          <dl class="specs">
+            {audio.map((a) => (<div class="spec"><dt>{a.k}</dt><dd>{a.v}</dd></div>))}
+          </dl>
+          <p class="more"><a class="link-arrow" href="/features/audio-captions/">Audio and captions in detail</a></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="links" aria-labelledby="links-title">
+    <div class="wrap">
+      <header class="head" data-reveal>
+        <p class="eyebrow">Instant links</p>
+        <h2 id="links-title">Links that live in your own bucket.</h2>
+        <p class="lede">There is no Reelbird server. Share links point at an S3-compatible bucket you own. Cloudflare R2 is the easy choice: 10 GB free each month, and nothing to pay when people watch.</p>
+      </header>
+      <div class="links-grid" data-reveal>
+        <div class="flow" role="img" aria-label="Your Mac uploads to your bucket; viewers open the link in any browser.">
+          <div class="node"><Icon name="monitor" size={22} /><span><strong>Your Mac</strong><span class="muted">records and uploads</span></span></div>
+          <span class="wire" aria-hidden="true"></span>
+          <div class="node"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="7.5" ry="2.75"/><path d="M4.5 6v12c0 1.5 3.4 2.75 7.5 2.75s7.5-1.25 7.5-2.75V6M4.5 12c0 1.5 3.4 2.75 7.5 2.75s7.5-1.25 7.5-2.75"/></svg><span><strong>Your bucket</strong><span class="muted">R2, S3, B2 or MinIO</span></span></div>
+          <span class="wire" aria-hidden="true"></span>
+          <div class="node"><Icon name="link" size={22} /><span><strong>Any browser</strong><span class="muted">no app, no sign-in</span></span></div>
+        </div>
+        <ul class="ticks">
+          <li><strong>Setup takes about ten minutes, once.</strong> A bucket, a scoped API token and a public URL.</li>
+          <li><strong>The link never changes,</strong> even when you update the video.</li>
+          <li><strong>Unlisted, not secret.</strong> Anyone with a link can watch, so share accordingly.</li>
+          <li><strong>Stop sharing</strong> deletes every file under that link.</li>
+        </ul>
+        <Shot src={sharingL} dark={sharingD} variant="frame" alt="Reelbird's Sharing settings: endpoint, bucket, region, access keys, public URL and prefix, with Test Connection and Save." sizes="(min-width: 60rem) 440px, 100vw" widths={[440, 880, 1120]} class="links-shot" />
+      </div>
+      <p class="more" data-reveal><a class="link-arrow" href="/docs/sharing/">Set up sharing with Cloudflare R2</a></p>
+    </div>
+  </section>
+
+  <section class="section" id="agents" aria-labelledby="agents-title">
+    <div class="wrap split agents">
+      <header class="head" data-reveal>
+        <p class="eyebrow">Command line and MCP</p>
+        <h2 id="agents-title">Your coding agent can record the demo.</h2>
+        <p class="lede">The <code>reelbird</code> tool and its MCP server give Claude Code, Codex and Cursor the same engine as the app. Ask for a demo of the change and get a link back.</p>
+        <p class="more"><a class="link-arrow" href="/features/agents/">Reelbird for agents</a></p>
+      </header>
+      <div class="term" data-reveal>
+        <div class="term-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+        <pre class="term-body"><code><span class="t-dim">$</span> claude mcp add reelbird -- \
+    /Applications/Reelbird.app/Contents/Helpers/reelbird mcp
+
+<span class="t-you">› Record a 20-second demo of the settings page you just changed
+  and give me the share link.</span>
+
+<span class="t-dim">  reelbird</span> list_sources      <span class="t-dim">display 1 · Built-in Retina Display</span>
+<span class="t-dim">  reelbird</span> start_recording   <span class="t-dim">display 1 · 20 s · share</span>
+<span class="t-dim">  reelbird</span> stop_recording
+<span class="t-dim">  reelbird</span> share             <span class="t-dim">polished</span>
+
+  Here's the demo: https://video.example.com/r/7Hk2pQx9/</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="details" aria-labelledby="details-title">
+    <div class="wrap">
+      <header class="head" data-reveal>
+        <p class="eyebrow">The details</p>
+        <h2 id="details-title">Built so a take survives.</h2>
+      </header>
+      <ul class="grid6" data-reveal>
+        {details.map((d) => (<li><h3>{d.t}</h3><p>{d.d}</p></li>))}
+      </ul>
+    </div>
+  </section>
+
+  <section class="section" id="video" aria-labelledby="video-title">
+    <div class="wrap">
+      <header class="head" data-reveal>
+        <p class="eyebrow">Walkthrough</p>
+        <h2 id="video-title">See it from record to link.</h2>
+      </header>
+      <div data-reveal><LaunchVideo /></div>
+    </div>
+  </section>
+
+  <section class="section" id="privacy" aria-labelledby="privacy-title">
+    <div class="wrap split">
+      <div data-reveal>
+        <p class="eyebrow">Privacy and open source</p>
+        <h2 id="privacy-title">Nothing leaves your Mac unless you share it.</h2>
+        <ul class="plain">
+          <li>Recordings, edits, captions and transcripts stay in <code>~/Movies/Reelbird</code>.</li>
+          <li>Captions and titles come from Apple's on-device frameworks. No API keys, no cloud.</li>
+          <li>Shares go only to the bucket you set up, signed with your own keys. The secret lives in your Keychain.</li>
+          <li>No account, analytics, telemetry, crash reporting or update checks.</li>
+          <li>MIT licensed. Read every line, change it, ship your own build.</li>
+        </ul>
+        <p class="more"><a class="link-arrow" href="/privacy/">Privacy in full</a></p>
+      </div>
+      <aside class="facts" aria-label="Reelbird at a glance" data-reveal>
+        <h3>Reelbird at a glance</h3>
+        <dl>
+          {facts.map(([k, v, href]) => (<div><dt>{k}</dt><dd>{href ? <a href={href}>{v}</a> : v}</dd></div>))}
+        </dl>
+      </aside>
+    </div>
+  </section>
+
+  <section class="section" id="faq" aria-labelledby="faq-title">
+    <div class="wrap split">
+      <header class="head" data-reveal>
+        <p class="eyebrow">FAQ</p>
+        <h2 id="faq-title">Straight answers.</h2>
+        <p class="more"><a class="link-arrow" href="/faq/">All questions</a></p>
+      </header>
+      <div data-reveal><Faq items={HOME_FAQ} /></div>
+    </div>
+  </section>
+
+  <CtaBand />
+</Base>
+
+<style>
+  /* Hero */
+  .hero { padding-top: clamp(3.5rem, 2rem + 6vw, 7rem); }
+  .hero-copy { display: grid; justify-items: center; text-align: center; }
+  .hero h1 { margin-top: 1.1rem; max-width: 14ch; }
+  .hero-lede { margin: 1.5rem auto 0; max-width: 40rem; font-size: clamp(1.0625rem, 1rem + 0.3vw, 1.2rem); }
+  .hero-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem; margin-top: 2.25rem; }
+  .hero-note { margin-top: 1rem; font-size: var(--step--1); color: var(--text-muted); }
+  .hero-media { margin-top: clamp(3rem, 2rem + 4vw, 5rem); }
+  .caption { margin-top: 1rem; text-align: center; font-size: var(--step--1); color: var(--text-muted); }
+
+  /* Section heads */
+  .head { max-width: 44rem; margin-bottom: clamp(2.5rem, 2rem + 2vw, 4rem); }
+  .head h2 { margin-top: 0.75rem; }
+  .head .lede { margin-top: 1.25rem; }
+  .more { margin-top: 2rem; }
+  .split > .head .more { margin-top: 1.75rem; }
+
+  /* Steps: a rail with numbers */
+  .steps { list-style: none; padding: 0; display: grid; gap: clamp(3.5rem, 2rem + 5vw, 6rem); counter-reset: step; }
+  .step { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(2rem, 1rem + 4vw, 5rem); align-items: center; }
+  .step-text { position: relative; padding-left: 3.75rem; max-width: 28rem; }
+  .num {
+    position: absolute; left: 0; top: -0.2rem;
+    display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 999px;
+    border: 1px solid var(--line-strong); font-family: var(--font-display); font-size: 1.15rem; font-weight: 520;
+  }
+  .step h3 { font-family: var(--font-display); font-weight: 520; font-size: var(--step-2); letter-spacing: -0.015em; line-height: 1.15; }
+  .step p { margin-top: 0.85rem; color: var(--text-muted); }
+  .step p strong { color: var(--text); font-weight: 600; }
+  .step p kbd { margin-inline: 0.05rem; }
+  :global(.shot-picker) { max-width: 31rem; justify-self: center; width: 100%; }
+  .stop-visual { display: grid; justify-items: center; }
+  .stop-visual :global(.share-shot) { width: 72%; margin-top: -3%; }
+
+  /* Auto-zoom trio */
+  .trio { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem 3rem; margin-top: 3rem; }
+  .trio p, .grid6 p { margin-top: 0.5rem; color: var(--text-muted); font-size: 0.975rem; }
+
+  /* Split layout */
+  .split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(2.5rem, 1rem + 5vw, 6rem); align-items: start; }
+  .split > .head { margin-bottom: 0; }
+  .sticky { position: sticky; top: 6rem; }
+
+  /* Audio specs */
+  .specs { border-top: 1px solid var(--line); }
+  .audio-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(2rem, 1rem + 4vw, 4.5rem); align-items: center; }
+  .spec { display: grid; grid-template-columns: 9.5rem 1fr; gap: 1.5rem; padding: 1.2rem 0; border-bottom: 1px solid var(--line); }
+  .spec dt { font-weight: 600; }
+  .spec dd { color: var(--text-muted); }
+
+  /* Links */
+  .links-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); grid-template-areas: "flow flow" "ticks shot"; gap: 2.5rem clamp(2rem, 1rem + 4vw, 5rem); align-items: start; }
+  .flow { grid-area: flow; display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+  .node { flex: none; }
+  .node { display: flex; align-items: center; gap: 0.7rem; padding: 0.85rem 1rem; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--bg-raised); line-height: 1.25; }
+  .node > span { display: grid; font-size: 0.9375rem; }
+  .node .muted { font-size: 0.8125rem; }
+  .wire { flex: 1 1 1.5rem; min-width: 1.5rem; height: 1px; background: repeating-linear-gradient(90deg, var(--text-muted) 0 4px, transparent 4px 8px); }
+  .ticks { grid-area: ticks; list-style: none; padding: 0; display: grid; gap: 1rem; }
+  .ticks li { padding-left: 1.75rem; position: relative; color: var(--text-muted); }
+  .ticks li::before { content: ""; position: absolute; left: 0.1rem; top: 0.55em; width: 0.7rem; height: 0.38rem; border-left: 1.75px solid var(--text); border-bottom: 1.75px solid var(--text); rotate: -45deg; }
+  .ticks strong { color: var(--text); font-weight: 600; }
+  :global(.links-shot) { grid-area: shot; }
+
+  /* Agents terminal: always ink, like a terminal */
+  .term { border-radius: var(--radius-lg); background: #1a1512; color: #fff4e8; box-shadow: var(--shadow-frame); overflow: hidden; border: 1px solid rgb(255 244 232 / 0.08); }
+  .term-bar { display: flex; gap: 0.45rem; padding: 0.85rem 1rem; border-bottom: 1px solid rgb(255 244 232 / 0.08); }
+  .term-bar span { width: 0.7rem; height: 0.7rem; border-radius: 999px; background: rgb(255 244 232 / 0.18); }
+  .term-body { background: transparent; border-radius: 0; padding: 1.25rem 1.4rem 1.5rem; font-size: 0.8125rem; line-height: 1.75; white-space: pre; }
+  .t-dim { color: #a69c93; }
+  .t-you { color: #fff4e8; font-weight: 400; }
+
+  /* Details grid: hairlines, not cards */
+  .grid6 { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); }
+  .grid6 li { padding: 1.75rem 2rem 2rem 0; border-bottom: 1px solid var(--line); }
+  .grid6 li:not(:nth-child(3n + 1)) { padding-left: 2rem; border-left: 1px solid var(--line); }
+
+  /* Privacy */
+  .plain { margin-top: 1.75rem; padding-left: 1.1rem; display: grid; gap: 0.7rem; color: var(--text-muted); }
+  .plain li::marker { color: var(--text-muted); }
+  .facts { border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: 1.5rem 1.75rem; background: var(--bg-raised); }
+  .facts h3 { font-size: 1rem; margin-bottom: 0.75rem; }
+  .facts dl > div { display: grid; grid-template-columns: 7.5rem 1fr; gap: 1rem; padding: 0.55rem 0; border-top: 1px solid var(--line); font-size: 0.9375rem; }
+  .facts dt { color: var(--text-muted); }
+  .facts a { text-decoration-color: var(--line-strong); }
+
+  @media (max-width: 60rem) {
+    .step, .split, .links-grid, .audio-grid { grid-template-columns: 1fr; }
+    .links-grid { grid-template-areas: "flow" "ticks" "shot"; }
+    :global(.links-shot) { max-width: 30rem; }
+    .sticky { position: static; }
+    .trio { grid-template-columns: 1fr; gap: 1.5rem; }
+    .grid6 { grid-template-columns: 1fr 1fr; }
+    .grid6 li, .grid6 li:not(:nth-child(3n + 1)) { padding: 1.5rem 1.25rem 1.5rem 0; border-left: 0; }
+    .grid6 li:nth-child(2n) { padding-left: 1.25rem; border-left: 1px solid var(--line); }
+  }
+  @media (max-width: 40rem) {
+    .grid6 { grid-template-columns: 1fr; }
+    .grid6 li:nth-child(2n) { padding-left: 0; border-left: 0; }
+    .spec { grid-template-columns: 1fr; gap: 0.3rem; }
+    .step-text { padding-left: 0; padding-top: 3.25rem; }
+    .flow { flex-direction: column; align-items: stretch; }
+    .wire { flex: none; min-width: 0; width: 1px; height: 1.25rem; margin-left: 1.6rem; background: repeating-linear-gradient(180deg, var(--text-muted) 0 4px, transparent 4px 8px); }
+    .term-body { font-size: 0.75rem; overflow-x: auto; }
+    .hero h1 br { display: none; }
+  }
+</style>

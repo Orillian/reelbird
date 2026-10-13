@@ -1,0 +1,75 @@
+---
+// Reserved slot for the launch video. Until LAUNCH_VIDEO.url is set in src/config/site.ts it shows
+// a poster and says the video is on its way. With a URL it plays an MP4, or loads an embed on click.
+import { Picture } from "astro:assets";
+import poster from "../assets/shots/editor-captions-light.webp";
+import posterDark from "../assets/shots/editor-captions-dark.webp";
+import Icon from "./Icon.astro";
+import { LAUNCH_VIDEO } from "../config/site";
+const { url, kind, title, duration } = LAUNCH_VIDEO;
+const sizes = "(min-width: 72rem) 1104px, calc(100vw - 2rem)";
+const widths = [640, 960, 1280, 1800];
+---
+<figure class="launch frame" data-launch={url ? kind : "none"} data-url={url || undefined}>
+  <Picture src={poster} widths={widths} sizes={sizes} formats={["avif", "webp"]} fallbackFormat="webp" alt="" class="lv-poster only-light" loading="lazy" />
+  <Picture src={posterDark} widths={widths} sizes={sizes} formats={["avif", "webp"]} fallbackFormat="webp" alt="" class="lv-poster only-dark" loading="lazy" />
+  <div class="veil"></div>
+  {url ? (
+    <button type="button" class="play" data-launch-play aria-label={`Play: ${title}`}>
+      <span class="disc"><Icon name="play" size={22} /></span>
+      <span class="label"><strong>{title}</strong>{duration && <span class="muted-on">{duration}</span>}</span>
+    </button>
+  ) : (
+    <figcaption class="soon">
+      <strong>{title}</strong>
+      <span>A walkthrough video is on its way. The clip at the top of this page is a real Reelbird export in the meantime.</span>
+    </figcaption>
+  )}
+</figure>
+
+<script>
+  document.querySelectorAll<HTMLElement>("[data-launch]").forEach((fig) => {
+    const btn = fig.querySelector<HTMLButtonElement>("[data-launch-play]");
+    const url = fig.dataset.url;
+    if (!btn || !url) return;
+    btn.addEventListener("click", () => {
+      let el: HTMLElement;
+      if (fig.dataset.launch === "embed") {
+        const f = document.createElement("iframe");
+        f.src = url + (url.includes("?") ? "&" : "?") + "autoplay=1";
+        f.allow = "autoplay; fullscreen; picture-in-picture";
+        f.allowFullscreen = true;
+        f.title = btn.getAttribute("aria-label")?.replace(/^Play: /, "") ?? "Video";
+        el = f;
+      } else {
+        const v = document.createElement("video");
+        v.src = url; v.controls = true; v.autoplay = true; v.playsInline = true;
+        el = v;
+      }
+      el.className = "lv-media";
+      fig.append(el);
+      fig.classList.add("is-on");
+      el.focus();
+    });
+  });
+</script>
+
+<style>
+  .launch { position: relative; aspect-ratio: 16 / 9; display: grid; place-items: center; }
+  .launch > :global(picture) { position: absolute; inset: 0; }
+  .launch :global(.lv-poster) { width: 100%; height: 100%; object-fit: cover; filter: blur(3px) saturate(0.7); transform: scale(1.03); }
+  .veil { position: absolute; inset: 0; background: rgb(26 21 18 / 0.68); }
+  .play, .soon { position: relative; z-index: 1; color: #fff4e8; }
+  .play { display: grid; justify-items: center; gap: 1rem; background: none; border: 0; }
+  .disc {
+    display: grid; place-items: center; width: 4.5rem; height: 4.5rem; border-radius: 999px;
+    background: #fff4e8; color: #1a1512; transition: transform 200ms var(--ease-out);
+  }
+  .play:hover .disc { transform: scale(1.06); }
+  .label { display: grid; gap: 0.15rem; text-align: center; }
+  .muted-on { color: #d8cdc2; font-size: 0.9375rem; }
+  .soon { display: grid; gap: 0.4rem; max-width: 28rem; text-align: center; padding: 1.5rem; }
+  .soon strong { font-family: var(--font-display); font-weight: 520; font-size: var(--step-2); letter-spacing: -0.015em; }
+  .soon span { color: #e6dbd0; }
+  .launch :global(.lv-media) { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; z-index: 3; background: #000; }
+</style>

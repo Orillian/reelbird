@@ -1,0 +1,26 @@
+---
+// A real product image, served as AVIF/WebP at several widths. Pass `dark` for a dark-mode twin:
+// both are in the HTML, CSS shows the one for the current theme, and lazy loading skips the hidden one.
+import { Picture } from "astro:assets";
+import type { ImageMetadata } from "astro";
+
+interface Props {
+  src: ImageMetadata;
+  dark?: ImageMetadata;
+  alt: string;
+  sizes?: string;
+  widths?: number[];
+  eager?: boolean;
+  class?: string;
+  /** "frame": raw capture, gets a rounded frame and shadow. "bleed": brand shots that carry their own
+   *  paper/ink backdrop and shadow; edges are feathered into the page. "none": as is. */
+  variant?: "frame" | "bleed" | "none";
+}
+const { src, dark, alt, sizes = "(min-width: 72rem) 1100px, 100vw", widths = [480, 800, 1200, 1600, 2200], eager = false, class: cls = "", variant = "bleed" } = Astro.props;
+const w = (img: ImageMetadata) => widths.filter((x) => x <= img.width).concat(widths.some((x) => x > img.width) ? [img.width] : []);
+const common = { sizes, formats: ["avif", "webp"] as const, fallbackFormat: "webp" as const, loading: eager ? ("eager" as const) : ("lazy" as const), decoding: "async" as const, fetchpriority: eager ? ("high" as const) : undefined };
+---
+<div class:list={[variant === "frame" && "frame", variant === "bleed" && "bleed", "shot", cls]}>
+  <Picture src={src} widths={w(src)} alt={alt} {...common} class:list={[dark && "only-light"]} />
+  {dark && <Picture src={dark} widths={w(dark)} alt={alt} {...common} class="only-dark" />}
+</div>
