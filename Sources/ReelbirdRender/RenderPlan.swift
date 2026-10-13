@@ -37,15 +37,23 @@ public final class RenderPlan: Sendable {
     public let edit: EditDocument
     /// Output ↔ recording time mapping (trim + cuts).
     public let timeline: EditTimeline
-    /// Effective zoom regions (auto regions regenerated in `.auto` mode, none in `.off`).
+    /// Effective zoom regions (auto regions regenerated in `.auto` mode, none in `.off`), focus points in
+    /// full-screen coordinates like the edit's.
     public let regions: [ZoomRegion]
+    /// The smoothed cursor in view (crop) coordinates.
     public let cursor: CursorPath
+    /// The zoom camera in view (crop) coordinates.
     public let camera: CameraPath
     /// Default output canvas (from `edit.canvas`).
     public let canvasSize: PixelSize
     /// Default output frame rate.
     public let frameRate: Int
+    /// The crop (`edit.crop`): full-screen ↔ view coordinates. Identity without a crop.
+    public let crop: CropSpace
     /// Screen video size in pixels.
+    public let screenSize: PixelSize
+    /// Size in pixels of the part of the screen video that is shown (the crop; `screenSize` without one).
+    /// Canvas, card aspect and zoom all work on this.
     public let sourceSize: PixelSize
     /// Aspect (width / height) of the screen card on the canvas. Equals the source's unless the canvas is
     /// much narrower than the source (a 9:16 or 1:1 export of a landscape screen), where the card becomes a
@@ -78,31 +86,40 @@ public final class RenderPlan: Sendable {
         let duration = max(manifest.duration, manifest.track(.screen)?.duration ?? 0)
         timeline = EditTimeline(duration: duration, trim: edit.trim, cuts: edit.cuts)
         let screen = manifest.track(.screen)?.pixelSize ?? manifest.capture.pixelSize
-        sourceSize = PixelSize(width: max(2, screen.width), height: max(2, screen.height))
+        screenSize = PixelSize(width: max(2, screen.width), height: max(2, screen.height))
+        let crop = CropSpace(edit.crop)
+        self.crop = crop
+        sourceSize = crop.pixelSize(of: screenSize)
+        let sameCrop = old?.crop == crop
 
-        if let old, old.cursor.smoothing == min(1, max(0, edit.cursor.smoothing)) {
+        if let old, sameCrop, old.cursor.smoothing == min(1, max(0, edit.cursor.smoothing)) {
             cursor = old.cursor
         } else {
-            cursor = CursorPath(events: events, smoothing: edit.cursor.smoothing)
+            cursor = CursorPath(events: crop.viewEvents(events), smoothing: edit.cursor.smoothing)
         }
         switch edit.zoom.mode {
         case .off: regions = []
         case .manual: regions = edit.zoom.regions
         case .auto:
-            if let old, old.edit.zoom == edit.zoom, old.manifest.duration == manifest.duration {
+            if let old, sameCrop, old.edit.zoom == edit.zoom, old.manifest.duration == manifest.duration {
                 regions = old.regions
             } else {
                 regions = AutoZoomPlanner.merged(existing: edit.zoom.regions, events: events, duration: duration,
-                                                 intensity: edit.zoom.intensity)
+                                                 intensity: edit.zoom.intensity, crop: edit.crop)
             }
         }
         canvasSize = Self.canvasSize(source: sourceSize, aspect: edit.canvas.aspect, height: edit.canvas.outputHeight)
         (cardAspect, viewBase) = Self.cardGeometry(source: sourceSize, canvas: canvasSize, background: edit.background)
-        if let old, old.regions == regions, old.cursor.smoothing == cursor.smoothing, old.camera.duration == duration,
+        if let old, sameCrop, old.regions == regions, old.cursor.smoothing == cursor.smoothing, old.camera.duration == duration,
            old.camera.base == viewBase {
             camera = old.camera
         } else {
-            camera = CameraPath(regions: regions, cursor: cursor, duration: duration, aspect: sourceSize.aspect, base: viewBase)
+            let viewRegions = crop.isIdentity ? regions : regions.map { r in
+                var r = r
+                r.focus = r.focus.map(crop.toView)
+                return r
+            }
+            camera = CameraPath(regions: viewRegions, cursor: cursor, duration: duration, aspect: sourceSize.aspect, base: viewBase)
         }
 
         frameRate = min(240, max(1, edit.canvas.frameRate ?? manifest.capture.frameRate))
@@ -165,6 +182,31 @@ public final class RenderPlan: Sendable {
         guard avail / src < 0.8 else { return (src, SIMD2(1, 1)) }
         let card = pow(avail, 0.6) * pow(src, 0.4)
         return (card, SIMD2(card / src, 1))
+    }
+
+    /// How visible the cursor (or a click) at view point `p` is: 1 inside the crop, fading to 0 within a few
+    /// points past a cropped edge, so the pointer slips out of view instead of floating over the background.
+    /// Edges that are the screen's own edges keep the usual rule (hidden 2% outside).
+    func cropVisibility(_ p: NormPoint) -> Double {
+        if p.x < -0.02 || p.x > 1.02 || p.y < -0.02 || p.y > 1.02 {
+            // Past a screen edge (not a crop edge): hidden.
+            let r = crop.rect
+            if (p.x < -0.02 && r.x < 1e-4) || (p.x > 1.02 && r.x + r.width > 1 - 1e-4)
+                || (p.y < -0.02 && r.y < 1e-4) || (p.y > 1.02 && r.y + r.height > 1 - 1e-4) { return 0 }
+        }
+        guard !crop.isIdentity else { return 1 }
+        let r = crop.rect
+        // Signed distance outside each inset edge, in screen pixels (positive = outside).
+        let w = Double(sourceSize.width), h = Double(sourceSize.height)
+        var d = -Double.infinity
+        if r.x > 1e-4 { d = max(d, -p.x * w) }
+        if r.x + r.width < 1 - 1e-4 { d = max(d, (p.x - 1) * w) }
+        if r.y > 1e-4 { d = max(d, -p.y * h) }
+        if r.y + r.height < 1 - 1e-4 { d = max(d, (p.y - 1) * h) }
+        guard d.isFinite else { return 1 }
+        let fade = 6 * max(1, manifest.capture.scale)
+        let u = min(1, max(0, (fade - d) / (2 * fade)))
+        return u * u * (3 - 2 * u)
     }
 
     /// Recent keystroke text to show at recording time `t`, with its opacity, or `nil`.
@@ -254,11 +296,13 @@ struct CanvasLayout {
         return CGRect(x: a.x, y: a.y, width: r.width * card.width * s / base.x, height: r.height * card.height * s / base.y)
     }
 
-    /// Source uv for output pixel p: `uv = a + p·b` per axis (a = .xy, b = .zw).
-    func uvMap(scale s: Double, center c: NormPoint) -> SIMD4<Float> {
+    /// View uv for output pixel p: `uv = a + p·b` per axis (a = .xy, b = .zw). With `crop`, the uv is in the
+    /// whole screen texture (the crop's view coordinates mapped back to the screen).
+    func uvMap(scale s: Double, center c: NormPoint, crop: CropSpace = .identity) -> SIMD4<Float> {
         let bx = base.x / (s * card.width), by = base.y / (s * card.height)
         let ax = c.x - (card.midX) * bx, ay = c.y - (card.midY) * by
-        return SIMD4(Float(ax), Float(ay), Float(bx), Float(by))
+        let r = crop.rect
+        return SIMD4(Float(r.x + ax * r.width), Float(r.y + ay * r.height), Float(bx * r.width), Float(by * r.height))
     }
 
     /// Moves the camera centre so that, once a zoom is deep enough to cover the canvas on an axis, the

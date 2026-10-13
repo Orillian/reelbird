@@ -23,6 +23,12 @@ enum Synthetic {
         /// Pointer position for the whole recording (nil = a slow sweep with clicks).
         var stillPointer: NormPoint?
         var captureScale = 1.0
+        /// Draws the screen frames instead of the default grey test card.
+        var screen: Draw?
+        /// Capture source written to the manifest (default: synthetic).
+        var source: CaptureSource = .synthetic(name: "test")
+        /// Replaces the generated pointer events.
+        var events: [InputEvent]?
     }
 
     /// Y/Cb/Cr (video range) for the screen grey: RGB ≈ (128,128,128).
@@ -36,7 +42,7 @@ enum Synthetic {
         for k in [TrackKind.screen, .camera, .microphone] { try fm.createDirectory(at: bundle.directory(for: k), withIntermediateDirectories: true) }
 
         try await writeVideo(url: bundle.directory(for: .screen).appendingPathComponent("screen.mp4"), width: o.width, height: o.height,
-                             fps: o.fps, seconds: o.seconds, codec: o.codec, draw: drawScreen)
+                             fps: o.fps, seconds: o.seconds, codec: o.codec, draw: o.screen ?? drawScreen)
         var tracks = [TrackInfo(kind: .screen, directory: "screen", file: "screen/screen.mp4", codec: o.codec == .hevc ? "hevc" : "h264",
                                 pixelSize: PixelSize(width: o.width, height: o.height), duration: o.seconds)]
         if o.camera {
@@ -52,14 +58,16 @@ enum Synthetic {
         }
 
         let manifest = ProjectManifest(title: "Synthetic", appVersion: "test", status: .complete,
-                                       capture: CaptureInfo(source: .synthetic(name: "test"), pixelSize: PixelSize(width: o.width, height: o.height),
+                                       capture: CaptureInfo(source: o.source, pixelSize: PixelSize(width: o.width, height: o.height),
                                                             scale: o.captureScale, frameRate: o.fps),
                                        clock: ClockInfo(originHostTime: 0), tracks: tracks, duration: o.seconds)
         try bundle.writeManifest(manifest)
 
         let log = try EventLogWriter(url: bundle.eventsURL)
         if o.redCursor { log.append(InputEvent(t: 0, type: .cursor, image: "red")) }
-        if let p = o.stillPointer {
+        if let events = o.events {
+            events.forEach(log.append)
+        } else if let p = o.stillPointer {
             log.append(.move(0, p))
         } else {
             var t = 0.0

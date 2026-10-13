@@ -10,6 +10,7 @@ struct CompositeUniforms {
     var shadow = SIMD4<Float>(), shadow2 = SIMD4<Float>(), bg0 = SIMD4<Float>(), bg1 = SIMD4<Float>(), bg2 = SIMD4<Float>(), bg3 = SIMD4<Float>()
     var bgInfo = SIMD4<Float>(), bgImage = SIMD4<Float>(), screenInfo = SIMD4<Float>()
     var yuv0 = SIMD4<Float>(), yuv1 = SIMD4<Float>(), yuv2 = SIMD4<Float>(), yuvOffset = SIMD4<Float>()
+    var uvClamp = SIMD4<Float>(0, 0, 1, 1)
 }
 
 struct SpriteUniforms {
@@ -149,11 +150,12 @@ final class Compositor {
         u.canvas = SIMD4(Float(W), Float(H), Float(vp.minX), Float(vp.minY))
         let screenRect = layout.screenRect(scale: s, center: c)
         u.card = SIMD4(Float(screenRect.minX), Float(screenRect.minY), Float(screenRect.maxX), Float(screenRect.maxY))
-        let uvMap = layout.uvMap(scale: s, center: c)
+        // View (crop) uv → screen texture uv.
+        let uvMap = layout.uvMap(scale: s, center: c, crop: plan.crop)
         u.uvMap = uvMap
-        u.uvPrev = layout.uvMap(scale: prev.s, center: prev.c)
+        u.uvPrev = layout.uvMap(scale: prev.s, center: prev.c, crop: plan.crop)
         let g = layout.frameGrowth(s)
-        u.params = SIMD4(Float(layout.cornerRadius * g), taps, Float(Double(uvMap.z) * Double(plan.sourceSize.width)), 0)
+        u.params = SIMD4(Float(layout.cornerRadius * g), taps, Float(Double(uvMap.z) * Double(plan.screenSize.width)), 0)
         u.shadow = SIMD4(Float(layout.shadowStrength * 0.7), Float(layout.shadowBlur * g), Float(layout.shadowOffset * g), 0)
         u.shadow2 = SIMD4(Float(layout.shadowStrength * 0.35), Float(0.006 * layout.short * g), Float(0.002 * layout.short * g), 0)
         let colors = edit.background.colors.isEmpty ? [RGBA(0.1, 0.1, 0.1)] : edit.background.colors
@@ -177,6 +179,9 @@ final class Compositor {
         u.bgInfo = SIMD4(bgKind, Float(min(4, colors.count)), 1.5 / 255, 0)
         u.screenInfo = SIMD4(Float(screenFrame?.width ?? 1), Float(screenFrame?.height ?? 1), screenFrame?.yuv != nil ? 1 : 0, 0)
         if let y = screenFrame?.yuv { u.yuv0 = y.r0; u.yuv1 = y.r1; u.yuv2 = y.r2; u.yuvOffset = y.offset }
+        let cr = plan.crop.rect
+        let hx = 0.5 / Double(max(1, screenFrame?.width ?? 1)), hy = 0.5 / Double(max(1, screenFrame?.height ?? 1))
+        u.uvClamp = SIMD4(Float(cr.x + hx), Float(cr.y + hy), Float(cr.x + cr.width - hx), Float(cr.y + cr.height - hy))
         enc.setRenderPipelineState(ctx.compositePipeline)
         enc.setFragmentBytes(&u, length: MemoryLayout<CompositeUniforms>.stride, index: 0)
         enc.setFragmentTexture(screenFrame?.t0 ?? ctx.blank, index: 0)
@@ -201,11 +206,12 @@ final class Compositor {
             return SIMD4(Float(c.r) * al, Float(c.g) * al, Float(c.b) * al, al)
         }
 
-        // 2. Annotations (recording timeline).
+        // 2. Annotations (recording timeline). Rects are stored in full-screen coordinates.
         for a in edit.annotations where a.range.contains(src) {
             let fadeIn = min(1, (src - a.range.start) / 0.2), fadeOut = min(1, (a.range.end - src) / 0.2)
             let alpha = max(0, min(fadeIn, fadeOut))
-            let r = layout.map(a.rect, scale: s, center: c)
+            let viewRect = plan.crop.toView(a.rect)
+            let r = layout.map(viewRect, scale: s, center: c)
             var su = SpriteUniforms()
             switch a.kind {
             case .highlight:
@@ -246,7 +252,7 @@ final class Compositor {
             case .text:
                 guard let str = a.text, !str.isEmpty else { continue }
                 // Render at the zoom-1 size ×2 so zooming stays crisp; mipmaps handle shrinking.
-                let base = a.rect.height * layout.card.height / layout.base.y * 0.7
+                let base = viewRect.height * layout.card.height / layout.base.y * 0.7
                 let key = TextCache.Key(text: str, fontSize: Int((base * 2).rounded()), weight: 600,
                                         color: packRGBA(a.color), pill: 0, maxWidth: 0)
                 guard let e = text.texture(key, context: ctx, queue: queue) else { continue }
@@ -259,11 +265,10 @@ final class Compositor {
             }
         }
 
-        // 3. Cursor and click effects.
+        // 3. Cursor and click effects (view coordinates; hidden past the crop's edges).
         let cursorSettings = edit.cursor
-        if cursorSettings.visible, let pos = plan.cursor.position(at: src),
-           pos.x > -0.02, pos.x < 1.02, pos.y > -0.02, pos.y < 1.02 {
-            let opacity = plan.cursor.opacity(at: src, hideAfter: cursorSettings.hideWhenIdleAfter)
+        if cursorSettings.visible, let pos = plan.cursor.position(at: src), case let visible = plan.cropVisibility(pos), visible > 0.001 {
+            let opacity = plan.cursor.opacity(at: src, hideAfter: cursorSettings.hideWhenIdleAfter) * visible
             let sprite = cursorSprite(plan.cursor.imageID(at: src), plan: plan)
             // Points → source pixels → output pixels, enlarged by the size setting and partly by the zoom.
             let pxPerPoint = cursorPixelsPerPoint(plan: plan, layout: layout, scale: s)
@@ -274,6 +279,10 @@ final class Compositor {
             var press = 1.0
             plan.cursor.forEachRecentClick(before: src, window: 0.6, limit: 4) { click in
                 guard let cp = click.point else { return }
+                // A click in the cropped-off area shows nothing (it may still be visible while the cursor isn't).
+                let clickVisible = plan.cropVisibility(cp)
+                guard clickVisible > 0.001 else { return }
+                let opacity = plan.cursor.opacity(at: src, hideAfter: cursorSettings.hideWhenIdleAfter) * clickVisible
                 let age = src - click.t
                 let o = layout.map(cp, scale: s, center: c)
                 var su = SpriteUniforms()

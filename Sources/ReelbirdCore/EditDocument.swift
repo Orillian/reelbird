@@ -12,6 +12,9 @@ public struct EditDocument: Codable, Hashable, Sendable {
     public var cuts: [TimeRange] = []
     /// Extra clips appended after this recording, in order (other `.reelbird` bundles, relative or absolute paths).
     public var appended: [String] = []
+    /// The visible part of the screen video, normalized to it (top-left origin). `nil` = the whole screen.
+    /// Events, annotation rects and zoom focus points stay in full-screen coordinates; see `CropSpace`.
+    public var crop: NormRect?
     public var zoom = ZoomSettings()
     public var cursor = CursorSettings()
     public var background = BackgroundSettings()
@@ -32,6 +35,7 @@ public struct EditDocument: Codable, Hashable, Sendable {
         trim = try c.decodeIfPresent(TimeRange.self, forKey: .trim)
         cuts = try c.decodeIfPresent([TimeRange].self, forKey: .cuts) ?? d.cuts
         appended = try c.decodeIfPresent([String].self, forKey: .appended) ?? d.appended
+        crop = (try? c.decodeIfPresent(LenientCrop.self, forKey: .crop))??.rect
         zoom = try c.decodeIfPresent(ZoomSettings.self, forKey: .zoom) ?? d.zoom
         cursor = try c.decodeIfPresent(CursorSettings.self, forKey: .cursor) ?? d.cursor
         background = try c.decodeIfPresent(BackgroundSettings.self, forKey: .background) ?? d.background

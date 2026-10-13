@@ -25,6 +25,7 @@ struct CompositeUniforms {
     float4 yuv1;
     float4 yuv2;
     float4 yuvOffset;   // y offset, c offset, y scale, 0
+    float4 uvClamp;     // screen uv limits (the crop, inset half a texel): min x, min y, max x, max y
 };
 
 struct SpriteUniforms {
@@ -76,6 +77,7 @@ static inline float3 yuvToRGB(float y, float2 c, float4 r0, float4 r1, float4 r2
 }
 
 static inline float4 sampleScreen(texture2d<float> t0, texture2d<float> t1, sampler s, float2 uv, constant CompositeUniforms& u) {
+    uv = clamp(uv, u.uvClamp.xy, u.uvClamp.zw);
     if (u.screenInfo.z > 0.5) {
         float y = t0.sample(s, uv).r;
         float2 c = t1.sample(s, uv).rg;
