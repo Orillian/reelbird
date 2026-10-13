@@ -88,6 +88,21 @@ public final class RecordingSession: Sendable {
 
     /// Test hook: pipeline metrics.
     func metrics() async -> CapturePipeline.Metrics? { await engine.pipeline?.metrics.withLock { $0 } }
+
+    /// Tracks that stopped early or were left out of the finished project, with the reason (a camera
+    /// that couldn't start, an encoder that failed, a file that didn't open at stop). Empty when every
+    /// requested track made it. Read it after `stop()` to tell the person; the warnings in `status`
+    /// say the same while recording.
+    public var trackIssues: [TrackKind: String] { get async { await engine.trackIssues } }
+
+    /// Test hook: the next `count` audio appends to `kind`'s writer report a busy encoder.
+    func injectAudioRefusals(_ kind: TrackKind, count: Int) async {
+        guard let p = await engine.pipeline else { return }
+        (kind == .microphone ? p.microphone : p.systemAudio)?.writer.injectAudioRefusals(count)
+    }
+
+    /// Test hook: these tracks fail the AVFoundation check at stop.
+    func failVerification(_ kinds: Set<TrackKind>) async { await engine.setFailVerification(kinds) }
 }
 
 /// Fans status out to any number of subscribers.
@@ -159,6 +174,9 @@ actor SessionEngine {
     private var shareFailure: String?
     private var sourceFailure: String?
     private var trackFailures: [TrackKind: String] = [:]
+    private var failVerification: Set<TrackKind> = []
+    var trackIssues: [TrackKind: String] { trackFailures }
+    func setFailVerification(_ kinds: Set<TrackKind>) { failVerification = kinds }
     private var diskFull = false
     private var freeDiskProbe: @Sendable () -> Int64?
     private var stopTask: Task<ProjectBundle, any Error>?
@@ -308,6 +326,9 @@ actor SessionEngine {
                                        cameraDirectory: bundle.directory(for: .camera), shareWriter: shareWriter, composer: composer)
         pipeline.onSourceStopped = { [weak self] error in Task { await self?.sourceStopped(error) } }
         pipeline.onCameraStarted = { [weak self] size in Task { await self?.cameraStarted(size) } }
+        pipeline.onCameraError = { [weak self] message in
+            Task { await self?.writerFailed(.camera, "the camera couldn't start (\(message))") }
+        }
         pipeline.onWriterFailed = { [weak self] kind, message in Task { await self?.writerFailed(kind, message) } }
         self.pipeline = pipeline
         eventLog = try EventLogWriter(url: bundle.eventsURL)
@@ -468,7 +489,7 @@ actor SessionEngine {
                 let asset = AVURLAsset(url: url)
                 let duration = try await asset.load(.duration).seconds
                 let assetTracks = try await asset.load(.tracks)
-                guard !assetTracks.isEmpty, duration.isFinite, duration > 0 else {
+                guard !assetTracks.isEmpty, duration.isFinite, duration > 0, !failVerification.contains(kind) else {
                     throw CaptureError.consolidationFailed(kind, "the file has no playable media")
                 }
                 info.file = summary.file
@@ -483,6 +504,11 @@ actor SessionEngine {
             } catch {
                 CaptureLog.debug("verify \(kind): \(error)")
                 if kind == .screen { deferred = error; break }
+                // Left out of the project, but never silently: the person is told, and its segments stay
+                // on disk (they are deleted only for verified tracks).
+                if trackFailures[kind] == nil {
+                    trackFailures[kind] = "its file didn't open after recording (\(Self.reason(error))); its segments are kept in the project"
+                }
             }
         }
         if let deferred {
@@ -513,7 +539,7 @@ actor SessionEngine {
         if fmt.hasMicrophone { micMonitor.finish(activeSeconds: max(0, endTime - pausedTotal)) }
         ticker?.cancel()
         phase = failed ? .failed : .finished
-        if failed { status.warnings = failureWarnings(at: endTime) }
+        if failed || !trackFailures.isEmpty { status.warnings = failureWarnings(at: endTime) }
         status.elapsed = max(0, endTime - pausedTotal)
         publish()
         broadcaster.finish()
@@ -718,6 +744,21 @@ actor SessionEngine {
 
     private func setBacklog(_ b: Int) { backlog = b }
 
+    private static func trackName(_ kind: TrackKind) -> String {
+        switch kind {
+        case .screen: "the screen"
+        case .camera: "the camera"
+        case .microphone: "the microphone"
+        case .systemAudio: "system audio"
+        case .share: "the share stream"
+        }
+    }
+
+    private static func reason(_ error: any Error) -> String {
+        if case CaptureError.consolidationFailed(_, let detail) = error { return detail }
+        return error.localizedDescription
+    }
+
     private func failureWarnings(at t: Double) -> [HealthWarning] {
         var out: [HealthWarning] = []
         if diskFull {
@@ -728,9 +769,13 @@ actor SessionEngine {
         } else if let screen = trackFailures[.screen], !diskFull {
             out.append(HealthWarning(kind: .captureStalled, message: "Recording stopped: \(screen). The recording so far is saved.", since: t))
         }
-        let others = trackFailures.filter { $0.key != .screen && !diskFull }.keys.map(\.rawValue).sorted()
+        let others = trackFailures.filter { $0.key != .screen && !diskFull }.sorted { $0.key.rawValue < $1.key.rawValue }
         if !others.isEmpty, sourceFailure == nil {
-            out.append(HealthWarning(kind: .captureStalled, message: "Stopped recording \(others.joined(separator: ", ")) after an error; the screen keeps recording.", since: t))
+            let tail = phase == .recording || phase == .paused ? "The screen keeps recording." : "The rest of the recording is saved."
+            let message = others.count == 1
+                ? "Stopped recording \(Self.trackName(others[0].key)): \(others[0].value). \(tail)"
+                : "Stopped recording \(others.map { Self.trackName($0.key) }.joined(separator: " and ")) after errors (\(others.map(\.value).joined(separator: "; "))). \(tail)"
+            out.append(HealthWarning(kind: .captureStalled, message: message, since: t))
         }
         return out
     }

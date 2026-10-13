@@ -324,17 +324,33 @@ import ReelbirdCore
             do {
                 let bundle = try await session.stop()
                 let silentTake = session.microphoneTakeSummary?.isEssentiallySilent == true
+                let issues = await session.trackIssues
                 self.teardown()
                 self.app.library.reload()
                 let editor = openEditor && self.app.prefs.openEditorAfterRecording
                 if editor { self.app.open(bundle: bundle) }
                 if silentTake && openEditor { self.promptSilentTake(bundle) }
+                if !issues.isEmpty { Self.reportTrackIssues(issues) }
             } catch {
                 self.teardown()
                 self.app.present(error, title: "The recording couldn't be finished. Its segments are kept and will be recovered next launch.")
             }
             completion?()
         }
+    }
+
+    /// A track that stopped early or was left out (a camera that never started, an encoder that failed)
+    /// is never dropped silently: say which and why once the take is saved.
+    static func reportTrackIssues(_ issues: [TrackKind: String]) {
+        let names: [TrackKind: String] = [.camera: "camera", .microphone: "microphone", .systemAudio: "system audio", .share: "share stream"]
+        let sorted = issues.filter { $0.key != .screen }.sorted { $0.key.rawValue < $1.key.rawValue }
+        guard let first = sorted.first else { return }
+        let title = sorted.count == 1
+            ? "The \(names[first.key] ?? first.key.rawValue) track is incomplete"
+            : "\(sorted.count) tracks are incomplete"
+        let detail = sorted.map { "\((names[$0.key] ?? $0.key.rawValue).prefix(1).uppercased() + (names[$0.key] ?? $0.key.rawValue).dropFirst()): \($0.value)." }
+            .joined(separator: " ") + " The rest of the recording is saved."
+        Toast.show(title: title, detail: detail, symbol: "exclamationmark.triangle.fill", duration: 9)
     }
 
     // MARK: Silent take

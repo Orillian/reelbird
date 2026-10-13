@@ -254,6 +254,7 @@ final class MockRecordingSession: RecordingSessionHandle, @unchecked Sendable {
 
     var microphoneLevels: MicLevelReading { lock.withLock { pauseStart == nil ? levels : MicLevelReading() } }
     var microphoneTakeSummary: MicTakeSummary? { lock.withLock { summary } }
+    var trackIssues: [TrackKind: String] { get async { [:] } }
 
     func discard() async {
         ticker?.cancel()

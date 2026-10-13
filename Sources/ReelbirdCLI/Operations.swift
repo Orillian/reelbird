@@ -106,16 +106,21 @@ struct Operations: Sendable {
         return (o, url)
     }
 
-    func recordingFinished(_ bundle: ProjectBundle) -> Report {
+    /// `issues`: tracks that stopped early or were left out (`RecordingSession.trackIssues`), reported as
+    /// `warnings` in JSON and in the text, so a missing camera or microphone is never a silent surprise.
+    func recordingFinished(_ bundle: ProjectBundle, issues: [TrackKind: String] = [:]) -> Report {
         let m = try? bundle.readManifest()
+        let warnings = issues.sorted { $0.key.rawValue < $1.key.rawValue }.map { "\($0.key.rawValue): \($0.value)" }
         let json: JSONValue = [
             "bundle": .string(bundle.url.path),
             "duration": JSONValue(m?.duration),
             "status": JSONValue(m?.status.rawValue),
             "shareURL": JSONValue(m?.share?.url),
+            "warnings": .array(warnings.map { .string($0) }),
         ]
         var text = bundle.url.path
         if let s = m?.share?.url { text += "\n\(s)" }
+        for (kind, why) in issues.sorted(by: { $0.key.rawValue < $1.key.rawValue }) { text += "\nWarning: \(kind.rawValue) track: \(why)." }
         return Report(json: json, text: text)
     }
 

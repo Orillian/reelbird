@@ -98,7 +98,7 @@ enum Recorder {
                            hint: "The take may still be on disk; try `reelbird recover \"\(url.path)\"`.")
         }
         watcher.cancel()
-        return ops.recordingFinished(bundle)
+        return ops.recordingFinished(bundle, issues: await control.trackIssues)
     }
 }
 

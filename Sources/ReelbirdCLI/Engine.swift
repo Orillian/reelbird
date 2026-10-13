@@ -41,6 +41,12 @@ protocol RecordingControl: Sendable {
     func stop() async throws -> ProjectBundle
     /// Stops and deletes the bundle (and any live share upload).
     func discard() async
+    /// After `stop()`: tracks that stopped early or were left out, with the reason.
+    var trackIssues: [TrackKind: String] { get async }
+}
+
+extension RecordingControl {
+    var trackIssues: [TrackKind: String] { get async { [:] } }
 }
 
 enum ExportFormat: String, CaseIterable, Codable, Sendable {

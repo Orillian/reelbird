@@ -43,6 +43,8 @@ protocol RecordingSessionHandle: AnyObject, Sendable {
     var microphoneLevels: MicLevelReading { get }
     /// After `stop()`: how much the microphone picked up (`nil` without a microphone).
     var microphoneTakeSummary: MicTakeSummary? { get }
+    /// After `stop()`: tracks that stopped early or were left out, with the reason.
+    var trackIssues: [TrackKind: String] { get async }
 }
 
 /// Creates recording sessions (`RecordingSession.init`) and recovers crashed ones (`ProjectRecovery`).

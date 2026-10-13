@@ -313,7 +313,10 @@ final class MCPServer: Sendable {
                 try? await Task.sleep(nanoseconds: UInt64(d * 1_000_000_000))
                 guard let session = await state.take(id) else { return }
                 let result: Result<Report, CLIError>
-                do { result = .success(ops.recordingFinished(try await session.control.stop())) } catch { result = .failure(CLIError.wrap(error)) }
+                do {
+                    let bundle = try await session.control.stop()
+                    result = .success(ops.recordingFinished(bundle, issues: await session.control.trackIssues))
+                } catch { result = .failure(CLIError.wrap(error)) }
                 await state.finish(id, result)
             }
         }
@@ -332,7 +335,8 @@ final class MCPServer: Sendable {
             await session.control.discard()
             return Report(json: ["session_id": .string(id), "discarded": true], text: "Recording \(id) discarded.")
         }
-        return ops.recordingFinished(try await session.control.stop())
+        let bundle = try await session.control.stop()
+        return ops.recordingFinished(bundle, issues: await session.control.trackIssues)
     }
 }
 
