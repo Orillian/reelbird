@@ -279,7 +279,8 @@ private func bundle(microphone samples: [Float], seconds: Double) async throws -
     #expect(player.audioGain(for: .microphone) == 1)
     #expect(player.currentItemForTesting === item)
 
-    // Playing with the tap in place advances normally.
+    // Playing with the tap in place advances normally (once the item is ready: before that, AVPlayer starts ~0.3 s late).
+    while player.currentItemForTesting?.status != .readyToPlay, Date().timeIntervalSince(start) < 10 { try await Task.sleep(for: .milliseconds(20)) }
     player.play()
     try await Task.sleep(for: .milliseconds(400))
     #expect(player.currentTime > 0.1, "played to \(player.currentTime)")

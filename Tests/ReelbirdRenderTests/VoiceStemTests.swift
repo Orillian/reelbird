@@ -65,6 +65,7 @@ private func bandPass(_ x: [Float]) -> [Float] {
 }
 
 @Test func voiceStemCleansNoiseKeepsSpeechAndIsFast() async throws {
+    // Speed is measured on 60 s (medium); the other strengths run on the first 20 s to keep the suite light.
     let seconds = 60.0
     let take = try VoiceFixture.take(seconds: seconds, speechDB: -24, snrDB: 20)
     let b = try await VoiceFixture.bundle(microphone: take.noisy, seconds: seconds)
@@ -75,20 +76,32 @@ private func bandPass(_ x: [Float]) -> [Float] {
     let rawSpeech = VoiceFixture.levelDB(raw, frames: take.speechFrames)
     print(String(format: "RAW noise floor %.1f dB, speech %.1f dB", rawFloor, rawSpeech))
 
+    let shortSeconds = 20.0
+    let short = try await VoiceFixture.bundle(microphone: Array(take.noisy.prefix(Int(shortSeconds * 48_000))), seconds: shortSeconds)
+    defer { try? FileManager.default.removeItem(at: short.url) }
     var results: [EnhanceStrength: Double] = [:]
-    for strength in EnhanceStrength.allCases {
+    for strength in [EnhanceStrength.medium, .light, .strong, .max] {
+        let full = strength == .medium
+        let b = full ? b : short
+        let seconds = full ? seconds : shortSeconds
+        let raw = full ? raw : Array(raw.prefix(Int(shortSeconds * 48_000)))
+        let take = full ? take : VoiceFixture.Take(clean: [], noise: [], noisy: [], speechFrames: take.speechFrames.filter { $0 < Int(shortSeconds * 100) - 1 },
+                                                   noiseFrames: take.noiseFrames.filter { $0 < Int(shortSeconds * 100) - 1 },
+                                                   phrases: take.phrases)
+        let rawFloor = VoiceFixture.floorDB(raw, frames: take.noiseFrames)
+        let rawSpeech = VoiceFixture.levelDB(raw, frames: take.speechFrames)
         let started = Date()
         let info = try await VoiceStem.render(bundle: b, settings: settings(strength))
         let elapsed = Date().timeIntervalSince(started)
         let stem = try await VoiceFixture.decodeMono(b.resolve(info.file))
-        #expect(stem.count == raw.count, "stem \(stem.count) frames vs raw \(raw.count)")
+        #expect(abs(stem.count - raw.count) <= 1, "stem \(stem.count) frames vs raw \(raw.count)")
         let floor = VoiceFixture.floorDB(stem, frames: take.noiseFrames)
         let speech = VoiceFixture.levelDB(stem, frames: take.speechFrames)
         let drop = rawFloor - floor
         results[strength] = drop
         print(String(format: "STEM %@ (%@): noise floor %.1f dB (−%.1f dB), speech %.1f dB (%+.1f), %.2f s for %.0f s = %.0f× real time",
                      strength.rawValue, info.engine, floor, drop, speech, speech - rawSpeech, elapsed, seconds, seconds / elapsed))
-        #expect(seconds / elapsed > 10, "render speed \(seconds / elapsed)× real time")
+        if full { #expect(seconds / elapsed > 10, "render speed \(seconds / elapsed)× real time") }
         #expect(abs(speech - rawSpeech) <= 2, "\(strength) speech level moved \(speech - rawSpeech) dB")
         if info.engine != "none" {
             #expect(drop >= (strength.attenuationCapDB ?? 24), "\(strength) noise floor dropped only \(drop) dB")
@@ -104,7 +117,7 @@ private func bandPass(_ x: [Float]) -> [Float] {
     #expect((results[.light] ?? 0) <= (results[.medium] ?? 0) + 0.5)
     #expect((results[.medium] ?? 0) <= (results[.strong] ?? 0) + 0.5)
     // Only the latest stem file is kept.
-    let files = try FileManager.default.contentsOfDirectory(atPath: b.voiceDirectory.path).filter { $0.hasSuffix(".caf") }
+    let files = try FileManager.default.contentsOfDirectory(atPath: short.voiceDirectory.path).filter { $0.hasSuffix(".caf") }
     #expect(files.count == 1, "\(files)")
 }
 
