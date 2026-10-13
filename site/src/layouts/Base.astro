@@ -65,7 +65,7 @@ const ld = JSON.stringify(graph(...nodes)).replace(/</g, "\\u003c");
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImage} />
     <script type="application/ld+json" set:html={ld} />
-    <script is:inline defer src={UMAMI.script} data-website-id={UMAMI.websiteId} data-domains={new URL(SITE_URL).hostname} data-exclude-search="true"></script>
+    {UMAMI.websiteId && <script is:inline defer src={UMAMI.script} data-website-id={UMAMI.websiteId} data-domains={new URL(SITE_URL).hostname} data-exclude-search="true"></script>}
     <slot name="head" />
   </head>
   <body>

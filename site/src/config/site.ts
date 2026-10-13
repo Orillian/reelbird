@@ -72,8 +72,11 @@ export const DONATION_LINKS = {
 /** Absolute URL for a site path such as "/support/". */
 export const abs = (path: string): string => new URL(path, SITE_URL).toString();
 
-/** Self-hosted Umami (cookieless page counts) on our own server. The website ID is public by design. */
+/**
+ * Self-hosted Umami (cookieless page counts). Set PUBLIC_UMAMI_WEBSITE_ID at build time to turn it on;
+ * without it no analytics script is added, so forks of this site don't report to our dashboard.
+ */
 export const UMAMI = {
-  script: "https://project-analytics.shiptiffin.app/script.js",
-  websiteId: "415f1047-be59-47fa-a877-e57c2f25e010",
+  script: import.meta.env.PUBLIC_UMAMI_SCRIPT ?? "https://project-analytics.shiptiffin.app/script.js",
+  websiteId: import.meta.env.PUBLIC_UMAMI_WEBSITE_ID ?? "",
 } as const;

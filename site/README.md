@@ -84,3 +84,8 @@ site/scripts/og.sh
 ```
 
 The template is `brand/src/og.html`. Each page names its image with the `og` prop of its layout.
+
+## Analytics (optional)
+
+Set `PUBLIC_UMAMI_WEBSITE_ID` (and optionally `PUBLIC_UMAMI_SCRIPT`) in `site/.env` or the build environment to add
+cookieless [Umami](https://umami.is) page counts. Without it the site ships no analytics script.
