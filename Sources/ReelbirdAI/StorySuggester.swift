@@ -149,7 +149,12 @@ private enum FMStory {
     Chapter titles are 2 to 5 words. A chapter's start is copied from the [Ns] marker of the line where that topic begins.
     """
 
+    // The macOS 27 SDK (Swift 6.4) renamed `sampling:` to `samplingMode:`.
+    #if compiler(>=6.4)
     static let options = GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 500)
+    #else
+    static let options = GenerationOptions(sampling: .greedy, maximumResponseTokens: 500)
+    #endif
 
     static func run(lines: [StorySuggester.Line], chunkBudget: Int) async throws -> StorySuggester.Draft {
         let chunks = StorySuggester.chunk(lines, budget: chunkBudget)
