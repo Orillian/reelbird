@@ -250,6 +250,15 @@ final class MCPServer: Sendable {
             return try await ops.captions(try a.requiredString("project"), locale: try a.string("locale"), srt: try a.bool("srt") ?? false, progress: progress)
         case "suggest_story":
             return try await ops.suggest(try a.requiredString("project"), apply: try a.bool("apply") ?? true, locale: try a.string("locale"))
+        case "enhance_voice":
+            var strength: EnhanceStrength?
+            if let v = try a.string("strength") {
+                guard let st = EnhanceStrength(rawValue: v.lowercased()) else { throw CLIError.usage("strength must be light, medium, strong or max.") }
+                strength = st
+            }
+            let mix = try a.double("mix")
+            if let mix, !(0...1).contains(mix) { throw CLIError.usage("mix must be between 0 and 1.") }
+            return try await ops.enhance(try a.requiredString("project"), strength: strength, mix: mix, progress: progress)
         case "detect_silences":
             return try ops.silences(try a.requiredString("project"), thresholdDB: try a.double("threshold_db") ?? -45,
                                     minDuration: try a.double("min_duration") ?? 1.2, padding: 0.15, apply: try a.bool("apply") ?? false)

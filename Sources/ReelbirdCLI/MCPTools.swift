@@ -71,6 +71,13 @@ enum MCPTools {
                 "fps": ["type": "integer", "minimum": 1, "maximum": 240],
                 "out": ["type": "string", "description": "Output file path; default is the project's exports folder."],
              ], required: ["project"])),
+        tool("enhance_voice", "Enhance voice",
+             "Cleans up the voice (noise removal, leveling, de-essing, presence EQ) into the project's voice stem and turns Enhance voice on. The raw microphone is never changed; turn it off with set_edit audio.enhance=false.",
+             object([
+                "project": project,
+                "strength": ["type": "string", "enum": ["light", "medium", "strong", "max"], "description": "How much noise to remove; default is the project's setting (medium)."],
+                "mix": ["type": "number", "minimum": 0, "maximum": 1, "description": "0 = original, 1 = fully enhanced; default is the project's setting (1)."],
+             ], required: ["project"])),
         tool("generate_captions", "Generate captions",
              "Transcribes the project on-device, writes captions.vtt and a word-timed transcript.json, and links the captions in edit.json.",
              object([
