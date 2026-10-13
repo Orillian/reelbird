@@ -81,7 +81,7 @@ public enum ViewerPage {
             "POSTER": meta.url(meta.poster).map { #" poster="\#(attr($0))""# } ?? "",
             "HLS_URL": hlsURL,
             "HLS_SRI": hlsIntegrity,
-            "REPO": ReelbirdInfo.repositoryURL,
+            "SITE": ReelbirdInfo.websiteURL,
             "META": json,
         ])
     }
@@ -245,7 +245,7 @@ main{padding:0 0 16px}
 </section>
 </main>
 <footer class="foot">
-<a href="{{REPO}}" rel="noopener"><svg class="dot" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7.5" fill="var(--accent)"/><path d="M6.5 5.2v5.6L11 8z" fill="var(--on-accent)"/></svg>Made with Reelbird</a>
+<a href="{{SITE}}" rel="noopener"><svg class="dot" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7.5" fill="var(--accent)"/><path d="M6.5 5.2v5.6L11 8z" fill="var(--on-accent)"/></svg>Made with Reelbird</a>
 <button type="button" id="keys-open" aria-expanded="false" aria-controls="keys">Keyboard shortcuts</button>
 </footer>
 <div class="keys" id="keys" role="dialog" aria-label="Keyboard shortcuts" hidden>
