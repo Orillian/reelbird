@@ -162,10 +162,19 @@ struct PreviewStage: View {
                 .padding(Theme.Space.xl)
             } else if let player = model.player {
                 PlayerHost(view: player.view)
+                    .overlay { if model.isCropping { CropOverlay(model: model) } }
                     .padding(28)
-                    .onTapGesture { model.togglePlay() }
+                    .padding(.bottom, model.isCropping ? 44 : 0)
+                    .onTapGesture { if !model.isCropping { model.togglePlay() } }
                     .accessibilityLabel("Preview")
-                    .accessibilityHint("Press space to play or pause")
+                    .accessibilityHint(model.isCropping ? "Drag the crop edges; Return keeps the crop, Escape cancels" : "Press space to play or pause")
+                if model.isCropping {
+                    CropBar(model: model)
+                        .padding(.horizontal, 28)
+                        .padding(.bottom, 14)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        .transition(.opacity)
+                }
             } else {
                 ProgressView().controlSize(.small)
             }

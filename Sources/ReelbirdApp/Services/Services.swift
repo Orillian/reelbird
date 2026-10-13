@@ -80,7 +80,11 @@ protocol RenderService: Sendable {
     /// `ReelbirdRender.VoiceStem`: whether the enhanced voice matches `settings`, and rendering it.
     func voiceStemStatus(bundle: ProjectBundle, settings: AudioSettings) -> VoiceStemStatus
     func renderVoiceStem(bundle: ProjectBundle, settings: AudioSettings, progress: @escaping @Sendable (Double) -> Void) async throws
-    func autoZoomPlan(events: [InputEvent], duration: Double, intensity: Double) -> [ZoomRegion]
+    /// `AutoZoomPlanner.plan(events:duration:intensity:crop:)`: zooms only for what happens inside the crop.
+    func autoZoomPlan(events: [InputEvent], duration: Double, intensity: Double, crop: NormRect?) -> [ZoomRegion]
+    /// `ReelbirdRender.ToolbarDetector`: the browser toolbar found in the screen video (cached in the bundle),
+    /// `nil` when the video can't be read.
+    func cropSuggestion(bundle: ProjectBundle) async -> CropSuggestion?
 }
 
 /// `ReelbirdShare.ShareSettings`, `LiveShareUploader` and `ShareService`.

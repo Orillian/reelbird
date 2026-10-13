@@ -99,8 +99,11 @@ struct LiveRender: RenderService {
         let task = Task.detached(priority: .utility) { try await VoiceStem.render(bundle: bundle, settings: settings, progress: progress) }
         try await withTaskCancellationHandler { _ = try await task.value } onCancel: { task.cancel() }
     }
-    func autoZoomPlan(events: [InputEvent], duration: Double, intensity: Double) -> [ZoomRegion] {
-        AutoZoomPlanner.plan(events: events, duration: duration, intensity: intensity)
+    func autoZoomPlan(events: [InputEvent], duration: Double, intensity: Double, crop: NormRect?) -> [ZoomRegion] {
+        AutoZoomPlanner.plan(events: events, duration: duration, intensity: intensity, crop: crop)
+    }
+    func cropSuggestion(bundle: ProjectBundle) async -> CropSuggestion? {
+        await Task.detached(priority: .utility) { await ToolbarDetector.suggestion(bundle: bundle) }.value
     }
 }
 

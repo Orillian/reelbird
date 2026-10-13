@@ -16,10 +16,10 @@ import ReelbirdCore
     var onReady: (@MainActor ((any Error)?) -> Void)?
     let sourceDuration: Double
 
-    init(duration: Double, events: [InputEvent], sourceSize: PixelSize, hasCamera: Bool) {
+    init(duration: Double, events: [InputEvent], sourceSize: PixelSize, hasCamera: Bool, art: MockArt.Variant = .docs) {
         sourceDuration = duration
         timeline = EditTimeline(duration: duration, trim: nil, cuts: [])
-        canvas = MockPreviewView(events: events, sourceSize: sourceSize, hasCamera: hasCamera)
+        canvas = MockPreviewView(events: events, sourceSize: sourceSize, hasCamera: hasCamera, art: art)
     }
 
     var view: NSView { canvas }
@@ -80,24 +80,30 @@ final class MockPreviewView: NSView {
     private let clicks: [InputEvent]
     private let sourceSize: PixelSize
     private let hasCamera: Bool
+    private let art: MockArt.Variant
     private var cachedScreen: (CGSize, CGImage)?
 
-    init(events: [InputEvent], sourceSize: PixelSize, hasCamera: Bool) {
+    init(events: [InputEvent], sourceSize: PixelSize, hasCamera: Bool, art: MockArt.Variant) {
         self.events = events
         self.moves = events.filter { $0.type == .move || $0.type == .down }
         self.clicks = events.filter { $0.type == .down }
         self.sourceSize = sourceSize
         self.hasCamera = hasCamera
+        self.art = art
         super.init(frame: .zero)
         wantsLayer = true
     }
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
 
+    private var crop: CropSpace { CropSpace(edit.crop) }
+    /// Aspect of the visible (cropped) screen.
+    private var visibleAspect: Double { sourceSize.aspect * crop.rect.width / crop.rect.height }
+
     /// Output aspect for the edit's canvas setting.
     var outputAspect: Double {
         switch edit.canvas.aspect {
-        case .source: sourceSize.aspect
+        case .source: visibleAspect
         case .wide: 16.0 / 9
         case .vertical: 9.0 / 16
         case .square: 1
@@ -126,7 +132,7 @@ final class MockPreviewView: NSView {
         let pad = bg.kind == .none ? 0 : short * bg.padding
         let avail = frame.insetBy(dx: pad, dy: pad)
         var screen = avail
-        let sa = sourceSize.aspect
+        let sa = visibleAspect
         if avail.width / avail.height > sa {
             screen.size.width = avail.height * sa
             screen.origin.x = avail.midX - screen.width / 2
@@ -162,18 +168,25 @@ final class MockPreviewView: NSView {
         }
         ctx.saveGState()
         ctx.addPath(screenPath); ctx.clip()
-        if let img = screenImage(size: screen.size) {
+        // The whole screen image, placed so the crop fills the screen rect.
+        let full = CGRect(x: screen.minX - crop.rect.x * screen.width / crop.rect.width,
+                          y: screen.minY - crop.rect.y * screen.height / crop.rect.height,
+                          width: screen.width / crop.rect.width, height: screen.height / crop.rect.height)
+        if let img = screenImage(size: full.size) {
             ctx.saveGState()
-            ctx.translateBy(x: screen.minX, y: screen.maxY); ctx.scaleBy(x: 1, y: -1)
-            ctx.draw(img, in: CGRect(origin: .zero, size: screen.size))
+            ctx.translateBy(x: full.minX, y: full.maxY); ctx.scaleBy(x: 1, y: -1)
+            ctx.draw(img, in: CGRect(origin: .zero, size: full.size))
             ctx.restoreGState()
         }
         ctx.restoreGState()
 
-        if edit.cursor.visible, let p = cursorPosition(at: sourceTime) {
-            let pt = CGPoint(x: screen.minX + screen.width * p.x, y: screen.minY + screen.height * p.y)
+        if edit.cursor.visible, let sp = cursorPosition(at: sourceTime) {
+            let p = crop.toView(sp)
             drawClickEffects(ctx, screen: screen)
-            drawCursor(ctx, at: pt, size: short * 0.022 * edit.cursor.size)
+            if (-0.005...1.005).contains(p.x), (-0.005...1.005).contains(p.y) {
+                let pt = CGPoint(x: screen.minX + screen.width * p.x, y: screen.minY + screen.height * p.y)
+                drawCursor(ctx, at: pt, size: short * 0.022 * edit.cursor.size)
+            }
         }
         ctx.restoreGState() // zoom
 
@@ -205,7 +218,7 @@ final class MockPreviewView: NSView {
         let px = CGSize(width: (size.width * 2).rounded(), height: (size.height * 2).rounded())
         if let c = cachedScreen, abs(c.0.width - px.width) < 40 { return c.1 }
         guard px.width > 4, px.height > 4,
-              let img = MockArt.image(width: Int(px.width), height: Int(px.height), variant: .docs) else { return nil }
+              let img = MockArt.image(width: Int(px.width), height: Int(px.height), variant: art) else { return nil }
         cachedScreen = (px, img)
         return img
     }
@@ -231,7 +244,7 @@ final class MockPreviewView: NSView {
             let f = min(fIn, fOut)
             let e = f * f * (3 - 2 * f)
             let focus = r.focus ?? cursorPosition(at: t) ?? .center
-            return (1 + (r.scale - 1) * e, focus)
+            return (1 + (r.scale - 1) * e, crop.toView(focus))
         }
         return (1, .center)
     }
@@ -258,7 +271,8 @@ final class MockPreviewView: NSView {
     private func drawClickEffects(_ ctx: CGContext, screen: CGRect) {
         guard edit.cursor.clickEffect != .none else { return }
         for c in clicks where sourceTime >= c.t && sourceTime < c.t + 0.5 {
-            guard let p = c.point else { continue }
+            guard let sp = c.point, crop.contains(sp) else { continue }
+            let p = crop.toView(sp)
             let f = (sourceTime - c.t) / 0.5
             let center = CGPoint(x: screen.minX + screen.width * p.x, y: screen.minY + screen.height * p.y)
             let r = min(screen.width, screen.height) * (0.015 + 0.04 * f)

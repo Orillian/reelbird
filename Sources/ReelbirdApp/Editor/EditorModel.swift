@@ -86,6 +86,11 @@ enum CaptionState: Equatable {
     private(set) var voiceStemError: String?
     /// True while "Hear original" is held.
     private(set) var isHearingOriginal = false
+    /// The browser toolbar found in the screen video, once looked for (`nil` while looking or unreadable).
+    private(set) var cropSuggestion: CropSuggestion?
+    private(set) var isDetectingToolbar = false
+    /// Crop mode: the crop being drawn on the preview (full-screen coordinates). `nil` when not cropping.
+    private(set) var cropDraft: NormRect?
 
     @ObservationIgnored let undoManager = UndoManager()
     /// Off in snapshots so scenes don't write into the shared demo bundle.
@@ -112,7 +117,8 @@ enum CaptionState: Equatable {
         if fresh, let cursorDefaults { edit.cursor = cursorDefaults }
         if edit.title == nil { edit.title = manifest.title }
         if edit.zoom.mode == .auto && !edit.zoom.regions.contains(where: { $0.source == .auto }) {
-            edit.zoom.regions += services.render.autoZoomPlan(events: events, duration: manifest.duration, intensity: edit.zoom.intensity)
+            edit.zoom.regions += services.render.autoZoomPlan(events: events, duration: manifest.duration, intensity: edit.zoom.intensity,
+                                                              crop: edit.crop)
         }
         self.manifest = manifest
         self.events = events
@@ -140,7 +146,7 @@ enum CaptionState: Equatable {
             p.onReady = { [weak self] error in
                 if let error { self?.previewError = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription }
             }
-            p.update(edit: edit)
+            p.update(edit: previewEdit)
             player = p
         } catch {
             previewError = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -149,6 +155,7 @@ enum CaptionState: Equatable {
     }
 
     func loadTimelineMedia() {
+        detectToolbar()
         if hasMicrophone, audioAnalysis == nil, !isMeasuringVoice {
             isMeasuringVoice = true
             let settings = edit.audio
@@ -227,7 +234,7 @@ enum CaptionState: Equatable {
     }
 
     private func editDidChange() {
-        player?.update(edit: edit)
+        player?.update(edit: previewEdit)
         clampPlayhead()
         scheduleSave()
         updateVoiceStem(debounce: true)
@@ -312,7 +319,7 @@ enum CaptionState: Equatable {
         change("Zoom Mode") { e in
             e.zoom.mode = mode
             if mode == .auto && !e.zoom.regions.contains(where: { $0.source == .auto }) {
-                e.zoom.regions += services.render.autoZoomPlan(events: events, duration: duration, intensity: e.zoom.intensity)
+                e.zoom.regions += services.render.autoZoomPlan(events: events, duration: duration, intensity: e.zoom.intensity, crop: e.crop)
             }
         }
     }
@@ -321,7 +328,7 @@ enum CaptionState: Equatable {
         change("Zoom Intensity", coalesce: "zoomIntensity") { e in
             e.zoom.intensity = v
             e.zoom.regions.removeAll { $0.source == .auto }
-            e.zoom.regions += services.render.autoZoomPlan(events: events, duration: duration, intensity: v)
+            e.zoom.regions += services.render.autoZoomPlan(events: events, duration: duration, intensity: v, crop: e.crop)
             e.zoom.regions.sort { $0.range.start < $1.range.start }
         }
     }
@@ -329,7 +336,7 @@ enum CaptionState: Equatable {
     func resetAutoZooms() {
         change("Reset Zooms") { e in
             e.zoom.regions.removeAll()
-            e.zoom.regions = services.render.autoZoomPlan(events: events, duration: duration, intensity: e.zoom.intensity)
+            e.zoom.regions = services.render.autoZoomPlan(events: events, duration: duration, intensity: e.zoom.intensity, crop: e.crop)
         }
         selection = nil
     }
@@ -361,6 +368,100 @@ enum CaptionState: Equatable {
     var selectedZoom: ZoomRegion? {
         guard case .zoom(let id) = selection else { return nil }
         return edit.zoom.regions.first { $0.id == id }
+    }
+
+    // Crop
+
+    /// The app name when this is a recording of a browser window.
+    var browserName: String? { manifest.capture.source.browserAppName }
+    /// Size of the screen video in pixels.
+    var screenPixelSize: PixelSize { manifest.track(.screen)?.pixelSize ?? manifest.capture.pixelSize }
+    /// The crop that hides the detected toolbar, when one was found with good confidence.
+    var toolbarCrop: NormRect? { cropSuggestion?.isConfident == true ? cropSuggestion?.crop : nil }
+    var isToolbarHidden: Bool { edit.crop != nil && edit.crop == toolbarCrop }
+    var isCropping: Bool { cropDraft != nil }
+
+    /// Looks for a browser toolbar in the screen video (once; the result is cached in the bundle).
+    func detectToolbar() {
+        guard cropSuggestion == nil, !isDetectingToolbar else { return }
+        isDetectingToolbar = true
+        let services = services, bundle = bundle
+        Task { [weak self] in
+            let s = await services.render.cropSuggestion(bundle: bundle)
+            self?.cropSuggestion = s
+            self?.isDetectingToolbar = false
+        }
+    }
+
+    func setCropSuggestionForSnapshot(_ s: CropSuggestion?) { cropSuggestion = s; isDetectingToolbar = false }
+
+    /// Sets the crop with undo. Automatic zooms are planned again inside it.
+    func setCrop(_ crop: NormRect?, actionName: String) {
+        change(actionName) { e in
+            e.crop = crop?.sanitizedCrop
+            if e.zoom.mode == .auto {
+                e.zoom.regions.removeAll { $0.source == .auto }
+                e.zoom.regions += services.render.autoZoomPlan(events: events, duration: duration, intensity: e.zoom.intensity, crop: e.crop)
+                e.zoom.regions.sort { $0.range.start < $1.range.start }
+            }
+        }
+    }
+
+    func hideBrowserToolbar() {
+        guard let crop = toolbarCrop else { return }
+        if isCropping { cropDraft = crop; return }
+        setCrop(crop, actionName: "Hide Browser Toolbar")
+    }
+
+    func resetCrop() {
+        if isCropping { cropDraft = .full; return }
+        setCrop(nil, actionName: "Reset Crop")
+    }
+
+    /// Enters crop mode: the preview shows the whole screen with handles to drag.
+    func beginCrop() {
+        guard !isCropping else { return }
+        pause()
+        cropDraft = edit.crop ?? .full
+        player?.update(edit: previewEdit)
+    }
+
+    func updateCropDraft(_ r: NormRect) {
+        guard isCropping else { return }
+        cropDraft = r
+    }
+
+    /// Leaves crop mode keeping the drawn crop (one undo step).
+    func commitCrop() {
+        guard let draft = cropDraft else { return }
+        cropDraft = nil
+        let next = draft.sanitizedCrop
+        if next != edit.crop { setCrop(next, actionName: "Crop") } else { player?.update(edit: previewEdit) }
+    }
+
+    /// Leaves crop mode without changing the crop.
+    func cancelCrop() {
+        guard isCropping else { return }
+        cropDraft = nil
+        player?.update(edit: previewEdit)
+    }
+
+    /// What the preview draws: the edit, or in crop mode the whole uncropped screen without background,
+    /// zoom, cursor or overlays, so the crop handles sit on the full frame.
+    var previewEdit: EditDocument {
+        guard isCropping else { return edit }
+        var e = edit
+        e.crop = nil
+        e.zoom.mode = .off
+        e.background.kind = .none
+        e.background.motionBlur = false
+        e.camera.visible = false
+        e.cursor.visible = false
+        e.cursor.showKeystrokes = false
+        e.captions.burnIn = false
+        e.annotations = []
+        e.canvas.aspect = .source
+        return e
     }
 
     // Cuts, splits, trim

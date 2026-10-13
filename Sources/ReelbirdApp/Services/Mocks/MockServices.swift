@@ -275,7 +275,8 @@ struct MockRender: RenderService {
         let manifest = try? bundle.readManifest()
         return MockPreviewPlayer(duration: manifest?.duration ?? 42, events: (try? bundle.readEvents()) ?? [],
                                  sourceSize: manifest?.capture.pixelSize ?? PixelSize(width: 3456, height: 2234),
-                                 hasCamera: manifest?.track(.camera) != nil)
+                                 hasCamera: manifest?.track(.camera) != nil,
+                                 art: manifest?.capture.source.browserAppName == nil ? .docs : .browser)
     }
 
     func export(bundle: ProjectBundle, edit: EditDocument, options: ExportOptions,
@@ -319,8 +320,17 @@ struct MockRender: RenderService {
         return img
     }
 
-    func autoZoomPlan(events: [InputEvent], duration: Double, intensity: Double) -> [ZoomRegion] {
-        AutoZoomPlanner.plan(events: events, duration: duration, intensity: intensity)
+    func autoZoomPlan(events: [InputEvent], duration: Double, intensity: Double, crop: NormRect?) -> [ZoomRegion] {
+        AutoZoomPlanner.plan(events: events, duration: duration, intensity: intensity, crop: crop)
+    }
+
+    /// Browser windows have the mock browser's toolbar (`MockArt.browserToolbarHeight`); other recordings none.
+    func cropSuggestion(bundle: ProjectBundle) async -> CropSuggestion? {
+        guard let m = try? bundle.readManifest() else { return nil }
+        let size = m.capture.pixelSize
+        let top = m.capture.source.browserAppName == nil ? 0 : Int((MockArt.browserToolbarHeight(width: Double(size.width))).rounded())
+        return CropSuggestion(file: m.track(.screen)?.file ?? "screen/screen.mp4", fileSize: 1, height: size.height, topPixels: top,
+                              confidence: top > 0 ? 0.94 : 0)
     }
 }
 

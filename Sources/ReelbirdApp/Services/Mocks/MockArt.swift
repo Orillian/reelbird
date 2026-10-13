@@ -6,6 +6,9 @@ import CoreGraphics
 enum MockArt {
     enum Variant: Int, CaseIterable { case docs, code, browser, design, chat }
 
+    /// Height of the `.browser` variant's title bar and toolbar (including its divider) for an image `width` wide.
+    static func browserToolbarHeight(width: Double) -> Double { 7.8 * width / 100 }
+
     static func image(width: Int, height: Int, variant: Variant, dark: Bool = false, t: Double = 0) -> CGImage? {
         guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -87,6 +90,8 @@ enum MockArt {
             fill(side, CGRect(x: r.minX, y: r.minY + 3.7 * u, width: r.width, height: 4 * u))
             fill(bg, CGRect(x: r.minX + 25 * u, y: r.minY + 4.4 * u, width: 50 * u, height: 2.6 * u), radius: 1.3 * u)
             bar(28, 5.2, 20, 1.0)
+            ctx.setFillColor(line.cgColor)
+            ctx.fill(CGRect(x: r.minX, y: r.minY + 7.7 * u, width: r.width, height: max(1, 0.08 * u)))
             bar(10, 14, 36, 3.2, strong); bar(10, 20, 44, 1.2); bar(10, 23, 40, 1.2)
             fill(appAccent, CGRect(x: r.minX + 10 * u, y: r.minY + 28 * u, width: 13 * u, height: 3.6 * u), radius: 1.8 * u)
             fill(dark ? NSColor(white: 1, alpha: 0.06) : NSColor(hex: 0xE7E9EE), CGRect(x: r.minX + 54 * u, y: r.minY + 12 * u, width: 36 * u, height: 24 * u), radius: 1.2 * u)

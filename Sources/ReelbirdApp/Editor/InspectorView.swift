@@ -274,7 +274,7 @@ struct ZoomSection: View {
                 }
                 FieldRow(label: "Focus") {
                     Picker("Focus", selection: Binding(get: { r.focus == nil }, set: { follow in
-                        model.updateZoom(r.id, coalesce: "focus") { $0.focus = follow ? nil : .center }
+                        model.updateZoom(r.id, coalesce: "focus") { $0.focus = follow ? nil : (model.edit.crop?.center ?? .center) }
                     })) {
                         Text("Follow cursor").tag(true)
                         Text("Fixed point").tag(false)
@@ -408,6 +408,8 @@ struct CanvasSection: View {
                 }
             }
             Divider().padding(.vertical, 2)
+            CropControls(model: model)
+            Divider().padding(.vertical, 2)
             FieldRow(label: "Size") {
                 Picker("Size", selection: model.binding(\.canvas.outputHeight, "Output Size")) {
                     Text("Match recording").tag(Int?.none)
@@ -434,13 +436,87 @@ struct CanvasSection: View {
         switch a { case .source: "As recorded"; case .wide: "YouTube"; case .vertical: "Reels, Shorts"; case .square: "Feeds"; case .classic: "Slides" }
     }
     private func shape(_ a: CanvasSettings.Aspect) -> CGSize {
-        let r = model.manifest.capture.pixelSize.aspect
+        let r = CropSpace(model.edit.crop).pixelSize(of: model.screenPixelSize).aspect
         switch a {
         case .source: return r >= 1 ? CGSize(width: 34, height: 34 / r) : CGSize(width: 28 * r, height: 28)
         case .wide: return CGSize(width: 34, height: 19)
         case .vertical: return CGSize(width: 16, height: 28)
         case .square: return CGSize(width: 24, height: 24)
         case .classic: return CGSize(width: 30, height: 22.5)
+        }
+    }
+}
+
+// MARK: Crop
+
+/// Canvas → Crop: hide the browser toolbar in one click, draw a crop on the preview, or reset.
+struct CropControls: View {
+    @Bindable var model: EditorModel
+
+    var body: some View {
+        let crop = model.edit.crop
+        let screen = model.screenPixelSize
+        let visible = CropSpace(crop).pixelSize(of: screen)
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            HStack(alignment: .firstTextBaseline) {
+                SectionLabel(text: "Crop")
+                if crop != nil {
+                    Text(verbatim: "\(visible.width) × \(visible.height)")
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                        .help("Showing \(visible.width) × \(visible.height) of \(screen.width) × \(screen.height) pixels")
+                }
+            }
+            // Browser windows always lead with the toolbar button; other recordings show it when a toolbar was found
+            // (a full-screen browser on a display recording).
+            if model.browserName != nil || model.toolbarCrop != nil {
+                browserRow(model.browserName)
+            }
+            HStack(spacing: Theme.Space.s) {
+                Button { model.beginCrop() } label: { Label("Crop…", systemImage: "crop") }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(model.isCropping)
+                    .help("Drag the edges on the preview to choose what stays in view")
+                Button("Reset") { model.resetCrop() }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(crop == nil && !model.isCropping)
+                    .help("Show the whole recording again")
+            }
+        }
+    }
+
+    /// A browser window: the one-click toolbar button leads, with what it will do or has done.
+    @ViewBuilder private func browserRow(_ browser: String?) -> some View {
+        if model.isToolbarHidden {
+            StatusLine(tone: .success, text: browser.map { "\($0)'s toolbar is hidden." } ?? "The browser toolbar is hidden.")
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                Button { model.hideBrowserToolbar() } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "rectangle.topthird.inset.filled")
+                            .foregroundStyle(model.toolbarCrop == nil ? Color.secondary : Theme.accentText)
+                        Text("Hide Browser Toolbar")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .disabled(model.toolbarCrop == nil)
+                Group {
+                    if model.isDetectingToolbar {
+                        Text("Finding the toolbar…")
+                    } else if model.toolbarCrop == nil {
+                        Text("No toolbar found in this recording. Use Crop… to choose the area.")
+                    } else if let browser {
+                        Text("Shows just the page: no tabs, address bar or bookmarks from \(browser).")
+                    } else {
+                        Text("Hides the browser's tabs, address bar and bookmarks at the top.")
+                    }
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }

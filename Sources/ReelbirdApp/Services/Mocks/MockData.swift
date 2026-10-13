@@ -50,7 +50,8 @@ enum MockData {
 
     /// A manifest for an in-memory demo project.
     static func manifest(title: String = "Checkout flow walkthrough", duration: Double = 46.5, camera: Bool = true,
-                         share: ShareInfo? = nil, status: RecordingStatus = .complete, createdAt: Date = Date()) -> ProjectManifest {
+                         share: ShareInfo? = nil, status: RecordingStatus = .complete, createdAt: Date = Date(),
+                         source: CaptureSource = .display(id: 1, name: "Built-in Retina Display")) -> ProjectManifest {
         var tracks = [
             TrackInfo(kind: .screen, directory: "screen", file: "screen/screen.mp4", codec: "hvc1",
                       pixelSize: PixelSize(width: 3456, height: 2234), duration: duration),
@@ -64,8 +65,7 @@ enum MockData {
                                     pixelSize: PixelSize(width: 1920, height: 1080), duration: duration))
         }
         return ProjectManifest(createdAt: createdAt, title: title, appVersion: ReelbirdInfo.version, status: status,
-                               capture: CaptureInfo(source: .display(id: 1, name: "Built-in Retina Display"),
-                                                    pixelSize: PixelSize(width: 3456, height: 2234), scale: 2, frameRate: 60),
+                               capture: CaptureInfo(source: source, pixelSize: PixelSize(width: 3456, height: 2234), scale: 2, frameRate: 60),
                                clock: ClockInfo(originHostTime: 0), tracks: tracks,
                                pauses: [TimeRange(start: 21.0, end: 23.2)], duration: duration, share: share)
     }
@@ -74,9 +74,10 @@ enum MockData {
     @discardableResult
     static func writeDemoBundle(at url: URL, title: String, duration: Double, camera: Bool = true,
                                 share: ShareInfo? = nil, status: RecordingStatus = .complete,
-                                createdAt: Date = Date()) throws -> ProjectBundle {
+                                createdAt: Date = Date(), source: CaptureSource = .display(id: 1, name: "Built-in Retina Display")) throws -> ProjectBundle {
         let b = try ProjectBundle.create(at: url)
-        try b.writeManifest(manifest(title: title, duration: duration, camera: camera, share: share, status: status, createdAt: createdAt))
+        try b.writeManifest(manifest(title: title, duration: duration, camera: camera, share: share, status: status, createdAt: createdAt,
+                                     source: source))
         let w = try EventLogWriter(url: b.eventsURL)
         for e in events(duration: duration) { w.append(e) }
         w.close()

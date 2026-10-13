@@ -52,6 +52,15 @@ import SwiftUI
             // ⌘ shortcuts live in the menus (File, Timeline, View); this handles the single keys.
             let mods = event.modifierFlags.intersection([.command, .option, .control])
             guard mods.isEmpty else { return event }
+            if self.model.isCropping {
+                // Crop mode: Return keeps the crop, Esc cancels; editing keys wait until it's done.
+                switch event.keyCode {
+                case 36, 76: self.model.commitCrop(); return nil
+                case 53: self.model.cancelCrop(); return nil
+                case 49: self.model.togglePlay(); return nil
+                default: return ["s", "z"].contains(event.charactersIgnoringModifiers?.lowercased() ?? "") || [51, 117].contains(event.keyCode) ? nil : event
+                }
+            }
             switch event.keyCode {
             case 49: self.model.togglePlay(); return nil              // space
             case 123: self.model.step(event.modifierFlags.contains(.shift) ? -1 : -1.0 / 30); return nil

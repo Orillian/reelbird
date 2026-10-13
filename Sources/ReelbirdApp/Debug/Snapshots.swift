@@ -42,6 +42,10 @@ import SwiftUI
         guard let demo = try? MockData.writeDemoBundle(at: demoURL, title: "Checkout flow walkthrough", duration: 46.5,
                                                        share: ShareInfo(key: "r/7Hk2pQx9aB", url: "https://pub-3f9a.r2.dev/r/7Hk2pQx9aB/", polished: false))
         else { print("Couldn't write demo bundle"); return }
+        guard let browserDemo = try? MockData.writeDemoBundle(at: work.appendingPathComponent("Checkout in Chrome.reelbird"),
+                                                              title: "Checkout flow walkthrough", duration: 46.5,
+                                                              source: .window(id: 9, app: "Google Chrome", title: "Checkout – Acme"))
+        else { print("Couldn't write demo bundle"); return }
 
         let sources = MockCaptureSources.sources(withThumbnails: true)
         var scenes: [Scene] = []
@@ -175,9 +179,10 @@ import SwiftUI
         })
 
         // Editor
-        func editor(_ section: InspectorSection, variant: String? = nil, configure: @escaping (EditorModel) -> Void = { _ in }) -> Scene {
+        func editor(_ section: InspectorSection, variant: String? = nil, bundle: ProjectBundle? = nil,
+                    configure: @escaping (EditorModel) -> Void = { _ in }) -> Scene {
             Scene(name: "editor-\(section.rawValue)" + (variant.map { "-\($0)" } ?? ""), size: CGSize(width: 1320, height: 840), backdrop: false) {
-                guard let m = try? EditorModel(bundle: demo, services: services) else { return AnyView(Text("Editor failed")) }
+                guard let m = try? EditorModel(bundle: bundle ?? demo, services: services) else { return AnyView(Text("Editor failed")) }
                 m.autosaveEnabled = false
                 m.attachPlayer()
                 m.setTimelineMediaForSnapshot(waveform: MockArt.waveform(count: 600, seed: 3),
@@ -196,6 +201,32 @@ import SwiftUI
         })
         scenes.append(editor(.camera) { m in m.change("x") { $0.camera.shape = .roundedRect; $0.canvas.aspect = .wide } })
         scenes.append(editor(.canvas) { m in m.change("x") { $0.canvas.aspect = .vertical } })
+        // Crop: a Chrome window before and after "Hide Browser Toolbar", and crop mode on the preview.
+        func toolbar(_ m: EditorModel) {
+            let size = m.screenPixelSize
+            m.setCropSuggestionForSnapshot(CropSuggestion(file: "screen/screen.mp4", fileSize: 1, height: size.height,
+                                                          topPixels: Int(MockArt.browserToolbarHeight(width: Double(size.width)).rounded()),
+                                                          confidence: 0.94))
+        }
+        scenes.append(editor(.canvas, variant: "browser", bundle: browserDemo) { m in toolbar(m) })
+        scenes.append(editor(.canvas, variant: "toolbar-hidden", bundle: browserDemo) { m in
+            toolbar(m)
+            m.hideBrowserToolbar()
+        })
+        scenes.append(editor(.canvas, variant: "crop-mode", bundle: browserDemo) { m in
+            toolbar(m)
+            m.beginCrop()
+            m.updateCropDraft(NormRect(x: 0.06, y: 0.21, width: 0.86, height: 0.71))
+        })
+        scenes.append(editor(.canvas, variant: "crop-mode-snapped", bundle: browserDemo) { m in
+            toolbar(m)
+            m.beginCrop()
+            if let c = m.toolbarCrop { m.updateCropDraft(c) }
+        })
+        scenes.append(editor(.canvas, variant: "crop-display", bundle: demo) { m in
+            m.setCropSuggestionForSnapshot(CropSuggestion(file: "screen/screen.mp4", fileSize: 1, height: 2234, topPixels: 0, confidence: 0))
+            m.setCrop(NormRect(x: 0.2, y: 0.1, width: 0.6, height: 0.6), actionName: "x")
+        })
         scenes.append(editor(.audio) { m in
             m.setPlayheadForSnapshot(18)
             m.splitAtPlayhead()
