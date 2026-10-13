@@ -277,3 +277,44 @@ private func close(_ a: NormPoint, _ b: NormPoint, _ tol: Double = 1e-6) -> Bool
     manifest.tracks.removeLast()
     #expect(EditDocument.initial(for: manifest, events: events).camera.moves.isEmpty)
 }
+
+@Test func initialEditCarriesTheLiveSizeRelativeToTheCapturedScreen() throws {
+    let screen = PixelSize(width: 2000, height: 1000)
+    // Size from the logged frame: a circle's width, a portrait tile's height / 1.15, over the shorter side.
+    #expect(abs((CameraPlacement.size(recorded: NormRect(x: 0, y: 0, width: 0.1, height: 0.2), shape: .circle, screen: screen) ?? 0) - 0.2) < 1e-9)
+    let tile = CameraPlacement.bubbleSize(shape: .portrait, size: 280, short: 1)
+    let portrait = NormRect(x: 0.5, y: 0.5, width: tile.width / 2000 * 2, height: tile.height / 1000 * 2)
+    #expect(abs((CameraPlacement.size(recorded: portrait, shape: .portrait, screen: screen) ?? 0) - 0.56) < 1e-9)
+    #expect(CameraPlacement.size(recorded: NormRect(x: 0.5, y: 0.5, width: 0, height: 0), shape: .circle, screen: screen) == nil)
+    // Cropped to the left half: the same bubble is a bigger share of the visible screen's shorter side (1000 px).
+    #expect(abs((CameraPlacement.size(recorded: NormRect(x: 0, y: 0, width: 0.1, height: 0.2), shape: .circle, screen: screen,
+                                       crop: CropSpace(NormRect(x: 0, y: 0, width: 0.5, height: 1))) ?? 0) - 0.2) < 1e-9)
+
+    // The card: no background = the whole frame; 8% padding on 16:9 leaves 84% of the height.
+    var bg = BackgroundSettings()
+    #expect(abs(CameraPlacement.cardScale(source: PixelSize(width: 1920, height: 1080), background: bg) - 0.84) < 1e-9)
+    bg.kind = .none
+    #expect(CameraPlacement.cardScale(source: PixelSize(width: 1920, height: 1080), background: bg) == 1)
+
+    // The size held longest wins (medium for 20 s, large for 5 s), scaled to the card and kept in the editor's range.
+    func at(_ d: Double) -> NormRect { NormRect(x: 0.4, y: 0.4, width: d / 2000, height: d / 1000) }
+    var layout = CameraLayout()
+    let events: [InputEvent] = [.camera(0, frame: at(200), shape: .circle), .camera(20, frame: at(300), shape: .circle)]
+    CameraPlacement.apply(events: events, screen: screen, crop: nil, duration: 25, sizeScale: 0.9, to: &layout)
+    #expect(abs(layout.size - 0.18) < 1e-9, "\(layout.size)")
+    layout = CameraLayout()
+    CameraPlacement.apply(events: events, screen: screen, crop: nil, duration: 60, to: &layout)
+    #expect(abs(layout.size - 0.3) < 1e-9, "large held longer: \(layout.size)")
+    layout = CameraLayout()
+    CameraPlacement.apply(events: [.camera(0, frame: at(900), shape: .circle)], screen: screen, crop: nil, to: &layout)
+    #expect(layout.size == CameraPlacement.sizeRange.upperBound)
+
+    // Through the first edit (default background: 8% padding on 2:1 → card 0.84 of the height).
+    var manifest = ProjectManifest(title: "t", appVersion: "test",
+                                   capture: CaptureInfo(source: .synthetic(name: "t"), pixelSize: screen, scale: 2, frameRate: 60),
+                                   clock: ClockInfo(originHostTime: 0), duration: 30)
+    manifest.tracks = [TrackInfo(kind: .screen, directory: "screen", codec: "hevc", pixelSize: screen),
+                       TrackInfo(kind: .camera, directory: "camera", codec: "h264", pixelSize: PixelSize(width: 1280, height: 720))]
+    let e = EditDocument.initial(for: manifest, events: [.camera(0, frame: at(250), shape: .circle)])
+    #expect(abs(e.camera.size - 0.25 * 0.84) < 1e-9, "\(e.camera.size)")
+}

@@ -162,7 +162,7 @@ final class ShareComposer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "reelbird.share.compose", qos: .userInitiated)
     private struct Latest { var screen: CVPixelBuffer?; var camera: CVPixelBuffer? }
     private let latest = Locked(Latest())
-    private struct Placement { var from: NormPoint; var to: NormPoint; var since: Double; var shape: CameraLayout.Shape }
+    private struct Placement { var from: NormPoint; var to: NormPoint; var since: Double; var shape: CameraLayout.Shape; var size: Double }
     private let placement: Locked<Placement>
     private var mask: (shape: CameraLayout.Shape, width: Int, height: Int, image: CIImage)?
     private var timer: (any DispatchSourceTimer)?
@@ -178,7 +178,7 @@ final class ShareComposer: @unchecked Sendable {
         self.size = size
         self.layout = layout
         let start = layout.position
-        placement = Locked(Placement(from: start, to: start, since: -1, shape: layout.shape))
+        placement = Locked(Placement(from: start, to: start, since: -1, shape: layout.shape, size: layout.size))
         let options: [CIContextOption: Any] = [.workingColorSpace: colorSpace, .cacheIntermediates: false, .name: "reelbird.share"]
         if let device = MTLCreateSystemDefaultDevice() {
             context = CIContext(mtlDevice: device, options: options)
@@ -198,13 +198,14 @@ final class ShareComposer: @unchecked Sendable {
     func update(screen pb: CVPixelBuffer) { latest.withLock { $0.screen = pb } }
     func update(camera pb: CVPixelBuffer) { latest.withLock { $0.camera = pb } }
 
-    /// The live bubble moved (`position` as in `CameraLayout`) at timeline `t`: glide there from where it is.
-    func setCamera(position: NormPoint, shape: CameraLayout.Shape, at t: Double) {
+    /// The live bubble moved (`position` and `size` as in `CameraLayout`) at timeline `t`: glide there from where it is.
+    func setCamera(position: NormPoint, shape: CameraLayout.Shape, size: Double? = nil, at t: Double) {
         placement.withLock { p in
             let now = Self.place(p, at: t)
+            let size = size.map { min(CameraPlacement.sizeRange.upperBound, max(CameraPlacement.sizeRange.lowerBound, $0)) } ?? p.size
             // The first place (t = 0) is where the bubble starts, not a move.
-            p = t <= 0 ? Placement(from: position, to: position, since: -1, shape: shape)
-                       : Placement(from: now, to: position, since: t, shape: shape)
+            p = t <= 0 ? Placement(from: position, to: position, since: -1, shape: shape, size: size)
+                       : Placement(from: now, to: position, since: t, shape: shape, size: size)
         }
     }
 
@@ -276,9 +277,10 @@ final class ShareComposer: @unchecked Sendable {
             .composited(over: CIImage(color: .black).cropped(to: CGRect(x: 0, y: 0, width: W, height: H)))
         guard let camera, layout.visible else { return img.cropped(to: CGRect(x: 0, y: 0, width: W, height: H)) }
 
-        let (place, shape) = placement.withLock { (Self.place($0, at: t), $0.shape) }
+        let (place, shape, size) = placement.withLock { (Self.place($0, at: t), $0.shape, $0.size) }
         var bubble = layout
         bubble.shape = shape
+        bubble.size = size
         let f = CameraPlacement.frame(at: place, layout: bubble, width: W, height: H)
         let bw = f.width.rounded(), bh = f.height.rounded()
         var cam = CIImage(cvPixelBuffer: camera)

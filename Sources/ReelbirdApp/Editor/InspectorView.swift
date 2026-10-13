@@ -325,7 +325,7 @@ struct CameraSection: View {
                 if model.edit.camera.visible {
                     shapePicker
                     FieldRow(label: "Size") {
-                        ValueSlider(value: model.binding(\.camera.size, "Camera Size"), range: 0.1...0.45) { "\(Int($0 * 100))%" }
+                        ValueSlider(value: model.binding(\.camera.size, "Camera Size"), range: CameraPlacement.sizeRange) { "\(Int($0 * 100))%" }
                     }
                     FieldRow(label: "Position") {
                         VStack(alignment: .leading, spacing: 6) {

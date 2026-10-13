@@ -57,12 +57,14 @@ public struct EditDocument: Codable, Hashable, Sendable {
     }
 
     /// The initial edit with the camera placed where the live bubble was during the recording (the `camera`
-    /// events: its first place, then a glide for each later move).
+    /// events: its first place, then a glide for each later move), in its shape and at its size relative to the
+    /// captured screen (scaled to the padded screen card, so it matches what was on screen).
     public static func initial(for manifest: ProjectManifest, events: [InputEvent]) -> EditDocument {
         var e = initial(for: manifest)
         if manifest.track(.camera) != nil {
             let screen = manifest.track(.screen)?.pixelSize ?? manifest.capture.pixelSize
-            CameraPlacement.apply(events: events, screen: screen, crop: e.crop, to: &e.camera)
+            CameraPlacement.apply(events: events, screen: screen, crop: e.crop, duration: manifest.duration,
+                                  sizeScale: CameraPlacement.cardScale(source: screen, background: e.background), to: &e.camera)
         }
         return e
     }
