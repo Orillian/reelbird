@@ -31,7 +31,7 @@ const sitemap = () => ({
   },
 });
 
-// Static output: every page is an HTML file in dist/, served by Tiffin's static edge.
+// Static output: every page is an HTML file in dist/, so any static host can serve it.
 export default defineConfig({
   site: SITE,
   integrations: [sitemap()],

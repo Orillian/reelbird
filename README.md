@@ -324,3 +324,5 @@ Bug reports, fixes and features are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) 
 ## Support Reelbird
 
 Reelbird is free and always will be. If it saves you time or a subscription, you can [support the project](https://reelbird.shiptiffin.app/support/), once or monthly. Stars, bug reports and pull requests help too.
+
+<sub>The Reelbird website is hosted on <a href="https://shiptiffin.com">ShipTiffin</a>, which puts all your apps on one server you own. It's open source too: <a href="https://github.com/shiptiffin/tiffin">shiptiffin/tiffin</a>.</sub>

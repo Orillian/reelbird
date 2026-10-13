@@ -17,34 +17,20 @@ bun run preview    # serves dist/
 `README.md` and `docs/*.md` into `src/content/docs/`. Commit those copies: when only `site/` is
 uploaded (no `../docs`), the build uses them and says so.
 
-## Deploy (Tiffin static app)
+## Deploy
 
-The site is a Tiffin `static` app. In the project's `tiffin.config.ts`:
+`bun run build` writes a fully static site to `dist/`: one `<page>/index.html` per page, a
+`404.html`, and fingerprinted assets in `/_astro/`. Upload `dist/` to any static host
+(Cloudflare Pages, Netlify, GitHub Pages, an S3 bucket, nginx).
 
-```ts
-apps: {
-  site: {
-    framework: "static",
-    path: "site",
-    build: "bun run build",
-    output: "dist",
-  },
-}
-```
+- **Trailing slashes:** every canonical URL ends in `/`, so the host should redirect `/download`
+  to `/download/` (most do by default) and serve `404.html` with status 404.
+- **Caching:** `/_astro/*` is safe to cache for a year. Revalidate everything else (`/media`,
+  `/og`, favicons, `sitemap.xml`, `llms.txt`).
+- **Env:** none required. `PUBLIC_UMAMI_WEBSITE_ID` is optional (see Analytics below).
+- **Build time:** about 6 s cold on an M-series Mac, most of it image optimisation; about 1 s warm.
 
-- **Install and build:** the box sees `bun.lock`, so it runs `bun install` then `bun run build`.
-  Astro 7 needs Node.js 22.12 or later if it runs under Node; it also builds under Bun.
-- **Output:** `dist/`. Pages are `dist/<page>/index.html`, so `/download` redirects to
-  `/download/` and every canonical URL ends in a slash. `dist/404.html` is served with status 404
-  for unknown paths. There is no client-side router, so no `index.html` fallback is needed.
-- **Caching:** Astro's fingerprinted files in `/_astro/` (CSS, JS, fonts, optimised images) are
-  cached for a year by the edge. Everything else (`/media/*.mp4`, `/og/*.png`, favicons,
-  `sitemap.xml`, `llms.txt`) is revalidated with an ETag on each visit.
-- **Headers:** the edge adds `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy` and
-  `frame-ancestors 'none'`. Nothing else is required.
-- **Env:** none. No secrets, no analytics.
-- **Build time:** about 6 s cold on an M-series Mac (most of it is image optimisation, cached in
-  `node_modules/.astro` afterwards), about 1 s warm.
+The official site runs on [ShipTiffin](https://shiptiffin.com), which serves the prebuilt `dist/`.
 
 ## Where things live
 
