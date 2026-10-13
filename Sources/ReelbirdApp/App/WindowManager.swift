@@ -10,6 +10,8 @@ import SwiftUI
     private var library: NSWindow?
     private var settings: SettingsWindowController?
     private var onboarding: NSWindow?
+    /// Bundles being recovered before their editor opens.
+    private var recovering: Set<URL> = []
 
     init(app: AppModel) { self.app = app }
 
@@ -38,6 +40,11 @@ import SwiftUI
     func openEditor(bundle: ProjectBundle) {
         let key = bundle.url.standardizedFileURL
         if let existing = editors[key] { bring(existing.window); return }
+        guard !recovering.contains(key) else { return }
+        if app.services.recorder.needsRecovery(bundle) {
+            recoverThenOpen(bundle, key: key)
+            return
+        }
         do {
             let controller = try EditorWindowController(bundle: bundle, app: app)
             controller.window?.delegate = self
@@ -50,6 +57,38 @@ import SwiftUI
             app.library.noteRecent(bundle)
         } catch {
             app.present(error, title: "Couldn't open this recording")
+        }
+    }
+
+    /// A take cut short by a crash is rebuilt first, off the main thread (consolidating a long take takes
+    /// a while), with a toast while it runs; the editor opens when it's done.
+    private func recoverThenOpen(_ bundle: ProjectBundle, key: URL) {
+        let manifest = try? bundle.readManifest()
+        if key == app.recording.activeBundle?.standardizedFileURL || manifest.map({ bundle.isBeingRecorded($0) }) == true {
+            app.present(StillRecording(), title: "Couldn't open this recording")
+            return
+        }
+        recovering.insert(key)
+        Toast.show(title: "Recovering recording…", detail: "Rebuilding what was recorded before Reelbird stopped. It opens when it's ready.",
+                   symbol: "arrow.clockwise", duration: 600)
+        let recorder = app.services.recorder
+        Task {
+            let result = await Task.detached(priority: .userInitiated) { () -> Result<Bool, any Error> in
+                Result { try recorder.recoverIfNeeded(bundle, waitForLock: true) }
+            }.value
+            recovering.remove(key)
+            Toast.hide()
+            switch result {
+            case .success:
+                app.library.reload()
+                guard !app.services.recorder.needsRecovery(bundle) else {
+                    app.present(StillRecording(), title: "Couldn't open this recording")
+                    return
+                }
+                openEditor(bundle: bundle)
+            case .failure(let error):
+                app.present(error, title: "Couldn't recover this recording")
+            }
         }
     }
 

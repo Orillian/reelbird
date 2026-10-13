@@ -167,6 +167,9 @@ actor SessionEngine {
     private var recordingStarted = false
     private var discardRequested = false
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Held from the moment the bundle exists until the take is finalized, discarded or abandoned, so
+    /// recovery (app, CLI or MCP) never touches a take its recorder is still writing or consolidating.
+    private var bundleLock: BundleLock?
 
     let micMonitor: MicrophoneMonitor
     /// The microphone the take is locked to (an explicit device, resolved at start).
@@ -251,6 +254,7 @@ actor SessionEngine {
         try checkNotDiscarded()
         format = fmt
         _ = try ProjectBundle.create(at: bundle.url)
+        bundleLock = try BundleLock.acquire(bundle, purpose: .recording, wait: false)
 
         let (screen, screenSpec) = try EncoderSettings.makeWriter(
             EncoderSettings.screen(size: fmt.pixelSize, frameRate: fmt.frameRate, quality: options.quality)) { spec in
@@ -351,6 +355,12 @@ actor SessionEngine {
         await pump?.cancel()
         eventLog?.close()
         try? FileManager.default.removeItem(at: bundle.url)
+        releaseLock()
+    }
+
+    private func releaseLock() {
+        bundleLock?.release()
+        bundleLock = nil
     }
 
     // MARK: Pause / resume
@@ -480,6 +490,7 @@ actor SessionEngine {
             m.share = manifest?.share ?? m.share
             manifest = m
             try? bundle.writeManifest(m)
+            releaseLock()
             ticker?.cancel()
             phase = .failed
             status.warnings = failureWarnings(at: endTime)
@@ -494,6 +505,7 @@ actor SessionEngine {
         m.share = manifest?.share ?? m.share
         manifest = m
         try bundle.writeManifest(m)
+        releaseLock()
 
         if fmt.hasMicrophone { micMonitor.finish(activeSeconds: max(0, endTime - pausedTotal)) }
         ticker?.cancel()
@@ -523,6 +535,7 @@ actor SessionEngine {
         if wasRunning || recordingStarted || FileManager.default.fileExists(atPath: bundle.manifestURL.path) {
             try? FileManager.default.removeItem(at: bundle.url)
         }
+        releaseLock()
         phase = .idle
         status = RecorderStatus()
         publish()
@@ -536,6 +549,7 @@ actor SessionEngine {
         pipeline?.abandon()
         eventLog?.close()
         pump?.abandon()
+        releaseLock()   // a crashed process's lock goes with it
         phase = .failed
         publish()
         broadcaster.finish()

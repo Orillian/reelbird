@@ -13,6 +13,7 @@ Demo.reelbird/
   microphone/       same layout, audio only (optional)
   systemAudio/      same layout, audio only (optional)
   share/            the quick-share stream (optional; its timeline skips paused ranges)
+  .lock             empty lock file (see Recovery)
   captions.vtt      optional
   transcript.json   optional, word-timed transcript behind captions.vtt (source timeline)
   analysis.json     optional cache: loudness, noise floor and speech ranges of the audio (AudioAnalysis)
@@ -100,6 +101,14 @@ A stem plays while it was made from the current microphone file and chain versio
 
 `project.json → status` is `recording` while a take is being written, `complete` after a clean stop and `recovered` after a crash recovery. If the project was shared, `share` holds its key, link and last update.
 
+## Writes
+
+`project.json` and `edit.json` are written to a temporary file, flushed and renamed over the old one, so a crash or power cut leaves the old or the new file, never a torn one. While recording (every 2 s) the flush is a write barrier (`F_BARRIERFSYNC`, about 0.5 ms); the final `project.json` of a take and every `edit.json` are fully flushed (`F_FULLFSYNC`, then the folder; about 8 ms).
+
 ## Recovery
 
 If the app stops while recording, `project.json` still says `"status": "recording"`. On next launch (or with `reelbird recover PROJECT`) the segments on disk are concatenated, a truncated last segment is dropped, the duration is recomputed, and the status becomes `recovered`.
+
+If `project.json` itself is unreadable, recovery rebuilds it from what is on disk: tracks from their folders (segments or finished files) and pauses from `events.jsonl`. The capture source, display scale (2) and frame rate (60) aren't stored anywhere else, so those are guesses.
+
+`.lock` is an advisory `flock` shared by the app, the CLI and the MCP server. The recorder holds it for the whole take (including while it consolidates) and recovery holds it while it rebuilds, so two processes never rebuild the same project at once; a second recovery waits and then finds the work done. The file holds what the holder is doing (`recording`, `recovering` or `cleanup`). The system releases it when a process exits, so a crash never leaves a project locked. Don't delete it while Reelbird might be using the project.

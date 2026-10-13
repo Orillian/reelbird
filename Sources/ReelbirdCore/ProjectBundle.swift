@@ -14,6 +14,7 @@ import Foundation
 ///       analysis.json       optional cache: loudness, noise floor and speech ranges of the audio (AudioAnalysis)
 ///       voice/              optional cache: the enhanced voice stem (voice-<hash>.caf + stem.json, VoiceStemInfo)
 ///       exports/            rendered outputs
+///       .lock               BundleLock (recorder / recovery)
 public struct ProjectBundle: Hashable, Sendable {
     public static let pathExtension = "reelbird"
 
@@ -49,15 +50,26 @@ public struct ProjectBundle: Hashable, Sendable {
         try JSONCoding.decoder.decode(ProjectManifest.self, from: Data(contentsOf: manifestURL))
     }
 
+    /// Writes `project.json` durably. While recording (rewritten every 2 s) a barrier keeps a power cut
+    /// from tearing it; a finished or recovered manifest is fully flushed (`F_FULLFSYNC`), since
+    /// segment cleanup and recovery rely on it.
     public func writeManifest(_ m: ProjectManifest) throws {
-        try JSONCoding.writeAtomically(m, to: manifestURL)
+        try JSONCoding.writeAtomically(m, to: manifestURL, sync: m.status == .recording ? .barrier : .full)
     }
 
     /// Whether a recorder (the app or the CLI) still seems to be writing this bundle: `manifest` says
-    /// `.recording` and `project.json` changed in the last `window` seconds (a live session rewrites it
-    /// every 2 s, paused or not). A take cut short by a crash stops changing, so it isn't live and can be
-    /// recovered. Don't open, recover or trash a live bundle; its recorder will finish it.
+    /// `.recording` and either a recorder holds the bundle's lock (it does for the whole take, including
+    /// while it consolidates) or `project.json` changed in the last `window`
+    /// seconds (a live session rewrites it every 2 s, paused or not). A take cut short by a crash has
+    /// neither, so it can be recovered. Don't open, recover or trash a live bundle; its recorder will
+    /// finish it.
     public func isBeingRecorded(_ manifest: ProjectManifest, window: TimeInterval = 10, now: Date = Date()) -> Bool {
+        guard manifest.status == .recording else { return false }
+        return wasWrittenRecently(manifest, window: window, now: now) || BundleLock.holder(self) == .recording
+    }
+
+    /// `manifest` says `.recording` and `project.json` changed in the last `window` seconds.
+    public func wasWrittenRecently(_ manifest: ProjectManifest, window: TimeInterval = 10, now: Date = Date()) -> Bool {
         guard manifest.status == .recording,
               let modified = (try? manifestURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
         else { return false }
@@ -73,7 +85,7 @@ public struct ProjectBundle: Hashable, Sendable {
     }
 
     public func writeEdit(_ e: EditDocument) throws {
-        try JSONCoding.writeAtomically(e, to: editURL)
+        try JSONCoding.writeAtomically(e, to: editURL, sync: .full)
     }
 
     /// The cached `analysis.json`, or `nil` when missing, unreadable or from another analysis version.
@@ -117,10 +129,11 @@ public enum JSONCoding {
         d.dateDecodingStrategy = .iso8601
         return d
     }
-    /// Encodes and writes via a temporary file + rename, so readers never see a partial file.
-    public static func writeAtomically<T: Encodable>(_ value: T, to url: URL) throws {
+    /// Encodes and writes via a flushed temporary file + rename (`DurableFile`), so readers never see
+    /// a partial file, even after a power cut.
+    public static func writeAtomically<T: Encodable>(_ value: T, to url: URL, sync: DurableFile.Sync = .barrier) throws {
         let data = try encoder.encode(value)
-        try data.write(to: url, options: .atomic)
+        try DurableFile.write(data, to: url, sync: sync)
     }
 }
 

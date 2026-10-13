@@ -29,25 +29,34 @@ enum SegmentStore {
 
     /// Concatenates `init.mp4` and every complete segment (in order, stopping at the first damaged one)
     /// into `<kind>.mp4` in the track directory. Returns `nil` when there is nothing playable.
+    ///
+    /// The copy goes to a uniquely named hidden file, is flushed with `F_FULLFSYNC`, read back and checked
+    /// (size and box structure), and only then renamed into place, so an interrupted or concurrent
+    /// consolidation never leaves a broken `<kind>.mp4`.
     static func consolidate(directory: URL, kind: TrackKind) throws -> TrackSummary? {
         let initURL = directory.appendingPathComponent("init.mp4")
         guard let initData = try? Data(contentsOf: initURL), MP4.isValidInit(initData) else { return nil }
         let info = MP4.initInfo(initData)
         let outName = "\(kind.rawValue).mp4"
         let outURL = directory.appendingPathComponent(outName)
-        let tmpURL = directory.appendingPathComponent(".\(outName).partial")
-        FileManager.default.createFile(atPath: tmpURL.path, contents: nil)
+        let tmpURL = directory.appendingPathComponent(".\(outName).\(UInt32.random(in: 0...UInt32.max)).partial")
+        guard FileManager.default.createFile(atPath: tmpURL.path, contents: nil) else {
+            throw DurableFile.posixError(errno == 0 ? EIO : errno, tmpURL)
+        }
         let handle = try FileHandle(forWritingTo: tmpURL)
         var ok = false
+        var closed = false
         defer {
-            try? handle.close()
+            if !closed { try? handle.close() }
             if !ok { try? FileManager.default.removeItem(at: tmpURL) }
         }
         try handle.write(contentsOf: initData)
         var count = 0
+        var bytes = Int64(initData.count)
         var firstStart: [UInt32: UInt64] = [:]
         var lastEnd: [UInt32: UInt64] = [:]
-        for url in segmentFiles(in: directory) {
+        let segments = segmentFiles(in: directory)
+        for url in segments {
             guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
                   let frags = MP4.fragments(data) else { break }  // truncated: everything after it is unusable
             for f in frags {
@@ -55,14 +64,20 @@ enum SegmentStore {
                 lastEnd[f.trackID] = max(lastEnd[f.trackID] ?? 0, f.baseDecodeTime + f.duration)
             }
             try handle.write(contentsOf: data)
+            bytes += Int64(data.count)
             count += 1
         }
         guard count > 0 else { return nil }
-        try handle.synchronize()
+        try DurableFile.flush(handle.fileDescriptor, .full, tmpURL)
         try handle.close()
+        closed = true
+        guard verify(tmpURL, expectedBytes: bytes) else {
+            throw CaptureError.consolidationFailed(kind, "the copied file didn't read back correctly")
+        }
         if FileManager.default.fileExists(atPath: outURL.path) { try FileManager.default.removeItem(at: outURL) }
         try FileManager.default.moveItem(at: tmpURL, to: outURL)
         ok = true
+        DurableFile.syncDirectory(directory)
         var duration = 0.0
         for (track, end) in lastEnd {
             let scale = Double(info.timescales[track] ?? info.timescales.values.first ?? 1)
@@ -71,6 +86,39 @@ enum SegmentStore {
         return TrackSummary(file: "\(directory.lastPathComponent)/\(outName)", segmentCount: count, duration: duration,
                             codec: info.codec, pixelSize: info.pixelSize, sampleRate: info.sampleRate, channels: info.channels)
     }
+
+    /// Reads a consolidated file back from disk: the expected size, a movie header and complete,
+    /// well-formed top-level boxes with at least one fragment.
+    static func verify(_ url: URL, expectedBytes: Int64) -> Bool {
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber,
+              size.int64Value == expectedBytes,
+              let data = try? Data(contentsOf: url, options: .alwaysMapped),
+              let top = MP4.boxes(data, in: 0..<data.count) else { return false }
+        return top.contains { $0.type == "moov" } && top.contains { $0.type == "moof" } && top.contains { $0.type == "mdat" }
+    }
+
+    /// Describes an already consolidated `<kind>.mp4` (used when `project.json` has to be rebuilt).
+    static func summarize(file url: URL, relativePath: String) -> TrackSummary? {
+        guard let data = try? Data(contentsOf: url, options: .alwaysMapped), MP4.isValidInit(data),
+              let frags = MP4.fragments(data) else { return nil }
+        let info = MP4.initInfo(data)
+        var firstStart: [UInt32: UInt64] = [:]
+        var lastEnd: [UInt32: UInt64] = [:]
+        for f in frags {
+            if firstStart[f.trackID] == nil { firstStart[f.trackID] = f.baseDecodeTime }
+            lastEnd[f.trackID] = max(lastEnd[f.trackID] ?? 0, f.baseDecodeTime + f.duration)
+        }
+        var duration = 0.0
+        for (track, end) in lastEnd {
+            let scale = Double(info.timescales[track] ?? info.timescales.values.first ?? 1)
+            duration = max(duration, Double(end - min(end, firstStart[track] ?? 0)) / max(1, scale))
+        }
+        return TrackSummary(file: relativePath, segmentCount: 0, duration: duration, codec: info.codec,
+                            pixelSize: info.pixelSize, sampleRate: info.sampleRate, channels: info.channels)
+    }
+
+    /// Whether a track directory still holds segments (a take not yet cleaned up, or a live upload's).
+    static func hasSegments(_ directory: URL) -> Bool { !segmentFiles(in: directory).isEmpty }
 }
 
 /// Minimal ISO-BMFF box reading: enough to validate fMP4 segments and sum fragment durations.
@@ -246,21 +294,93 @@ enum MP4 {
 
 /// Rebuilds bundles left in the `.recording` state by a crash or force quit.
 public enum ProjectRecovery {
+    public enum Failure: LocalizedError, Equatable {
+        /// A recorder is still writing the take (it holds the bundle's lock and `project.json` changed in
+        /// the last few seconds).
+        case stillRecording
+        /// `project.json` is unreadable and there's no screen track to rebuild it from.
+        case nothingToRecover
+
+        public var errorDescription: String? {
+            switch self {
+            case .stillRecording: "This recording is still in progress. Stop it first."
+            case .nothingToRecover: "The project file is damaged and no recorded screen video was found."
+            }
+        }
+    }
+
+    /// Whether `bundle` looks like it needs `recoverIfNeeded`: its manifest says `.recording`, or the
+    /// manifest is unreadable but recorded media is there. Cheap; doesn't take the lock.
+    public static func needsRecovery(_ bundle: ProjectBundle) -> Bool {
+        if let m = try? bundle.readManifest() { return m.status == .recording }
+        guard FileManager.default.fileExists(atPath: bundle.url.path) else { return false }
+        let screen = bundle.directory(for: .screen)
+        return FileManager.default.fileExists(atPath: screen.appendingPathComponent("init.mp4").path)
+            || FileManager.default.fileExists(atPath: screen.appendingPathComponent("screen.mp4").path)
+    }
+
     /// If the bundle's manifest still says `.recording`, consolidates whatever complete segments exist
     /// (a truncated last segment is ignored), recomputes the duration and marks the project `.recovered`.
+    /// A damaged `project.json` is rebuilt from the track folders and `events.jsonl` first.
+    ///
+    /// Holds the bundle's lock (`BundleLock`) throughout, so the app, the CLI and the MCP server never
+    /// rebuild the same bundle at once. `waitForLock == false` returns `false` at once when someone else
+    /// holds it (a recorder still finishing, or another recovery); `true` waits, then finds the work done.
+    /// Blocks, so call it off the main thread.
     /// Returns `true` if the bundle was recovered, `false` if it didn't need it.
     @discardableResult
-    public static func recoverIfNeeded(_ bundle: ProjectBundle) throws -> Bool {
-        var manifest = try bundle.readManifest()
-        guard manifest.status == .recording else { return false }
+    public static func recoverIfNeeded(_ bundle: ProjectBundle, waitForLock: Bool = true) throws -> Bool {
+        let before = try? bundle.readManifest()
+        if let m = before {
+            guard m.status == .recording else { return false }
+        } else if !needsRecovery(bundle) {
+            // Neither a readable manifest nor media: surface the original read error.
+            _ = try bundle.readManifest()
+            return false
+        }
+        // A free lock means no recorder is alive for this take (the kernel drops a crashed process's lock).
+        var held = try BundleLock.acquire(bundle, purpose: .recovering, wait: false)
+        if held == nil {
+            guard waitForLock else { return false }
+            // A recorder mid-take (project.json still changing): waiting would block until it stops.
+            if BundleLock.holder(bundle) == .recording, let m = before, bundle.wasWrittenRecently(m) { throw Failure.stillRecording }
+            // Otherwise a recorder is consolidating its take or another recovery runs: wait, then re-check.
+            held = try BundleLock.acquire(bundle, purpose: .recovering, wait: true)
+        }
+        guard let lock = held else { return false }
+        defer { lock.release() }
+
+        var manifest: ProjectManifest
+        var rebuilt = false
+        do {
+            manifest = try bundle.readManifest()
+        } catch {
+            guard let m = rebuildManifest(bundle) else { throw Failure.nothingToRecover }
+            manifest = m
+            rebuilt = true
+        }
+        guard manifest.status == .recording else {
+            // Rebuilt from finished files only (the take was complete): write it back and stop.
+            if rebuilt { try bundle.writeManifest(manifest) }
+            return rebuilt
+        }
+
         var end = 0.0
         for kind in TrackKind.allCases {
             let dir = bundle.directory(for: kind)
-            // Temporary files of writes the crash interrupted (never renamed into place).
-            for name in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] where name.hasPrefix(".") && name.hasSuffix(".tmp") {
+            // Temporary files of writes the crash interrupted (never renamed into place). Safe to delete:
+            // we hold the lock, so no other consolidation is writing here.
+            for name in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+            where name.hasPrefix(".") && (name.hasSuffix(".tmp") || name.hasSuffix(".partial")) {
                 try? FileManager.default.removeItem(at: dir.appendingPathComponent(name))
             }
             guard let summary = try SegmentStore.consolidate(directory: dir, kind: kind) else {
+                if let existing = manifest.track(kind), let file = existing.file,
+                   FileManager.default.fileExists(atPath: bundle.resolve(file).path), !SegmentStore.hasSegments(dir) {
+                    // Already consolidated (and its segments removed) before the interruption.
+                    end = max(end, existing.startTime + existing.duration)
+                    continue
+                }
                 manifest.tracks.removeAll { $0.kind == kind && $0.file == nil && $0.segmentCount == 0 }
                 continue
             }
@@ -282,5 +402,42 @@ public enum ProjectRecovery {
         manifest.status = .recovered
         try bundle.writeManifest(manifest)
         return true
+    }
+
+    /// A minimal manifest rebuilt from what is on disk, for a `project.json` that a power cut or a bad
+    /// write left unreadable: tracks from their folders (segments or a consolidated file), pauses from
+    /// `events.jsonl`. The capture source, scale (2) and frame rate (60) aren't recorded anywhere else,
+    /// so they are guesses. `nil` when there's no screen track.
+    static func rebuildManifest(_ bundle: ProjectBundle) -> ProjectManifest? {
+        let fm = FileManager.default
+        var tracks: [TrackInfo] = []
+        var hasSegments = false
+        for kind in TrackKind.allCases {
+            let dir = bundle.directory(for: kind)
+            let initURL = dir.appendingPathComponent("init.mp4")
+            if SegmentStore.hasSegments(dir), let data = try? Data(contentsOf: initURL), MP4.isValidInit(data) {
+                let info = MP4.initInfo(data)
+                hasSegments = true
+                tracks.append(TrackInfo(kind: kind, directory: kind.rawValue, codec: info.codec, pixelSize: info.pixelSize,
+                                        sampleRate: info.sampleRate, channels: info.channels))
+            } else if let s = SegmentStore.summarize(file: dir.appendingPathComponent("\(kind.rawValue).mp4"),
+                                                     relativePath: "\(kind.rawValue)/\(kind.rawValue).mp4") {
+                tracks.append(TrackInfo(kind: kind, directory: kind.rawValue, file: s.file, codec: s.codec, pixelSize: s.pixelSize,
+                                        sampleRate: s.sampleRate, channels: s.channels, duration: s.duration))
+            }
+        }
+        guard let screen = tracks.first(where: { $0.kind == .screen }), let size = screen.pixelSize else { return nil }
+        var pauses: [TimeRange] = []
+        var pauseStart: Double?
+        for e in (try? bundle.readEvents()) ?? [] {
+            if e.type == .pause { pauseStart = e.t }
+            if e.type == .resume, let p = pauseStart { pauses.append(TimeRange(start: p, end: max(p, e.t))); pauseStart = nil }
+        }
+        let created = (try? fm.attributesOfItem(atPath: bundle.url.path))?[.creationDate] as? Date ?? Date()
+        return ProjectManifest(createdAt: created, title: bundle.url.deletingPathExtension().lastPathComponent,
+                               appVersion: ReelbirdInfo.version, status: hasSegments ? .recording : .recovered,
+                               capture: CaptureInfo(source: .display(id: 0, name: "Unknown display"), pixelSize: size, scale: 2, frameRate: 60),
+                               clock: ClockInfo(originHostTime: 0), tracks: tracks, pauses: pauses,
+                               duration: tracks.map { $0.startTime + $0.duration }.max() ?? 0)
     }
 }

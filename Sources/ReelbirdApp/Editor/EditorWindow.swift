@@ -16,7 +16,7 @@ import SwiftUI
             || manifest.map({ bundle.isBeingRecorded($0) }) == true {
             throw StillRecording()
         }
-        if try app.services.recorder.recoverIfNeeded(bundle) { app.library.reload() }
+        // Recovery (consolidating a long take) runs off the main thread before this (WindowManager.openEditor).
         var cursor = CursorSettings()
         cursor.visible = app.prefs.showCursorDefault
         cursor.clickEffect = app.prefs.clickEffectDefault

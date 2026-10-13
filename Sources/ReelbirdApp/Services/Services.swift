@@ -48,7 +48,15 @@ protocol RecordingSessionHandle: AnyObject, Sendable {
 /// Creates recording sessions (`RecordingSession.init`) and recovers crashed ones (`ProjectRecovery`).
 protocol RecorderService: Sendable {
     func makeSession(options: RecordingOptions, bundleURL: URL, shareSink: (any ShareSegmentSink)?) throws -> any RecordingSessionHandle
-    func recoverIfNeeded(_ bundle: ProjectBundle) throws -> Bool
+    /// Rebuilds a take cut short by a crash (blocks: call it off the main thread). `waitForLock == false`
+    /// returns `false` at once when another recorder or recovery holds the bundle.
+    func recoverIfNeeded(_ bundle: ProjectBundle, waitForLock: Bool) throws -> Bool
+    /// Cheap check: the manifest says `.recording`, or it is unreadable but media is there.
+    func needsRecovery(_ bundle: ProjectBundle) -> Bool
+}
+
+extension RecorderService {
+    func recoverIfNeeded(_ bundle: ProjectBundle) throws -> Bool { try recoverIfNeeded(bundle, waitForLock: true) }
 }
 
 /// `ReelbirdRender.PreviewPlayer`

@@ -536,6 +536,13 @@ struct ViewHost: NSViewRepresentable {
         NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
                              userInfo: [.announcement: [title, detail].compactMap { $0 }.joined(separator: ". "), .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
+
+    /// Hides the toast now (a progress toast whose work finished).
+    static func hide() {
+        hideTask?.cancel()
+        panel?.fadeOut()
+        panel = nil
+    }
 }
 
 struct ToastView: View {

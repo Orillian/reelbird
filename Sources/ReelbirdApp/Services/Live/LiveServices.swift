@@ -40,7 +40,10 @@ struct LiveRecorder: RecorderService {
                          frameSource: synthetic ? Self.syntheticSource(for: options) : nil)
     }
 
-    func recoverIfNeeded(_ bundle: ProjectBundle) throws -> Bool { try ProjectRecovery.recoverIfNeeded(bundle) }
+    func recoverIfNeeded(_ bundle: ProjectBundle, waitForLock: Bool) throws -> Bool {
+        try ProjectRecovery.recoverIfNeeded(bundle, waitForLock: waitForLock)
+    }
+    func needsRecovery(_ bundle: ProjectBundle) -> Bool { ProjectRecovery.needsRecovery(bundle) }
 
     static func syntheticSource(for options: RecordingOptions) -> SyntheticFrameSource {
         var c = SyntheticFrameSource.Configuration()
