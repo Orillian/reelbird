@@ -68,6 +68,8 @@ public final class RenderPlan: Sendable {
     let captionStarts: [Double]
     /// Whether the camera bubble should be drawn (track recorded and layout visible).
     public let showsCamera: Bool
+    /// The camera bubble's place over recording time (start place plus glides).
+    public let cameraPlacement: CameraPlacementPath
 
     /// Output duration in seconds.
     public var duration: Double { timeline.duration }
@@ -144,6 +146,14 @@ public final class RenderPlan: Sendable {
         }
         captionStarts = captions.map(\.range.start)
         showsCamera = edit.camera.visible && manifest.track(.camera) != nil
+        cameraPlacement = old.flatMap { $0.edit.camera.position == edit.camera.position && $0.edit.camera.moves == edit.camera.moves
+            ? $0.cameraPlacement : nil } ?? CameraPlacementPath(edit.camera)
+    }
+
+    /// The camera bubble's rectangle on a `width` × `height` canvas at recording time `t` (output pixels,
+    /// top-left origin).
+    public func cameraFrame(at t: Double, width: Double, height: Double) -> CGRect {
+        CameraPlacement.frame(at: cameraPlacement.position(at: t), layout: edit.camera, width: width, height: height)
     }
 
     /// Output canvas size for a source and aspect. `height == nil` keeps the source's shorter side.
