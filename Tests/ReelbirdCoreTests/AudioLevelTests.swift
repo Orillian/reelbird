@@ -110,3 +110,21 @@ private func loudness(_ samples: [Float], rate: Double, channels: Int = 1) -> Do
     try b.writeAnalysis(stale)
     #expect(b.readAnalysis() == nil)
 }
+
+@Test func enhanceSettingsDecodeTolerantlyAndHashStably() throws {
+    let old = try JSONCoding.decoder.decode(AudioSettings.self, from: Data(#"{"autoLevel": false}"#.utf8))
+    #expect(old.enhance && old.enhanceStrength == .medium && old.enhanceMix == 1 && old.duckSystemAudio)
+    let odd = try JSONCoding.decoder.decode(AudioSettings.self, from: Data(#"{"enhanceStrength": "ultra", "enhanceMix": 3, "enhance": false}"#.utf8))
+    #expect(!odd.enhance && odd.enhanceStrength == .medium && odd.enhanceMix == 1)
+    // Strength caps: residual noise = 1 − wet.
+    #expect(abs(20 * log10(1 - EnhanceStrength.light.denoiseWet) + 6) < 1e-9)
+    #expect(abs(20 * log10(1 - EnhanceStrength.strong.denoiseWet) + 24) < 1e-9)
+    #expect(EnhanceStrength.max.denoiseWet == 1)
+    // The hash changes with anything that changes the samples, not with slider noise.
+    let h = VoiceStemInfo.settingsHash(strength: .medium, mix: 0.8, sourceFile: "microphone/m.m4a", sourceSize: 100)
+    #expect(h == VoiceStemInfo.settingsHash(strength: .medium, mix: 0.8004, sourceFile: "microphone/m.m4a", sourceSize: 100))
+    #expect(h != VoiceStemInfo.settingsHash(strength: .strong, mix: 0.8, sourceFile: "microphone/m.m4a", sourceSize: 100))
+    #expect(h != VoiceStemInfo.settingsHash(strength: .medium, mix: 0.7, sourceFile: "microphone/m.m4a", sourceSize: 100))
+    #expect(h != VoiceStemInfo.settingsHash(strength: .medium, mix: 0.8, sourceFile: "microphone/m.m4a", sourceSize: 101))
+    #expect(h.count == 16)
+}

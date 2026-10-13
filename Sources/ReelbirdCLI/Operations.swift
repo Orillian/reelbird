@@ -201,6 +201,30 @@ struct Operations: Sendable {
                       text: url.path)
     }
 
+    /// Turns "Enhance voice" on with these settings (saved to edit.json) and renders the voice stem.
+    func enhance(_ project: String, strength: EnhanceStrength?, mix: Double?, progress: @escaping @Sendable (Double) -> Void) async throws -> Report {
+        let bundle = try locator.resolve(project)
+        let manifest = try bundle.readManifest()
+        guard manifest.track(.microphone)?.file != nil else {
+            throw CLIError("This recording has no microphone track to enhance.", code: .dataError)
+        }
+        var edit = try bundle.readEdit()
+        edit.audio.enhance = true
+        if let strength { edit.audio.enhanceStrength = strength }
+        if let mix { edit.audio.enhanceMix = mix }
+        try bundle.writeEdit(edit)
+        let info = try await engine.renderVoiceStem(bundle: bundle, settings: edit.audio, progress: progress)
+        let duration = Double(info.frames) / max(1, info.sampleRate)
+        let json: JSONValue = [
+            "file": .string(bundle.resolve(info.file).path), "engine": .string(info.engine), "strength": .string(info.strength.rawValue),
+            "mix": JSONValue(info.mix), "seconds": JSONValue(duration), "renderSeconds": JSONValue(info.renderSeconds),
+            "latencyFrames": .int(info.latencyFrames), "sampleRate": JSONValue(info.sampleRate), "settingsHash": .string(info.settingsHash),
+        ]
+        let speed = info.renderSeconds > 0 ? String(format: ", %.0f× real time", duration / info.renderSeconds) : ""
+        return Report(json: json, text: "Enhanced voice (\(info.strength.rawValue), mix \(Int((info.mix * 100).rounded()))%, \(info.engine)) "
+                      + "in \(String(format: "%.1f", info.renderSeconds)) s\(speed): \(Format.path(bundle.resolve(info.file)))")
+    }
+
     // MARK: AI
 
     /// The audio track to transcribe or analyse: the microphone, else system audio.

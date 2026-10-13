@@ -34,6 +34,10 @@ struct DemoEngine: Engine {
                 progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         try await fallback.export(bundle: bundle, edit: edit, request: request, progress: progress)
     }
+    func renderVoiceStem(bundle: ProjectBundle, settings: AudioSettings,
+                         progress: @escaping @Sendable (Double) -> Void) async throws -> VoiceStemInfo {
+        try await fallback.renderVoiceStem(bundle: bundle, settings: settings, progress: progress)
+    }
     func share(bundle: ProjectBundle, edit: EditDocument, polished: Bool,
                progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo {
         try await fallback.share(bundle: bundle, edit: edit, polished: polished, progress: progress)

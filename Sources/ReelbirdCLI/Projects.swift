@@ -100,6 +100,12 @@ enum ProjectSummary {
                 "autoLevelGainDB": JSONValue(e.audio.autoLevelGainDB(analysis)), "file": .string(mic.file),
             ]
         } ?? .null
+        let stemStatus = bundle.voiceStemStatus(manifest: m, settings: e.audio)
+        let stem = bundle.usableVoiceStem(manifest: m)
+        let stemJSON: JSONValue = [
+            "status": .string(stemStatus.rawValue), "file": JSONValue(stem?.file), "engine": JSONValue(stem?.engine),
+            "strength": JSONValue(stem?.strength.rawValue), "mix": JSONValue(stem?.mix), "renderSeconds": JSONValue(stem?.renderSeconds),
+        ]
         let tracks: [JSONValue] = m.tracks.map { t in
             [
                 "kind": .string(t.kind.rawValue), "codec": .string(t.codec), "duration": JSONValue(t.duration),
@@ -134,10 +140,13 @@ enum ProjectSummary {
                 "audio": [
                     "autoLevel": .bool(e.audio.autoLevel), "microphoneGainDB": JSONValue(e.audio.microphoneGainDB),
                     "microphoneMuted": .bool(e.audio.microphoneMuted), "systemGainDB": JSONValue(e.audio.systemGainDB),
-                    "systemMuted": .bool(e.audio.systemMuted),
+                    "systemMuted": .bool(e.audio.systemMuted), "enhance": .bool(e.audio.enhance),
+                    "enhanceStrength": .string(e.audio.enhanceStrength.rawValue), "enhanceMix": JSONValue(e.audio.enhanceMix),
+                    "duckSystemAudio": .bool(e.audio.duckSystemAudio),
                 ],
             ],
             "voiceLoudness": voice,
+            "voiceStem": stemJSON,
             "chapters": .array(e.chapters.map { ["time": JSONValue($0.time), "title": .string($0.title)] }),
             "captions": .bool(hasCaptions),
             "transcript": .bool(hasTranscript),
@@ -166,6 +175,16 @@ enum ProjectSummary {
             if let g = e.audio.autoLevelGainDB(analysis) { v += String(format: ", auto level %+.1f dB", g) } else if !e.audio.autoLevel { v += ", auto level off" }
             if e.audio.microphoneGainDB != 0 { v += String(format: ", boost %+.1f dB", e.audio.microphoneGainDB) }
             lines.append("  Voice      \(v)")
+        }
+        if m.track(.microphone) != nil {
+            let detail: String
+            switch stemStatus {
+            case .off: detail = "off"
+            case .missing: detail = "\(e.audio.enhanceStrength.rawValue), not rendered yet (run `reelbird enhance`)"
+            case .stale: detail = "\(e.audio.enhanceStrength.rawValue), out of date (rendered \(stem?.strength.rawValue ?? "?"), mix \(stem.map { String(format: "%.2f", $0.mix) } ?? "?"))"
+            case .ready: detail = "\(e.audio.enhanceStrength.rawValue), mix \(Int(((stem?.mix ?? 1) * 100).rounded()))%, ready (\(stem?.engine ?? "?"))"
+            }
+            lines.append("  Enhance    \(detail)")
         }
         if !e.chapters.isEmpty {
             lines.append("  Chapters")

@@ -40,6 +40,11 @@ enum CLI {
             .value("fps", "N", "Output frame rate (default: source)"),
             .value("out", "PATH", "Output file (default: the project's exports folder)"),
         ]),
+        CommandSpec(name: "enhance", summary: "Clean up the voice (noise removal, leveling, de-essing); saves the settings and renders voice/.",
+                    positionals: ["PROJECT"], options: [
+            .value("strength", "light|medium|strong|max", "How much noise to remove (default: the project's, medium)"),
+            .value("mix", "0-1", "Blend with the original: 0 = original, 1 = fully enhanced (default: the project's, 1)"),
+        ], discussion: "Turn it off with `reelbird edit PROJECT --set audio.enhance=false`. The raw microphone is never changed."),
         CommandSpec(name: "captions", summary: "Transcribe on-device and write captions.vtt (updates edit.json).",
                     positionals: ["PROJECT"], options: [
             .value("locale", "ID", "Spoken language, e.g. en-US (default: your system language)"),
@@ -163,6 +168,19 @@ enum CLI {
             let bar = ProgressLine("Exporting…")
             defer { bar.finish() }
             return try await ops.export(project, request: req, progress: { bar.update($0) })
+        case "enhance":
+            var strength: EnhanceStrength?
+            if let v = a.value("strength") {
+                guard let st = EnhanceStrength(rawValue: v.lowercased()) else {
+                    throw CLIError.usage("Unknown strength '\(v)'. Use light, medium, strong or max.")
+                }
+                strength = st
+            }
+            let mix = try a.double("mix")
+            if let mix, !(0...1).contains(mix) { throw CLIError.usage("--mix must be between 0 and 1.") }
+            let bar = ProgressLine("Enhancing voice…")
+            defer { bar.finish() }
+            return try await ops.enhance(project, strength: strength, mix: mix, progress: { bar.update($0) })
         case "captions":
             let bar = ProgressLine("Transcribing…")
             defer { bar.finish() }

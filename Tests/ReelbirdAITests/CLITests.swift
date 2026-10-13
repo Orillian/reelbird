@@ -244,6 +244,41 @@ private func tempDir() throws -> URL {
     #expect(cuts.count == 1 && abs(cuts[0].start - 1.65) < 0.1)
 }
 
+@Test(.enabled(if: binaryAvailable)) func enhanceRendersTheVoiceStemAndInfoReportsIt() async throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let audio = dir.appendingPathComponent("tone.m4a")
+    try await TestAudio.writeAAC([.init(duration: 1, amplitude: 0.3), .init(duration: 1, amplitude: 0), .init(duration: 1, amplitude: 0.3)], to: audio)
+    let bundle = try makeProject(in: dir, microphone: audio)
+
+    let before = try CLI.run(["info", bundle.url.path])
+    #expect(before.out.contains("Enhance    medium, not rendered yet"), "\(before.out)")
+
+    let r = try CLI.run(["enhance", bundle.url.path, "--strength", "strong", "--mix", "0.8", "--json"])
+    #expect(r.code == 0, "\(r.err)")
+    #expect(r.json?["strength"] as? String == "strong")
+    #expect(r.json?["mix"] as? Double == 0.8)
+    let file = try #require(r.json?["file"] as? String)
+    #expect(FileManager.default.fileExists(atPath: file))
+    let edit = try bundle.readEdit()
+    #expect(edit.audio.enhance && edit.audio.enhanceStrength == .strong && edit.audio.enhanceMix == 0.8)
+
+    let info = try CLI.run(["info", bundle.url.path, "--json"])
+    #expect((info.json?["voiceStem"] as? [String: Any])?["status"] as? String == "ready", "\(info.out)")
+    #expect(try CLI.run(["info", bundle.url.path]).out.contains("Enhance    strong, mix 80%, ready"))
+
+    // Settings changed without rendering: out of date. Turned off: off.
+    #expect(try CLI.run(["edit", bundle.url.path, "--set", "audio.enhanceStrength=light"]).code == 0)
+    #expect(try CLI.run(["info", bundle.url.path]).out.contains("out of date"))
+    let off = try CLI.run(["edit", bundle.url.path, "--set", "audio.enhance=false"])
+    #expect(off.code == 0, "\(off.err)")
+    #expect(try bundle.readEdit().audio.enhance == false)
+    #expect(try CLI.run(["info", bundle.url.path]).out.contains("Enhance    off"))
+
+    let bad = try CLI.run(["enhance", bundle.url.path, "--strength", "huge"])
+    #expect(bad.code == 64)
+}
+
 @Test(.enabled(if: binaryAvailable && Transcriber.isAvailable)) func captionsCommandWritesVTT() async throws {
     guard await Transcriber.availability(for: Locale(identifier: "en-US")).canTranscribe else {
         print("SKIP captions CLI test: no en-US speech model")

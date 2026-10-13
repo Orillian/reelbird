@@ -123,6 +123,17 @@ struct LiveEngine: Engine {
 
     // MARK: Render
 
+    func renderVoiceStem(bundle: ProjectBundle, settings: AudioSettings,
+                         progress: @escaping @Sendable (Double) -> Void) async throws -> VoiceStemInfo {
+        do {
+            return try await VoiceStem.render(bundle: bundle, settings: settings, progress: progress)
+        } catch let e as CancellationError {
+            throw e
+        } catch {
+            throw CLIError("Couldn't enhance the voice: \((error as? any LocalizedError)?.errorDescription ?? error.localizedDescription)")
+        }
+    }
+
     func export(bundle: ProjectBundle, edit: EditDocument, request: ExportRequest,
                 progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         let format: ExportOptions.Format = switch request.format {

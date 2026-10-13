@@ -74,6 +74,9 @@ protocol Engine: Sendable {
     // Render (ReelbirdRender)
     func export(bundle: ProjectBundle, edit: EditDocument, request: ExportRequest,
                 progress: @escaping @Sendable (Double) -> Void) async throws -> URL
+    /// Renders the enhanced voice (`voice/`) for these settings, even when one matches.
+    func renderVoiceStem(bundle: ProjectBundle, settings: AudioSettings,
+                         progress: @escaping @Sendable (Double) -> Void) async throws -> VoiceStemInfo
 
     // Share (ReelbirdShare)
     /// Publishes (or updates in place) the project's link. `polished` renders the current edit first;
@@ -110,6 +113,10 @@ struct UnavailableEngine: Engine {
     func export(bundle: ProjectBundle, edit: EditDocument, request: ExportRequest,
                 progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         throw unavailable("Export", "ReelbirdRender")
+    }
+    func renderVoiceStem(bundle: ProjectBundle, settings: AudioSettings,
+                         progress: @escaping @Sendable (Double) -> Void) async throws -> VoiceStemInfo {
+        throw unavailable("Voice enhancement", "ReelbirdRender")
     }
     func share(bundle: ProjectBundle, edit: EditDocument, polished: Bool,
                progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo {
