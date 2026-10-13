@@ -75,7 +75,7 @@ struct Operations: Sendable {
 
     func makeOptions(_ p: RecordParams) async throws -> (RecordingOptions, URL) {
         guard (1...240).contains(p.frameRate) else { throw CLIError.usage("Frame rate must be between 1 and 240.") }
-        if let d = p.duration, d <= 0 { throw CLIError.usage("Duration must be more than 0 seconds.") }
+        if let d = p.duration, !(d > 0 && d <= 86_400) { throw CLIError.usage("Duration must be more than 0 seconds and at most 24 hours.") }
         let source = try await engine.resolve(p.selector)
         var o = RecordingOptions(source: source)
         o.frameRate = p.frameRate

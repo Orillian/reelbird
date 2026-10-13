@@ -246,6 +246,8 @@ final class MCPServer: Sendable {
             }
             req.height = try a.int("height")
             req.frameRate = try a.int("fps")
+            if let h = req.height, !(16...8640).contains(h) { throw CLIError.usage("height must be between 16 and 8640.") }
+            if let f = req.frameRate, !(1...240).contains(f) { throw CLIError.usage("fps must be between 1 and 240.") }
             req.destination = try a.string("out").map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
             return try await ops.export(try a.requiredString("project"), request: req, progress: progress)
         case "generate_captions":
