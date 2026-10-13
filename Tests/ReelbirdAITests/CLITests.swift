@@ -469,3 +469,44 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
                               library: dir2, demo: true)
     #expect(toolResult(stopUnknown["2"])?["isError"] as? Bool == true)
 }
+
+// MARK: - export --out never replaces a file by accident
+
+@Test(.enabled(if: binaryAvailable)) func exportKeepsAnExistingOutFileUnlessForced() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let bundle = try makeProject(in: dir)
+    let out = dir.appendingPathComponent("final.mp4")
+    try Data("keep me".utf8).write(to: out)
+
+    let refused = try CLI.run(["export", bundle.url.path, "--out", out.path], library: dir, demo: true)
+    #expect(refused.code == 64, "\(refused.err)")
+    #expect(refused.err.contains("already exists") && refused.err.contains("--force"))
+    #expect(try String(contentsOf: out, encoding: .utf8) == "keep me")
+
+    // --force gets past the check (the demo engine can't render, so it stops there instead).
+    let forced = try CLI.run(["export", bundle.url.path, "--out", out.path, "--force"], library: dir, demo: true)
+    #expect(!forced.err.contains("already exists"), "\(forced.err)")
+    #expect(try CLI.run(["export", bundle.url.path, "--force"], library: dir, demo: true).err.contains("--force only applies with --out"))
+    #expect(try CLI.run(["export", "--help"]).out.contains("--force"))
+
+    let p = bundle.url.path, o = out.path
+    let responses = try mcp([
+        #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#,
+        #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"export","arguments":{"project":"\#(p)","out":"\#(o)"}}}"#,
+        #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"export","arguments":{"project":"\#(p)","out":"\#(o)","overwrite":true}}}"#,
+        #"{"jsonrpc":"2.0","id":4,"method":"tools/list"}"#,
+    ], library: dir, demo: true)
+    let first = try #require(toolResult(responses["2"]))
+    #expect(first["isError"] as? Bool == true)
+    let text = ((first["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
+    #expect(text.contains("already exists"), "\(text)")
+    let second = ((toolResult(responses["3"])?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
+    #expect(!second.contains("already exists"), "\(second)")
+    #expect(try String(contentsOf: out, encoding: .utf8) == "keep me")
+    let tools = try #require(toolResult(responses["4"])?["tools"] as? [[String: Any]])
+    for name in ["export", "stop_recording", "unshare"] {
+        let t = tools.first { $0["name"] as? String == name }
+        #expect((t?["annotations"] as? [String: Any])?["destructiveHint"] as? Bool == true, "\(name)")
+    }
+}

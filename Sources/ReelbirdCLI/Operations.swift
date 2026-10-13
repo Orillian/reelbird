@@ -231,6 +231,10 @@ struct Operations: Sendable {
 
     func export(_ project: String, request: ExportRequest, progress: @escaping @Sendable (Double) -> Void) async throws -> Report {
         let bundle = try locator.resolve(project)
+        if let out = request.destination, !request.overwrite, FileManager.default.fileExists(atPath: out.path) {
+            throw CLIError("\(Format.path(out)) already exists.", code: .usage,
+                           hint: "Choose another --out path, or pass --force (MCP: overwrite: true) to replace it.")
+        }
         let edit = try bundle.readEdit()
         let url = try await engine.export(bundle: bundle, edit: edit, request: request, progress: progress)
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? nil

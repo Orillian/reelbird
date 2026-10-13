@@ -48,7 +48,7 @@ enum MCPTools {
              object([
                 "session_id": ["type": "string"],
                 "discard": ["type": "boolean", "default": false, "description": "Delete the recording instead of saving it."],
-             ], required: ["session_id"])),
+             ], required: ["session_id"]), destructive: true),
         tool("list_projects", "List projects", "Lists projects in the library, newest first.",
              object(["limit": ["type": "integer", "minimum": 0]]), readOnly: true),
         tool("project_info", "Project details",
@@ -65,14 +65,16 @@ enum MCPTools {
                 "crop_toolbar": ["type": "boolean", "default": false,
                                  "description": "Crop away the browser toolbar (tabs, address and bookmarks bars), detected from the video. Fails when none is found."],
              ], required: ["project"])),
-        tool("export", "Export video", "Renders the edited project to a video file and returns its path.",
+        tool("export", "Export video",
+             "Renders the edited project to a video file and returns its path. An existing `out` file is an error unless overwrite is true.",
              object([
                 "project": project,
                 "format": ["type": "string", "enum": ["mp4", "hevc", "prores", "gif"], "default": "mp4"],
                 "height": ["type": "integer", "minimum": 16, "maximum": 8640, "description": "Output height in pixels; default is the source size."],
                 "fps": ["type": "integer", "minimum": 1, "maximum": 240],
                 "out": ["type": "string", "description": "Output file path; default is the project's exports folder."],
-             ], required: ["project"])),
+                "overwrite": ["type": "boolean", "default": false, "description": "Replace `out` if it already exists."],
+             ], required: ["project"]), destructive: true),
         tool("enhance_voice", "Enhance voice",
              "Cleans up the voice (noise removal, leveling, de-essing, presence EQ) into the project's voice stem and turns Enhance voice on. The raw microphone is never changed; turn it off with set_edit audio.enhance=false.",
              object([

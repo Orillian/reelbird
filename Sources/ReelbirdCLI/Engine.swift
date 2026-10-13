@@ -66,6 +66,8 @@ struct ExportRequest: Hashable, Sendable {
     var frameRate: Int?
     /// Output file; `nil` = `exports/` inside the bundle.
     var destination: URL?
+    /// Replace `destination` if it already exists (`--force`, MCP `overwrite`). Off by default.
+    var overwrite = false
 }
 
 /// Capture, render and share operations the CLI needs from the other Reelbird modules.

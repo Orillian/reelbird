@@ -40,7 +40,8 @@ enum CLI {
             .value("format", "mp4|hevc|prores|gif", "Output format (default mp4, H.264)"),
             .value("height", "PIXELS", "Output height, e.g. 1080 (default: source)"),
             .value("fps", "N", "Output frame rate (default: source)"),
-            .value("out", "PATH", "Output file (default: the project's exports folder)"),
+            .value("out", "PATH", "Output file (default: the project's exports folder); an existing file is kept unless --force"),
+            .flag("force", "Replace the --out file if it already exists"),
         ]),
         CommandSpec(name: "enhance", summary: "Clean up the voice (noise removal, leveling, de-essing); saves the settings and renders voice/.",
                     positionals: ["PROJECT"], options: [
@@ -171,6 +172,8 @@ enum CLI {
             if let h = req.height, !(16...8640).contains(h) { throw CLIError.usage("--height must be between 16 and 8640.") }
             if let f = req.frameRate, !(1...240).contains(f) { throw CLIError.usage("--fps must be between 1 and 240.") }
             req.destination = a.value("out").map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+            req.overwrite = a.has("force")
+            if req.overwrite && req.destination == nil { throw CLIError.usage("--force only applies with --out.") }
             let bar = ProgressLine("Exporting…")
             defer { bar.finish() }
             return try await ops.export(project, request: req, progress: { bar.update($0) })
