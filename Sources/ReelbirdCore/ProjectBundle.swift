@@ -53,6 +53,17 @@ public struct ProjectBundle: Hashable, Sendable {
         try JSONCoding.writeAtomically(m, to: manifestURL)
     }
 
+    /// Whether a recorder (the app or the CLI) still seems to be writing this bundle: `manifest` says
+    /// `.recording` and `project.json` changed in the last `window` seconds (a live session rewrites it
+    /// every 2 s, paused or not). A take cut short by a crash stops changing, so it isn't live and can be
+    /// recovered. Don't open, recover or trash a live bundle; its recorder will finish it.
+    public func isBeingRecorded(_ manifest: ProjectManifest, window: TimeInterval = 10, now: Date = Date()) -> Bool {
+        guard manifest.status == .recording,
+              let modified = (try? manifestURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        else { return false }
+        return now.timeIntervalSince(modified) < window
+    }
+
     /// Reads `edit.json`, or the initial edit if it does not exist yet.
     public func readEdit() throws -> EditDocument {
         if FileManager.default.fileExists(atPath: editURL.path) {

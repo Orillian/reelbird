@@ -34,6 +34,9 @@ struct LibraryItem: Identifiable, Equatable {
     @ObservationIgnored private let services: Services
     @ObservationIgnored private let prefs: Preferences
     @ObservationIgnored private var loadedAt = Date.distantPast
+    /// The bundle the app is recording into right now (set by RecordingController). It stays out of the
+    /// library until it is finished, and so do takes the CLI is still recording.
+    @ObservationIgnored var activeRecording: URL?
 
     init(services: Services, prefs: Preferences) {
         self.services = services
@@ -46,7 +49,8 @@ struct LibraryItem: Identifiable, Equatable {
     }
 
     func reload() {
-        let bundles = prefs.library.list()
+        let active = activeRecording?.standardizedFileURL
+        let bundles = prefs.library.list().filter { $0.url.standardizedFileURL != active }
         items = bundles.compactMap(Self.item(for:))
         loadedAt = Date()
         let ids = Set(items.map(\.id))
@@ -64,7 +68,7 @@ struct LibraryItem: Identifiable, Equatable {
     }
 
     static func item(for b: ProjectBundle) -> LibraryItem? {
-        guard let m = try? b.readManifest() else { return nil }
+        guard let m = try? b.readManifest(), !b.isBeingRecorded(m) else { return nil }
         let edit = try? b.readEdit()
         let duration = edit.map { EditTimeline(manifest: m, edit: $0).duration } ?? m.duration
         return LibraryItem(bundle: b, title: edit?.title ?? m.title, duration: duration, createdAt: m.createdAt,
@@ -95,7 +99,8 @@ struct LibraryItem: Identifiable, Equatable {
             let recovered = await Task.detached(priority: .userInitiated) { () -> Int in
                 var count = 0
                 for b in bundles {
-                    guard let m = try? b.readManifest(), m.status == .recording else { continue }
+                    // Skips takes another recorder (the CLI) is still writing.
+                    guard let m = try? b.readManifest(), m.status == .recording, !b.isBeingRecorded(m) else { continue }
                     if (try? recorder.recoverIfNeeded(b)) == true { count += 1 }
                 }
                 return count

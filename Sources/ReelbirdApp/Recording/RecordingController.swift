@@ -70,6 +70,8 @@ import ReelbirdCore
     }
 
     var isActive: Bool { phase == .recording || phase == .paused || phase == .countdown }
+    /// The bundle the current session writes into, from start until it is finished or discarded.
+    private(set) var activeBundle: URL?
     var isSharing: Bool { status.shareURL != nil }
 
     // MARK: Picker
@@ -175,8 +177,11 @@ import ReelbirdCore
             if options.shareWhileRecording, let d = app.services.share.loadDestination(), let secret = app.services.share.secret() {
                 sink = app.services.share.makeLiveUploader(destination: d, secret: secret)
             }
-            let s = try app.services.recorder.makeSession(options: options, bundleURL: library.newBundleURL(), shareSink: sink)
+            let bundleURL = library.newBundleURL()
+            let s = try app.services.recorder.makeSession(options: options, bundleURL: bundleURL, shareSink: sink)
             session = s
+            activeBundle = bundleURL
+            app.library.activeRecording = bundleURL
             status = RecorderStatus()
             observe(s)
         } catch {
@@ -392,6 +397,19 @@ import ReelbirdCore
         }
     }
 
+    /// Start Over from the menu bar menu: it deletes the take, so it asks first, like Discard.
+    func confirmRestart() {
+        guard isActive else { return }
+        let alert = NSAlert()
+        alert.messageText = "Start over?"
+        alert.informativeText = "This take will be deleted\(isSharing ? " and its link will stop working" : "") and a new recording starts. This can't be undone."
+        alert.addButton(withTitle: "Start Over")
+        alert.addButton(withTitle: "Keep Recording")
+        alert.buttons.first?.hasDestructiveAction = true
+        NSApp.activate()
+        if alert.runModal() == .alertFirstButtonReturn { restart() }
+    }
+
     func confirmDiscard() {
         guard isActive else { return }
         let alert = NSAlert()
@@ -425,6 +443,8 @@ import ReelbirdCore
         countdown?.dismiss(); countdown = nil
         controlBar?.dismiss()
         session = nil
+        activeBundle = nil
+        app.library.activeRecording = nil
         phase = .idle
         status = RecorderStatus()
         micLevels = MicLevelReading()
@@ -443,6 +463,6 @@ struct RecordingFailure: LocalizedError {
         let reason = warnings.first { $0.kind == .lowDisk || $0.kind == .captureStalled }?.message
             ?? warnings.first?.message
         let saved = "Everything captured so far was saved and is in your Library."
-        return reason.map { "\($0) \(saved)" } ?? "Something went wrong while recording. \(saved)"
+        return reason.map { "\($0) \(saved)" } ?? "The recording stopped unexpectedly. \(saved)"
     }
 }
