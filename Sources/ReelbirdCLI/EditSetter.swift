@@ -63,7 +63,7 @@ enum EditSetter {
     /// Optional keys that are absent from a default document but settable.
     static let optionalKeys: Set<String> = ["trim", "trim.start", "trim.end", "title", "background.imagePath",
                                             "canvas.outputHeight", "canvas.frameRate", "captions.file",
-                                            "crop", "crop.x", "crop.y", "crop.width", "crop.height"]
+                                            "crop", "crop.x", "crop.y", "crop.width", "crop.height", "camera.x", "camera.y"]
 
     /// Every leaf key of a default document, e.g. "zoom.intensity".
     static func knownKeys() -> [String] {
@@ -198,8 +198,8 @@ enum EditSetter {
         case "zoom.mode": return [ZoomSettings.Mode.auto, .manual, .off].map(\.rawValue)
         case "cursor.clickEffect": return [CursorSettings.ClickEffect.none, .ripple, .ring, .press].map(\.rawValue)
         case "background.kind": return [BackgroundSettings.Kind.none, .solid, .gradient, .image].map(\.rawValue)
-        case "camera.shape": return [CameraLayout.Shape.circle, .roundedRect].map(\.rawValue)
-        case "camera.corner": return [CameraLayout.Corner.topLeft, .topRight, .bottomLeft, .bottomRight].map(\.rawValue)
+        case "camera.shape": return CameraLayout.Shape.allCases.map(\.rawValue)
+        case "camera.corner": return CameraLayout.Corner.allCases.map(\.rawValue)
         case "canvas.aspect": return CanvasSettings.Aspect.allCases.map(\.rawValue)
         default: return nil
         }

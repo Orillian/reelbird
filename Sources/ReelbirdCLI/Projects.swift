@@ -135,6 +135,12 @@ enum ProjectSummary {
                 "zoom": ["mode": .string(e.zoom.mode.rawValue), "intensity": JSONValue(e.zoom.intensity), "regions": .int(e.zoom.regions.count)],
                 "background": .string(e.background.kind.rawValue),
                 "aspect": .string(e.canvas.aspect.rawValue),
+                "camera": [
+                    "visible": .bool(e.camera.visible), "shape": .string(e.camera.shape.rawValue), "size": JSONValue(e.camera.size),
+                    "x": JSONValue(e.camera.position.x), "y": JSONValue(e.camera.position.y),
+                    "corner": JSONValue(cameraCorner(e.camera)?.rawValue),
+                    "moves": .array(e.camera.moves.map { ["t": JSONValue($0.t), "x": JSONValue($0.x), "y": JSONValue($0.y)] }),
+                ],
                 "crop": e.crop.map { ["x": JSONValue($0.x), "y": JSONValue($0.y), "width": JSONValue($0.width), "height": JSONValue($0.height)] } ?? .null,
                 "captionsFile": JSONValue(e.captions.file),
                 "annotations": .int(e.annotations.count),
@@ -170,6 +176,7 @@ enum ProjectSummary {
         editBits.append("zoom \(e.zoom.mode.rawValue) \(Format.seconds(e.zoom.intensity))")
         editBits.append("background \(e.background.kind.rawValue)")
         lines.append("  Edit       " + editBits.joined(separator: ", "))
+        if m.track(.camera) != nil { lines.append("  Camera     \(describeCamera(e.camera))") }
         if let mic = analysis?.microphone {
             var v = mic.integratedLUFS.map { String(format: "%.1f LUFS", $0) } ?? "silent"
             if let p = mic.peakDBFS { v += String(format: ", peak %.1f dBFS", p) }
@@ -195,6 +202,28 @@ enum ProjectSummary {
         if let s = m.share { lines.append("  Link       \(s.url)\(s.polished ? " (polished)" : "")") }
         if !exports.isEmpty { lines.append("  Exports    " + exports.map { ($0 as NSString).lastPathComponent }.joined(separator: ", ")) }
         return Report(json: json, text: lines.joined(separator: "\n"))
+    }
+
+    /// The preset corner the bubble sits in for the whole video, if any.
+    static func cameraCorner(_ c: CameraLayout) -> CameraLayout.Corner? {
+        guard c.moves.isEmpty else { return nil }
+        return CameraLayout.Corner.allCases.first { $0.position == c.position }
+    }
+
+    /// "circle, bottom right" or "portrait, x 0.42 y 1, 2 moves (0:12, 0:30)".
+    static func describeCamera(_ c: CameraLayout) -> String {
+        guard c.visible else { return "hidden" }
+        func place(_ p: NormPoint) -> String {
+            if let corner = CameraLayout.Corner.allCases.first(where: { $0.position == p }) {
+                return corner.rawValue.replacingOccurrences(of: "([A-Z])", with: " $1", options: .regularExpression).lowercased()
+            }
+            return "x \(Format.seconds(p.x)) y \(Format.seconds(p.y))"
+        }
+        var s = "\(c.shape.rawValue) \(Int((c.size * 100).rounded()))%, \(place(c.position))"
+        if !c.moves.isEmpty {
+            s += ", \(c.moves.count) move\(c.moves.count == 1 ? "" : "s") (" + c.moves.map { Format.duration($0.t) }.joined(separator: ", ") + ")"
+        }
+        return s
     }
 
     static func list(_ locator: ProjectLocator, limit: Int?) -> Report {

@@ -159,7 +159,7 @@ struct Operations: Sendable {
     }
 
     func edit(_ project: String, sets: [EditSetter.Assignment], trim: String?, cuts: [String], clearCuts: Bool,
-              crop cropChange: CropChange? = nil) throws -> Report {
+              crop cropChange: CropChange? = nil, clearCameraMoves: Bool = false) throws -> Report {
         let bundle = try locator.resolve(project)
         let manifest: ProjectManifest
         do { manifest = try bundle.readManifest() } catch {
@@ -169,9 +169,15 @@ struct Operations: Sendable {
         do { edit = try bundle.readEdit() } catch {
             throw CLIError("Can't read edit.json: \(error.localizedDescription)", code: .dataError)
         }
-        let changed = !sets.isEmpty || trim != nil || !cuts.isEmpty || clearCuts || cropChange != nil
+        let changed = !sets.isEmpty || trim != nil || !cuts.isEmpty || clearCuts || cropChange != nil || clearCameraMoves
         let cropBefore = edit.crop
         if !sets.isEmpty { edit = try EditSetter.apply(sets, to: edit) }
+        // A corner is a preset: it pins the bubble there for the whole video, unless a place is set too.
+        let keys = Set(sets.map(\.path))
+        if keys.contains("camera.corner"), keys.isDisjoint(with: ["camera.x", "camera.y", "camera.moves"]) {
+            edit.camera.pin(to: edit.camera.corner)
+        }
+        if clearCameraMoves { edit.camera.moves = [] }
         switch cropChange {
         case .set(let r)?: edit.crop = r.sanitizedCrop
         case .clear?: edit.crop = nil
