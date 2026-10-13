@@ -475,7 +475,12 @@ import SwiftUI
     }
 
     private static func render(_ scene: Scene, appearance: NSAppearance.Name, to url: URL) {
-        NSAppearance.current = NSAppearance(named: appearance)
+        // Dynamic colours resolved while building the scene follow the snapshot's appearance.
+        guard let drawing = NSAppearance(named: appearance) else { return }
+        drawing.performAsCurrentDrawingAppearance { renderInCurrentAppearance(scene, appearance: appearance, to: url) }
+    }
+
+    private static func renderInCurrentAppearance(_ scene: Scene, appearance: NSAppearance.Name, to url: URL) {
         var content = scene.build()
         if scene.backdrop {
             content = AnyView(ZStack { Backdrop(); content })

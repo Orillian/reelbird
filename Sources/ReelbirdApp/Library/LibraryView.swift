@@ -10,7 +10,7 @@ struct LibraryView: View {
 
     /// The content's coordinate space: item frames and the rubber band are measured in it, so both
     /// scroll together.
-    fileprivate static let space = "library-content"
+    fileprivate nonisolated static let space = "library-content"
 
     // Rubber band
     @ViewState private var frames = ItemFrames()

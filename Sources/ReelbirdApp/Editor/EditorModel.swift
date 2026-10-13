@@ -269,7 +269,7 @@ enum CaptionState: Equatable {
             guard !Task.isCancelled, let self else { return }
             self.voiceStemProgress = 0
             do {
-                try await services.render.renderVoiceStem(bundle: bundle, settings: settings) { p in
+                try await services.render.renderVoiceStem(bundle: bundle, settings: settings) { [weak self] p in
                     Task { @MainActor [weak self] in
                         guard let self, self.voiceStemProgress != nil, !Task.isCancelled else { return }
                         self.voiceStemProgress = max(self.voiceStemProgress ?? 0, p)
