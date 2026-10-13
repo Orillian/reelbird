@@ -71,18 +71,25 @@ public struct ShareLayout: Hashable, Sendable {
     public let publicBase: String
 
     public init(id: String, destination: ShareDestination) {
+        self.init(id: id, prefix: destination.prefix, destination: destination)
+    }
+
+    private init(id: String, prefix: String, destination: ShareDestination) {
         self.id = id
-        let p = destination.prefix.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let p = prefix.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.prefix = p.isEmpty ? "r" : p
         var base = destination.publicBaseURL
         while base.hasSuffix("/") { base.removeLast() }
         self.publicBase = base
     }
 
-    /// Recovers the layout from a stored `ShareInfo.key` ("r/<id>").
+    /// Recovers the layout from a stored `ShareInfo.key` ("r/<id>"). The prefix comes from the key, not
+    /// from the current settings, so changing the prefix later still updates or deletes the right folder.
     public init?(info: ShareInfo, destination: ShareDestination) {
-        guard let id = info.key.split(separator: "/").last.map(String.init), !id.isEmpty else { return nil }
-        self.init(id: id, destination: destination)
+        let parts = info.key.split(separator: "/")
+        guard let id = parts.last.map(String.init), !id.isEmpty else { return nil }
+        let prefix = parts.count > 1 ? parts.dropLast().joined(separator: "/") : destination.prefix
+        self.init(id: id, prefix: prefix, destination: destination)
     }
 
     /// "r/<id>": `ShareInfo.key`.

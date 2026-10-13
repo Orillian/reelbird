@@ -9,8 +9,8 @@ import CoreGraphics
 /// - Activating the owning app makes macOS switch to a Space with its windows (unless "When
 ///   switching to an application, switch to a Space with open windows" is off in Desktop & Dock),
 ///   but it picks the app's most recent window's Space, not necessarily this window's.
-/// - A minimized window is restored directly when Reelbird has Accessibility access (it has it once
-///   keystroke capture is allowed). Otherwise a reopen event (what clicking the Dock icon sends)
+/// - A minimized window is restored directly when Reelbird has Accessibility access (optional; the
+///   user grants it in System Settings). Otherwise a reopen event (what clicking the Dock icon sends)
 ///   restores it only when the app has no other visible window.
 public enum WindowActivation {
     /// Tries to bring the window on screen and waits up to `timeout` for the window server to show

@@ -150,7 +150,9 @@ struct ControlBarView: View {
     /// Snapshot override for the meter's dBFS reading.
     var levels: MicLevelReading? = nil
     @Environment(\.isSnapshot) private var snapshot
-    @ViewState private var confirmingDiscard = false
+    /// Start over and discard both delete the take, so each asks once, inline, above the bar.
+    private enum Confirmation { case discard, startOver }
+    @ViewState private var confirming: Confirmation?
 
     private var st: RecorderStatus { status ?? controller?.status ?? RecorderStatus() }
     private var ph: RecordingController.Phase { phase ?? controller?.phase ?? .recording }
@@ -167,13 +169,13 @@ struct ControlBarView: View {
                 warning(w)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            if confirmingDiscard { discardConfirm.transition(.opacity) }
+            if let confirming { confirmation(confirming).transition(.opacity) }
             bar
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 10)
         .animation(Theme.gentle, value: warnings)
-        .animation(Theme.snappy, value: confirmingDiscard)
+        .animation(Theme.snappy, value: confirming)
     }
 
     private var bar: some View {
@@ -229,12 +231,12 @@ struct ControlBarView: View {
             .help(ph == .paused ? "Resume (\(prefs.pauseHotKey.display))" : "Pause (\(prefs.pauseHotKey.display))")
             .accessibilityLabel(ph == .paused ? "Resume" : "Pause")
 
-            Button { controller?.restart() } label: { Image(systemName: "arrow.counterclockwise") }
+            Button { confirming = .startOver } label: { Image(systemName: "arrow.counterclockwise") }
                 .buttonStyle(IconButtonStyle(size: 30))
                 .help("Start over (discards this take)")
                 .accessibilityLabel("Start over")
 
-            Button { confirmingDiscard = true } label: { Image(systemName: "trash") }
+            Button { confirming = .discard } label: { Image(systemName: "trash") }
                 .buttonStyle(IconButtonStyle(size: 30))
                 .help("Discard this take")
                 .accessibilityLabel("Discard")
@@ -317,12 +319,16 @@ struct ControlBarView: View {
         }
     }
 
-    private var discardConfirm: some View {
+    private func confirmation(_ kind: Confirmation) -> some View {
         HStack(spacing: 10) {
-            Text("Discard this take? It can't be undone.").font(.system(size: 12, weight: .medium))
-            Button("Keep") { confirmingDiscard = false }.buttonStyle(SecondaryButtonStyle())
-            Button("Discard") { confirmingDiscard = false; controller?.discard() }
-                .buttonStyle(PrimaryButtonStyle(tint: Theme.recording))
+            Text(kind == .discard ? "Discard this take? It can't be undone." : "Start over? This take will be deleted.")
+                .font(.system(size: 12, weight: .medium))
+            Button("Keep") { confirming = nil }.buttonStyle(SecondaryButtonStyle())
+            Button(kind == .discard ? "Discard" : "Start Over") {
+                confirming = nil
+                if kind == .discard { controller?.discard() } else { controller?.restart() }
+            }
+            .buttonStyle(PrimaryButtonStyle(tint: Theme.recording))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)

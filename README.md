@@ -1,56 +1,91 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="brand/logo-dark.svg">
-    <img src="brand/logo.svg" alt="Reelbird" width="360">
+    <source media="(prefers-color-scheme: dark)" srcset="brand/readme/banner-dark.png">
+    <img src="brand/readme/banner-light.png" alt="Reelbird: record your screen, send the link, polish it later" width="880">
   </picture>
 </p>
 
-<p align="center">A free, open-source screen recorder for the Mac. Record, get a link when you stop, polish it later under the same link.</p>
+<p align="center"><b>Reelbird is a free, open-source screen recorder for macOS that copies a share link the moment you stop recording, then lets you polish the same take with auto-zoom, a smooth cursor and captions without changing the link.</b></p>
 
 <p align="center">
+  <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-1A1512?style=flat-square"></a>
+  <img alt="macOS 15 or later" src="https://img.shields.io/badge/macOS-15%2B-1A1512?style=flat-square&logo=apple&logoColor=FFF4E8">
+  <img alt="Swift 6.2" src="https://img.shields.io/badge/Swift-6.2-FF5A36?style=flat-square&logo=swift&logoColor=FFF4E8">
+  <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-1A1512?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="https://reelbird.shiptiffin.app">Website</a> ·
   <a href="#install-from-source">Install</a> ·
-  <a href="#keyboard-shortcuts">Shortcuts</a> ·
+  <a href="#how-it-compares">Compare</a> ·
   <a href="#command-line">CLI</a> ·
   <a href="#mcp-server">MCP</a> ·
   <a href="docs/SHARING.md">Sharing setup</a> ·
-  <a href="#troubleshooting">Troubleshooting</a>
+  <a href="#troubleshooting">Troubleshooting</a> ·
+  <a href="https://reelbird.shiptiffin.app/support/">Support</a>
 </p>
 
----
-
-Reelbird records your screen, camera and microphone. When you stop, a link to the recording is already on your clipboard, and it plays in any browser a moment later. Later you can open the same take, let Reelbird zoom in on what you clicked and smooth out the cursor, trim it, add captions, and choose **Update link**. Everyone you sent the link to now sees the polished version.
-
-It does what Loom and Screen Studio do, in one app, for free. It is a native Mac app written in Swift, with ScreenCaptureKit for capture and Metal for rendering. There is no Electron, no account and no Reelbird server. Share links point at a storage bucket you own, and Cloudflare R2's free tier covers most people.
-
-<!--
-Screenshots go in brand/screenshots/. Uncomment once they exist.
 <p align="center">
-  <img src="brand/screenshots/editor.png" alt="The Reelbird editor with auto-zoom regions on the timeline" width="880">
+  <img src="brand/media/demo.gif" alt="Reelbird zooming in on a click, the link being copied, then zooming back out" width="800">
 </p>
-| Recording | Instant link | Viewer page |
-|---|---|---|
-| ![](brand/screenshots/recording.png) | ![](brand/screenshots/link.png) | ![](brand/screenshots/viewer.png) |
--->
+
+It's a native Swift app with no account, no telemetry and no Reelbird server: share links point at a storage bucket you own, such as Cloudflare R2. It includes a command-line tool and an MCP server, so coding agents can record and share demos too. For now you install it by building from source on macOS 15 or later.
+
+## How it works
+
+1. **Record.** Pick a display, a window or an area, with camera, microphone and system audio if you want them. Press ⌥⇧R from any app.
+2. **Stop.** The link is already on your clipboard. Reelbird streamed the take to your bucket while you recorded, so it plays in any browser a moment later.
+3. **Polish it later.** Open the same take. Reelbird has planned zooms on your clicks and typing, smoothed the cursor and levelled your voice. Trim, add captions, pick a background, then choose **Update link**. Everyone you sent the link to now sees the polished version.
+
+<table>
+  <tr>
+    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="brand/screenshots/editor-zoom-dark.webp"><img src="brand/screenshots/editor-zoom-light.webp" alt="The editor with auto-zoom regions on the timeline"></picture></td>
+    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="brand/screenshots/picker-dark.webp"><img src="brand/screenshots/picker-light.webp" alt="Choosing a display, window or area, with microphone, camera and system audio"></picture></td>
+  </tr>
+  <tr>
+    <td><picture><source media="(prefers-color-scheme: dark)" srcset="brand/screenshots/editor-audio-dark.webp"><img src="brand/screenshots/editor-audio-light.webp" alt="Audio settings: Enhance voice, Auto level and Lower under voice"></picture></td>
+    <td><picture><source media="(prefers-color-scheme: dark)" srcset="brand/screenshots/share-dark.webp"><img src="brand/screenshots/share-light.webp" alt="The share popover with the link, Copy and Update Link"></picture></td>
+  </tr>
+</table>
 
 ## What it does
 
-**Records what you need, as separate tracks.** A display, a window or an area, plus camera, microphone and system audio. Camera and audio stay on their own tracks, so you can move the camera bubble or mute system sound after recording.
+**Records what you need, as separate tracks.** A display, a window or an area, plus camera, microphone and system audio, with no virtual audio driver. Camera and audio stay on their own tracks, so you can move the camera bubble or mute system sound after recording.
 
-**Never loses a take.** Every track is written to disk in 2-second segments from the first frame. If your Mac crashes or the app quits mid-recording, Reelbird recovers the take the next time it opens, minus at most the last two seconds.
+**Keeps your take if the app quits.** Every track is written to disk in 2-second segments from the first frame. If Reelbird crashes or quits mid-recording, the take is recovered the next time Reelbird opens, minus at most the last two seconds.
 
 **Warns you while it matters.** If the microphone is recording silence, capture stalls, audio drifts, the disk is filling up or uploads fall behind, you see it during the recording, not after.
 
-**Auto-zoom and a smooth cursor.** Reelbird logs clicks, scrolls and pointer movement next to the video, then plans zooms that follow your clicks. One slider sets how much it zooms, from subtle to punchy, and you can add, move or delete zooms on the timeline. The cursor is redrawn from that log, so it glides instead of jittering, and you can resize it or hide it after the fact. Preview and export use the same Metal renderer, so the export looks exactly like the preview.
+**Auto-zoom and a smooth cursor.** Reelbird logs clicks, typing, scrolls and pointer movement next to the video, then plans zooms that follow them. One slider sets how much it zooms, from subtle to punchy, and you can add, move or delete zooms on the timeline. The cursor is redrawn from that log, so it glides instead of jittering, and you can resize or hide it after the fact. Preview and export use the same Metal renderer, so the export looks exactly like the preview.
 
-**Instant share links to your own bucket.** With **Share while recording** on, Reelbird uploads a 1080p stream as you record. The link is copied the moment you stop. After editing, **Update link** replaces the video and keeps the URL. Setup is in [docs/SHARING.md](docs/SHARING.md).
+**Audio that sounds finished.** **Auto level** brings your voice to a steady −16 LUFS with a true-peak limiter. **Enhance voice** removes background noise and evens out your voice on your Mac, with a strength control and a blend back to the original; the raw microphone track is never changed. **Lower under voice** turns system audio down while you talk.
 
-**Captions on your Mac.** Captions come from Apple's on-device speech recognition. You can burn them into the export, and share links offer them as a track viewers can turn on. **Cut Long Silences** removes the pauses in one go. From the command line, `reelbird suggest` writes a title and chapters with Apple's on-device model on Macs with Apple Intelligence. No API keys, and nothing leaves your Mac unless you share it.
+**Instant share links to your own bucket.** With **Share while recording** on, Reelbird uploads a 1080p stream as you record and copies the link the moment you stop. After editing, **Update link** replaces the video and keeps the URL. Setup is in [docs/SHARING.md](docs/SHARING.md).
 
-**Exports the usual formats.** MP4 (H.264), HEVC, ProRes and GIF, with hardware encoding.
+**Captions on your Mac.** Captions come from Apple's on-device speech recognition. Burn them into the export, or let viewers turn them on from the share page. **Cut Long Silences** removes the pauses in one go. From the command line, `reelbird suggest` writes a title and chapters with Apple's on-device model on Macs with Apple Intelligence. No API keys.
 
-**Works with agents.** The `reelbird` command line tool and its MCP server let Claude Code, Codex or Cursor list screens, record a demo of the change they just made, export it and hand you the link.
+**Clean frames.** Backgrounds, padding, rounded corners, aspect ratios for every platform, a movable camera bubble, and **Hide Browser Toolbar** to crop the tabs and bookmarks bar off a browser window.
+
+**Exports the usual formats.** MP4 (H.264), HEVC and ProRes with hardware encoding, plus GIF.
+
+**Works with agents.** The `reelbird` command-line tool and its MCP server let Claude Code, Codex or Cursor list screens, record a demo of the change they just made, export it and hand you the link.
 
 **Open project format.** A recording is a `.reelbird` folder of standard MP4 files, JSON and an event log, with relative paths. Nothing is locked in. See [docs/FORMAT.md](docs/FORMAT.md).
+
+## How it compares
+
+| | Reelbird | Loom | Screen Studio | Cap | OpenScreen |
+|---|---|---|---|---|---|
+| Price | Free | Free plan: 25 videos, 5 min, 720p; Business $18/user/mo | $29/mo, or $9/mo billed yearly | Free for personal use; paid from $58 one-time | Free |
+| Open source | MIT | No | No | Source available | MIT |
+| Link when you stop | Yes, to your own bucket | Yes | After export | Yes (Instant mode) | No |
+| Auto-zoom and smooth cursor | Yes | No | Yes | Yes (Studio mode) | Yes |
+| Polish an instant link later, same URL | Yes | No auto-zoom | Link comes after export | Pick Instant or Studio before recording | No links |
+| Download your video | Always | Paid plans only | Yes | Yes | Yes |
+| Platforms | Mac | Mac, Windows, web | Mac | Mac, Windows | Mac, Windows, Linux |
+| Signed download | Not yet; build from source | Yes | Yes | Yes | Yes |
+
+Prices checked 12 October 2026 on each product's own pricing page. Loom has comments, analytics and team features; Screen Studio is more mature; Cap and OpenScreen run on Windows. More detail at [reelbird.shiptiffin.app/compare](https://reelbird.shiptiffin.app/compare/).
 
 ## Install from source
 
@@ -58,8 +93,8 @@ Reelbird isn't on the App Store and doesn't have a signed download yet, so you b
 
 You need:
 
-- macOS 15 or later
-- The Command Line Tools (`xcode-select --install`). Xcode works too but isn't required.
+- macOS 15 or later, on Apple silicon. It also compiles for Intel Macs that run macOS 15, but it hasn't been tested on one yet.
+- The Command Line Tools for Xcode 26 or later (`xcode-select --install`), which bring Swift 6.2 and the macOS 26 SDK. They install on macOS 15.6 and later. Xcode 26 works too but isn't required.
 
 ```sh
 git clone https://github.com/btahir/reelbird.git
@@ -120,7 +155,7 @@ In the editor:
 |---|---|
 | Space | Play or pause |
 | J / K / L | Back 2 seconds / pause / play |
-| ← / → | One frame back or forward (with ⇧: one second) |
+| ← / → | Step back or forward 1/30 second (with ⇧: one second) |
 | Home / End | Jump to start or end |
 | S | Split at the playhead |
 | Z | Add a zoom at the playhead |
@@ -131,7 +166,7 @@ In the editor:
 | ⌘E | Export |
 | ⌘Z / ⇧⌘Z | Undo / redo |
 
-Elsewhere: ⇧⌘L opens the library, ⌘O opens a `.reelbird` project, ⌘, opens Settings.
+Elsewhere: ⌘N starts a new recording, ⇧⌘L opens the library, ⌘O opens a `.reelbird` project, ⇧⌘E shares or copies the link, ⇧⌘R shows the recording in Finder, ⌘⌫ moves it to the Trash, and ⌘, opens Settings.
 
 ## Command line
 
@@ -150,6 +185,7 @@ reelbird list                                  # recent recordings
 reelbird edit latest --set zoom.intensity=0.7 --trim 0:05-end
 reelbird export latest --format mp4 --height 1080
 reelbird captions latest                       # captions.vtt, made on this Mac
+reelbird enhance latest --strength medium      # clean up the voice; the raw mic is kept
 reelbird share latest                          # upload and print the link
 reelbird share latest --polished               # render the edit, same link
 reelbird help record
@@ -163,7 +199,7 @@ When you record from a terminal, macOS asks for Screen Recording permission for 
 
 ## MCP server
 
-`reelbird mcp` runs an MCP server over stdio. Agents get tools to list sources, start and stop recordings, list and inspect projects, edit, export, caption, find silences, suggest chapters, and share or unshare.
+`reelbird mcp` runs an MCP server over stdio. Agents get tools to list sources, start and stop recordings, list and inspect projects, edit (including crop), export, caption, enhance the voice, find silences, suggest chapters, and share or unshare.
 
 **Claude Code**
 
@@ -209,7 +245,7 @@ Sharing is optional. Reelbird uploads to an S3-compatible bucket that you own:
 
 1. Create a Cloudflare R2 bucket and give it a public URL (a custom domain, or the r2.dev URL to start).
 2. Create an R2 API token with **Object Read & Write**, limited to that bucket.
-3. Paste the endpoint, keys and public URL into **Settings… → Sharing** and choose **Test connection**, then **Save**.
+3. Paste the endpoint, keys and public URL into **Settings… → Sharing** and choose **Test Connection**, then **Save**.
 
 R2's free tier includes 10 GB of storage and free egress, which covers hours of shared video. AWS S3, Backblaze B2 and MinIO work too. The full walkthrough, costs and privacy notes are in [docs/SHARING.md](docs/SHARING.md).
 
@@ -225,7 +261,7 @@ R2's free tier includes 10 GB of storage and free egress, which covers hours of 
 
 **Captions say they need a newer macOS.** On macOS 26 and later, captions use Apple's SpeechAnalyzer and download the language model on first use. On macOS 15 they need on-device speech recognition for your language and the Speech Recognition permission.
 
-**The app quit while recording.** Open Reelbird again. It finishes the take from the segments on disk. From the terminal, `reelbird recover PROJECT` does the same.
+**The app quit while recording. Is the take lost?** Open Reelbird again. It finishes the take from the segments on disk. From the terminal, `reelbird recover PROJECT` does the same.
 
 ## Privacy
 
@@ -256,6 +292,6 @@ Bug reports, fixes and features are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) 
 
 [MIT](LICENSE).
 
----
+## Support Reelbird
 
-Reelbird is free. If it saves you time, you can support it here: https://shotcandy.vercel.app/support/
+Reelbird is free and always will be. If it saves you time or a subscription, you can [support the project](https://reelbird.shiptiffin.app/support/), once or monthly. Stars, bug reports and pull requests help too.

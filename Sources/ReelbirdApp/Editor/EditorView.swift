@@ -257,7 +257,7 @@ struct TransportBar: View {
                     .tint(Color.secondary)
                     .accessibilityLabel("Timeline zoom")
                 Button { model.timelineZoom = min(16, model.timelineZoom * 1.5) } label: { Image(systemName: "plus.magnifyingglass") }
-                    .buttonStyle(IconButtonStyle(size: 24)).help("Zoom in timeline (⌘+)")
+                    .buttonStyle(IconButtonStyle(size: 24)).help("Zoom in timeline (⌘=)")
                     .accessibilityLabel("Zoom in timeline")
             }
     }

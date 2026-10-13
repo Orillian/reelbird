@@ -106,7 +106,8 @@ public struct CameraPath: Sendable {
         // there is never a jump when a following view begins.
         let rate = Self.sampleRate
         let dt = 1 / rate
-        let count = max(1, Int((duration * rate).rounded(.up)) + 1)
+        let span = duration.isFinite ? min(max(0, duration), 86_400) : 0 // project.json may say anything
+        let count = max(1, Int((span * rate).rounded(.up)) + 1)
         var out = [SIMD3<Float>](repeating: SIMD3(0, 0.5, 0.5), count: count)
         let followOmega = 4.0
         let followDecay = exp(-followOmega * dt)
@@ -225,8 +226,8 @@ public struct CameraPath: Sendable {
         let f = t * Self.sampleRate
         let v: SIMD3<Float>
         if !(f > 0) { v = table[0] } else {
-            let i = Int(f)
-            if i >= table.count - 1 { v = table[table.count - 1] } else {
+            if f >= Double(table.count - 1) { v = table[table.count - 1] } else {
+                let i = Int(f)
                 v = table[i] + (table[i + 1] - table[i]) * Float(f - Double(i))
             }
         }

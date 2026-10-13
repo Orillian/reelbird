@@ -21,8 +21,16 @@ body:
   - type: input
     id: macos
     attributes:
-      label: macOS version and Mac
-      placeholder: macOS 26.1, MacBook Pro M3
+      label: macOS version
+      description: Apple menu → About This Mac.
+      placeholder: macOS 26.1
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac model
+      placeholder: MacBook Pro, M3
     validations:
       required: true
   - type: input

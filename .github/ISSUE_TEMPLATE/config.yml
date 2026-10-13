@@ -1,5 +1,14 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
+  - name: Questions and ideas
+    url: https://github.com/btahir/reelbird/discussions
+    about: Ask how something works or talk through an idea before opening an issue.
   - name: Sharing setup guide
     url: https://github.com/btahir/reelbird/blob/main/docs/SHARING.md
     about: Step-by-step setup for Cloudflare R2 and other S3-compatible storage.
+  - name: Security problem
+    url: https://github.com/btahir/reelbird/security/advisories/new
+    about: Report it privately, not in a public issue.
+  - name: Website
+    url: https://reelbird.shiptiffin.app
+    about: What Reelbird does, install steps and how to support it.

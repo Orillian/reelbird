@@ -228,7 +228,10 @@ enum CaptionState: Equatable {
     private func restore(_ doc: EditDocument, actionName: String) {
         registerUndo(previous: edit, actionName: actionName)
         coalesceKey = nil
+        // Undoing Remove Captions brings the captions file back; bring its transcript back with it.
+        let captionsChanged = doc.captions.file != edit.captions.file
         edit = doc
+        if captionsChanged { transcript = doc.captions.file == nil ? nil : Self.loadTranscript(bundle: bundle, edit: doc) }
         if case .zoom(let id) = selection, !doc.zoom.regions.contains(where: { $0.id == id }) { selection = nil }
         editDidChange()
     }
@@ -269,7 +272,7 @@ enum CaptionState: Equatable {
             guard !Task.isCancelled, let self else { return }
             self.voiceStemProgress = 0
             do {
-                try await services.render.renderVoiceStem(bundle: bundle, settings: settings) { p in
+                try await services.render.renderVoiceStem(bundle: bundle, settings: settings) { [weak self] p in
                     Task { @MainActor [weak self] in
                         guard let self, self.voiceStemProgress != nil, !Task.isCancelled else { return }
                         self.voiceStemProgress = max(self.voiceStemProgress ?? 0, p)
@@ -517,15 +520,30 @@ enum CaptionState: Equatable {
         }
     }
 
+    /// Finds long pauses in the microphone track (decoding it off the main thread) and cuts them.
     func removeSilences() {
-        guard let mic = bundle.mediaURL(for: .microphone, in: manifest),
-              let silences = try? services.ai.silentRanges(audio: mic) else { return }
+        guard let mic = bundle.mediaURL(for: .microphone, in: manifest) else {
+            Toast.show(title: "No microphone track", detail: "This recording has no voice to find silences in.", symbol: "waveform")
+            return
+        }
+        let ai = services.ai
         let offset = manifest.track(.microphone)?.startTime ?? 0
-        let shifted = silences.map { TimeRange(start: $0.start + offset, end: $0.end + offset) }
-        // Keep a little air next to speech, like `reelbird silences --apply`.
-        let cuts = SilenceDetector.trimCuts(silences: shifted, duration: duration)
-        guard !cuts.isEmpty else { return }
-        change("Remove Silences") { e in e.cuts = Self.merged(e.cuts + cuts) }
+        let duration = duration
+        Task {
+            let silences = await Task.detached(priority: .userInitiated) { try? ai.silentRanges(audio: mic) }.value
+            guard let silences else {
+                Toast.show(title: "Couldn't read the microphone track", symbol: "exclamationmark.triangle.fill")
+                return
+            }
+            let shifted = silences.map { TimeRange(start: $0.start + offset, end: $0.end + offset) }
+            // Keep a little air next to speech, like `reelbird silences --apply`.
+            let cuts = SilenceDetector.trimCuts(silences: shifted, duration: duration)
+            guard !cuts.isEmpty else {
+                Toast.show(title: "No long silences", detail: "There was nothing to cut.", symbol: "waveform")
+                return
+            }
+            change("Remove Silences") { e in e.cuts = Self.merged(e.cuts + cuts) }
+        }
     }
 
     static func merged(_ ranges: [TimeRange]) -> [TimeRange] {

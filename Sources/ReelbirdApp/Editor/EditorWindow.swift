@@ -10,6 +10,12 @@ import SwiftUI
 
     init(bundle: ProjectBundle, app: AppModel) throws {
         self.app = app
+        // A take still being recorded (here or by the CLI) must not be recovered under its recorder.
+        let manifest = try? bundle.readManifest()
+        if bundle.url.standardizedFileURL == app.recording.activeBundle?.standardizedFileURL
+            || manifest.map({ bundle.isBeingRecorded($0) }) == true {
+            throw StillRecording()
+        }
         if try app.services.recorder.recoverIfNeeded(bundle) { app.library.reload() }
         var cursor = CursorSettings()
         cursor.visible = app.prefs.showCursorDefault
@@ -37,6 +43,9 @@ import SwiftUI
     required init?(coder: NSCoder) { fatalError() }
 
     func willClose() {
+        // Closing without the "still exporting" question (Move to Trash closes the editor directly)
+        // must not leave an export or upload running for a window that's gone.
+        model.cancelWork()
         model.pause()
         model.saveNow()
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
@@ -83,3 +92,7 @@ import SwiftUI
     }
 }
 
+/// Opening a recording that is still being written.
+struct StillRecording: LocalizedError {
+    var errorDescription: String? { "This recording is still in progress. Stop it first, then open it." }
+}

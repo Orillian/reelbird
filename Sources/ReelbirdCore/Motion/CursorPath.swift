@@ -116,7 +116,9 @@ public struct CursorPath: Sendable {
         let rate = Self.sampleRate
         let dt = 1 / rate
         let tail = 1.5
-        let count = Int(((last.t - first.t + tail) * rate).rounded(.up)) + 1
+        // At most a day: one bogus timestamp in a hand-edited events.jsonl must not allocate gigabytes.
+        let span = (last.t - first.t).isFinite ? min(max(0, last.t - first.t), 86_400) : 0
+        let count = Int(((span + tail) * rate).rounded(.up)) + 1
         let sigma = Self.kernelWidth(smoothing: self.smoothing)
 
         var out = [SIMD2<Float>](repeating: .zero, count: count)
@@ -225,8 +227,8 @@ public struct CursorPath: Sendable {
         guard !table.isEmpty else { return nil }
         let f = (t - start) * Self.sampleRate
         if !(f > 0) { let p = table[0]; return NormPoint(x: Double(p.x), y: Double(p.y)) }
+        if f >= Double(table.count - 1) { let p = table[table.count - 1]; return NormPoint(x: Double(p.x), y: Double(p.y)) }
         let i = Int(f)
-        if i >= table.count - 1 { let p = table[table.count - 1]; return NormPoint(x: Double(p.x), y: Double(p.y)) }
         let u = Float(f - Double(i))
         let p = table[i] + (table[i + 1] - table[i]) * u
         return NormPoint(x: Double(p.x), y: Double(p.y))

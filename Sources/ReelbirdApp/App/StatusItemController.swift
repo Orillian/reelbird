@@ -94,7 +94,7 @@ import ReelbirdCore
                     add("Copy Live Link", #selector(copyLiveLink), symbol: "link")
                 }
                 menu.addItem(.separator())
-                add("Start Over", #selector(restart), symbol: "arrow.counterclockwise")
+                add("Start Over…", #selector(restart), symbol: "arrow.counterclockwise")
                 add("Discard Recording…", #selector(discard), symbol: "trash")
             }
         case .finishing:
@@ -118,6 +118,7 @@ import ReelbirdCore
         let lib = add("Open Library", #selector(openLibrary), symbol: "square.grid.2x2")
         lib.keyEquivalent = "l"; lib.keyEquivalentModifierMask = [.command, .shift]
         add("Settings…", #selector(openSettings), symbol: "gearshape").keyEquivalent = ","
+        add("About Reelbird", #selector(openAbout), symbol: "info.circle")
         menu.addItem(.separator())
         add("Quit Reelbird", #selector(quit), symbol: nil).keyEquivalent = "q"
     }
@@ -218,11 +219,12 @@ import ReelbirdCore
     @objc private func stopRecording() { app.recording.stop() }
     @objc private func cancelCountdown() { app.recording.cancelCountdown(); app.recording.closePicker() }
     @objc private func togglePause() { app.recording.togglePause() }
-    @objc private func restart() { app.recording.restart() }
+    @objc private func restart() { app.recording.confirmRestart() }
     @objc private func discard() { app.recording.confirmDiscard() }
     @objc private func openLibrary() { app.openLibrary() }
     @objc private func openSettings() { app.openSettings() }
     @objc private func openPermissions() { app.openSettings(.permissions) }
+    @objc private func openAbout() { app.openSettings(.about) }
     @objc private func quit() { NSApp.terminate(nil) }
     @objc private func copyLiveLink() {
         guard let url = app.recording.status.shareURL else { return }
