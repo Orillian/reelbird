@@ -244,7 +244,7 @@ private func stereoToMono(_ s: [Float]) -> [Float] { stride(from: 0, to: s.count
     let tone = (0..<Int(seconds * 48_000)).map { Float(0.1 * sin(2 * Double.pi * 55 * Double($0) / 48_000)) }
     let b = try await VoiceFixture.bundle(microphone: take.noisy, seconds: seconds, systemAudio: tone)
     defer { try? FileManager.default.removeItem(at: b.url) }
-    let dest = FileManager.default.temporaryDirectory.appendingPathComponent("rb-duck-\(UUID().uuidString).mp4")
+    let dest = testTemporaryDirectory.appendingPathComponent("rb-duck-\(UUID().uuidString).mp4")
     defer { try? FileManager.default.removeItem(at: dest) }
 
     var edit = try b.readEdit()

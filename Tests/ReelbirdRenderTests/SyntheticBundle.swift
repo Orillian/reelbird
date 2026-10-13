@@ -36,7 +36,7 @@ enum Synthetic {
     static let greyRGB: (Int, Int, Int) = (128, 128, 128)
 
     static func makeBundle(_ o: Options = Options()) async throws -> ProjectBundle {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-render-\(UUID().uuidString).reelbird")
+        let dir = testTemporaryDirectory.appendingPathComponent("rb-render-\(UUID().uuidString).reelbird")
         let bundle = try ProjectBundle.create(at: dir)
         let fm = FileManager.default
         for k in [TrackKind.screen, .camera, .microphone] { try fm.createDirectory(at: bundle.directory(for: k), withIntermediateDirectories: true) }

@@ -40,7 +40,7 @@ private enum CLI {
 private let binaryAvailable = CLI.binary != nil
 
 private func tempDir() throws -> URL {
-    let d = FileManager.default.temporaryDirectory.appendingPathComponent("reelbird-privacy-cli-\(UUID().uuidString)", isDirectory: true)
+    let d = testTemporaryDirectory.appendingPathComponent("reelbird-privacy-cli-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
     return d
 }

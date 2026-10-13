@@ -79,7 +79,7 @@ extension RecordingTests {
 }
 
 @Test func durableWriteReplacesAtomicallyAndCleansUpOnFailure() throws {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-durable-\(UUID().uuidString)")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-durable-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer {
         try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
@@ -103,7 +103,7 @@ extension RecordingTests {
 }
 
 @Test func segmentsSortNumericallyPastFiveDigits() throws {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-sort-\(UUID().uuidString)")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-sort-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
     for name in ["seg_99999.m4s", "seg_100000.m4s", "seg_00002.m4s", "init.mp4", ".seg_00003.m4s.1.tmp"] {
@@ -178,7 +178,7 @@ extension RecordingTests {
 }
 
 @Test func writerFallsThroughWhenTheFirstEncoderFailsToStart() throws {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-fallback-\(UUID().uuidString)")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-fallback-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: dir) }
     let spec = EncoderSettings.screen(size: PixelSize(width: 1280, height: 720), frameRate: 30, quality: .high)
     var tried: [VideoSpec.Codec] = []

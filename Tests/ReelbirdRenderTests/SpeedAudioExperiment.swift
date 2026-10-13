@@ -13,7 +13,7 @@ import Testing
 @Test func speedAudioExperiment() async throws {
     guard ProcessInfo.processInfo.environment["RB_EXP"] != nil else { return }
     let seconds = 6.0, sr = 48_000.0
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-speedexp-\(UUID().uuidString)")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-speedexp-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
     let src = dir.appendingPathComponent("voice.wav")

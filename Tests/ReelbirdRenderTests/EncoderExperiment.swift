@@ -32,7 +32,7 @@ import VideoToolbox
 }
 
 func encodeOnce(codec: AVVideoCodecType, props: [String: Any], spec: [String: Any]?, fmt: OSType, w: Int, h: Int, n: Int) async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("exp-\(UUID().uuidString).mp4")
+        let url = testTemporaryDirectory.appendingPathComponent("exp-\(UUID().uuidString).mp4")
         defer { try? FileManager.default.removeItem(at: url) }
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: codec, AVVideoWidthKey: w, AVVideoHeightKey: h,

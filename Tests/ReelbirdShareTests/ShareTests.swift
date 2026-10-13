@@ -9,7 +9,7 @@ import Testing
 
 enum TestSupport {
     static func tempDir(_ name: String = "share") throws -> URL {
-        let url = FileManager.default.temporaryDirectory
+        let url = testTemporaryDirectory
             .appendingPathComponent("reelbird-share-tests", isDirectory: true)
             .appendingPathComponent("\(name)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

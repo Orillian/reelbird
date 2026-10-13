@@ -8,7 +8,7 @@ import Testing
 // MARK: Helpers
 
 func tempBundleURL(_ name: String = "take") -> URL {
-    FileManager.default.temporaryDirectory.appendingPathComponent("rb-capture-\(name)-\(UUID().uuidString).reelbird")
+    testTemporaryDirectory.appendingPathComponent("rb-capture-\(name)-\(UUID().uuidString).reelbird")
 }
 
 func options(mic: Bool = true, system: Bool = true) -> RecordingOptions {

@@ -8,7 +8,7 @@ import ReelbirdCore
 /// A clapperboard recording: the screen flashes white for two frames at each of `flashes` (else near black) and
 /// the microphone and system audio play a short 1 kHz burst from the same instants.
 private func clapper(seconds: Double, flashes: [Double], fps: Int = 30) async throws -> ProjectBundle {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-speed-\(UUID().uuidString).reelbird")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-speed-\(UUID().uuidString).reelbird")
     let bundle = try ProjectBundle.create(at: dir)
     let fm = FileManager.default
     for k in [TrackKind.screen, .microphone, .systemAudio] { try fm.createDirectory(at: bundle.directory(for: k), withIntermediateDirectories: true) }
@@ -139,7 +139,7 @@ private func peak(_ a: (samples: [Float], start: Double), _ r: TimeRange) -> Flo
     let expected = flashes.compactMap { timeline.outputTime(forSource: ($0 * 30).rounded() / 30) }
     #expect(expected.count == 5)
 
-    let dest = FileManager.default.temporaryDirectory.appendingPathComponent("rb-speed-\(UUID().uuidString).mp4")
+    let dest = testTemporaryDirectory.appendingPathComponent("rb-speed-\(UUID().uuidString).mp4")
     defer { try? FileManager.default.removeItem(at: dest) }
     _ = try await Exporter.export(bundle: bundle, edit: edit, options: ExportOptions(format: .mp4H264, frameRate: 30, destination: dest)) { _ in }
     let info = try await inspect(dest)
@@ -173,7 +173,7 @@ private func peak(_ a: (samples: [Float], start: Double), _ r: TimeRange) -> Flo
     edit.speed.set(TimeRange(start: 2, end: 3), rate: 4)
     let timeline = EditTimeline(manifest: manifest, edit: edit)
     #expect(timeline.pieces.last?.audible == false)
-    let dest = FileManager.default.temporaryDirectory.appendingPathComponent("rb-speed-\(UUID().uuidString).mp4")
+    let dest = testTemporaryDirectory.appendingPathComponent("rb-speed-\(UUID().uuidString).mp4")
     defer { try? FileManager.default.removeItem(at: dest) }
     _ = try await Exporter.export(bundle: bundle, edit: edit, options: ExportOptions(format: .mp4H264, frameRate: 30, destination: dest)) { _ in }
     let asset = AVURLAsset(url: dest)
@@ -191,7 +191,7 @@ private func peak(_ a: (samples: [Float], start: Double), _ r: TimeRange) -> Flo
     edit.speed.set(TimeRange(start: 1.5, end: 2.5), rate: 4)
     let timeline = EditTimeline(manifest: manifest, edit: edit)
     #expect(timeline.pieces.map(\.audible) == [true, false, true])
-    let dest = FileManager.default.temporaryDirectory.appendingPathComponent("rb-speed-\(UUID().uuidString).mp4")
+    let dest = testTemporaryDirectory.appendingPathComponent("rb-speed-\(UUID().uuidString).mp4")
     defer { try? FileManager.default.removeItem(at: dest) }
     _ = try await Exporter.export(bundle: bundle, edit: edit, options: ExportOptions(format: .mp4H264, frameRate: 30, destination: dest)) { _ in }
     let info = try await inspect(dest)

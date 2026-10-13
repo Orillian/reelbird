@@ -45,7 +45,7 @@ enum VoiceFixture {
         if !cache.clips.isEmpty { return cache.clips }
         var clips: [[Float]] = []
         for (i, s) in sentences.enumerated() {
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("rb-say-\(getpid())-\(i).wav")
+            let url = testTemporaryDirectory.appendingPathComponent("rb-say-\(getpid())-\(i).wav")
             defer { try? FileManager.default.removeItem(at: url) }
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/say")

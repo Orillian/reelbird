@@ -129,7 +129,7 @@ extension RecordingTests {
 }
 
 @Test func consolidationVerifiesWhatItWroteAndUsesAUniqueTemporaryName() throws {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-verify-\(UUID().uuidString)")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-verify-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
     // An old-style leftover partial from an interrupted run must not be clobbered or confused for output.

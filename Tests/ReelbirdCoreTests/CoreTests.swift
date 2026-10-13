@@ -21,7 +21,7 @@ import Testing
 }
 
 @Test func bundleRoundTrip() throws {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-\(UUID().uuidString).reelbird")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-\(UUID().uuidString).reelbird")
     defer { try? FileManager.default.removeItem(at: dir) }
     let b = try ProjectBundle.create(at: dir)
     let m = ProjectManifest(createdAt: Date(timeIntervalSince1970: 1_790_000_000), title: "Demo", appVersion: "test",
@@ -39,7 +39,7 @@ import Testing
 }
 
 @Test func liveBundleIsOnlyARecentRecordingManifest() throws {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-\(UUID().uuidString).reelbird")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-\(UUID().uuidString).reelbird")
     defer { try? FileManager.default.removeItem(at: dir) }
     let b = try ProjectBundle.create(at: dir)
     var m = ProjectManifest(title: "Live", appVersion: "test",
@@ -60,7 +60,7 @@ import Testing
 }
 
 @Test func eventLogSkipsTruncatedLineAndIsFast() throws {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("ev-\(UUID().uuidString).jsonl")
+    let url = testTemporaryDirectory.appendingPathComponent("ev-\(UUID().uuidString).jsonl")
     defer { try? FileManager.default.removeItem(at: url) }
     var s = ""
     for i in 0..<432_000 { s += #"{"t":\#(Double(i) / 120),"type":"move","x":0.4123,"y":0.2331}"# + "\n" }
@@ -75,7 +75,7 @@ import Testing
 }
 
 @Test func eventLogFastPathMatchesCodable() throws {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("ev-\(UUID().uuidString).jsonl")
+    let url = testTemporaryDirectory.appendingPathComponent("ev-\(UUID().uuidString).jsonl")
     defer { try? FileManager.default.removeItem(at: url) }
     let w = try EventLogWriter(url: url)
     let events: [InputEvent] = [

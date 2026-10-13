@@ -100,7 +100,7 @@ private func loudness(_ samples: [Float], rate: Double, channels: Int = 1) -> Do
     #expect(abs(a.linearGain(for: .systemAudio, analysis: nil) - 0.501) < 0.001)
 
     // analysis.json round-trips through the bundle; another version reads as missing.
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-\(UUID().uuidString).reelbird")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-\(UUID().uuidString).reelbird")
     defer { try? FileManager.default.removeItem(at: dir) }
     let b = try ProjectBundle.create(at: dir)
     try b.writeAnalysis(analysis)

@@ -95,7 +95,7 @@ private func makeProject(in dir: URL, name: String = "Demo", microphone: URL? = 
 }
 
 private func tempDir() throws -> URL {
-    let d = FileManager.default.temporaryDirectory.appendingPathComponent("reelbird-cli-\(UUID().uuidString)", isDirectory: true)
+    let d = testTemporaryDirectory.appendingPathComponent("reelbird-cli-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
     return d
 }

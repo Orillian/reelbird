@@ -3,7 +3,7 @@ import Testing
 @testable import ReelbirdCore
 
 @Test func markerEventsRoundTripThroughTheLog() throws {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("rb-markers-\(UUID().uuidString).jsonl")
+    let url = testTemporaryDirectory.appendingPathComponent("rb-markers-\(UUID().uuidString).jsonl")
     defer { try? FileManager.default.removeItem(at: url) }
     let w = try EventLogWriter(url: url)
     w.append(.move(0.5, NormPoint(x: 0.1, y: 0.2)))

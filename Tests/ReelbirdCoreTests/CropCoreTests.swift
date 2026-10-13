@@ -81,7 +81,7 @@ private func decodeEdit(_ json: String) throws -> EditDocument {
 }
 
 @Test func cropSuggestionCacheChecksTheScreenFile() throws {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-crop-\(UUID().uuidString).reelbird")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-crop-\(UUID().uuidString).reelbird")
     let b = try ProjectBundle.create(at: dir)
     defer { try? FileManager.default.removeItem(at: dir) }
     try FileManager.default.createDirectory(at: b.directory(for: .screen), withIntermediateDirectories: true)

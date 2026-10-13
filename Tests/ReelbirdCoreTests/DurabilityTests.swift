@@ -3,7 +3,7 @@ import Testing
 @testable import ReelbirdCore
 
 private func tempBundle() throws -> ProjectBundle {
-    try ProjectBundle.create(at: FileManager.default.temporaryDirectory.appendingPathComponent("rb-\(UUID().uuidString).reelbird"))
+    try ProjectBundle.create(at: testTemporaryDirectory.appendingPathComponent("rb-\(UUID().uuidString).reelbird"))
 }
 
 @Test func bundleLockIsExclusiveAcrossHoldersAndSaysWhy() throws {

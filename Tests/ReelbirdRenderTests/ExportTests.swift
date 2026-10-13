@@ -95,7 +95,7 @@ func cpuSeconds() -> Double {
     edit.trim = TimeRange(start: 0.5, end: 5)
     edit.cuts = [TimeRange(start: 1, end: 2)]
     edit.title = "Cut: test/1"
-    let dest = FileManager.default.temporaryDirectory.appendingPathComponent("rb-\(UUID().uuidString).mp4")
+    let dest = testTemporaryDirectory.appendingPathComponent("rb-\(UUID().uuidString).mp4")
     defer { try? FileManager.default.removeItem(at: dest) }
     let url = try await Exporter.export(bundle: bundle, edit: edit, options: ExportOptions(format: .mp4H264, height: 480, frameRate: 24, destination: dest)) { _ in }
     #expect(url == dest)
@@ -119,7 +119,7 @@ func cpuSeconds() -> Double {
     let bundle = try await Synthetic.makeBundle(o)
     defer { try? FileManager.default.removeItem(at: bundle.url) }
     let edit = try bundle.readEdit()
-    let dest = FileManager.default.temporaryDirectory.appendingPathComponent("rb-cancel-\(UUID().uuidString).mov")
+    let dest = testTemporaryDirectory.appendingPathComponent("rb-cancel-\(UUID().uuidString).mov")
     let task = Task { try await Exporter.export(bundle: bundle, edit: edit, options: ExportOptions(format: .proRes, destination: dest)) { _ in } }
     try await Task.sleep(for: .milliseconds(150))
     task.cancel()

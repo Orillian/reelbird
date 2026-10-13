@@ -26,7 +26,7 @@ private func reelbird(_ args: [String], library: URL) throws -> (code: Int32, ou
 private func json(_ s: String) -> [String: Any]? { (try? JSONSerialization.jsonObject(with: Data(s.utf8))) as? [String: Any] }
 
 private func scratch() throws -> URL {
-    let d = FileManager.default.temporaryDirectory.appendingPathComponent("reelbird-markers-\(UUID().uuidString)", isDirectory: true)
+    let d = testTemporaryDirectory.appendingPathComponent("reelbird-markers-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
     return d
 }

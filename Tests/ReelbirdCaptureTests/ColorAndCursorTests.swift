@@ -43,7 +43,7 @@ func displayedGrey(_ url: URL) async throws -> Int {
 }
 
 @Test func screenVideoIsTaggedSRGBAndDisplaysUnchanged() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("rb-color-\(UUID().uuidString)")
+    let root = testTemporaryDirectory.appendingPathComponent("rb-color-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: root) }
     let spec = EncoderSettings.screen(size: PixelSize(width: 64, height: 64), frameRate: 30, quality: .high)
     #expect(spec.srgbTransfer)
@@ -67,7 +67,7 @@ func displayedGrey(_ url: URL) async throws -> Int {
 }
 
 @MainActor @Test func cursorsAreSavedAtFourTimesWithPixelHotSpots() throws {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-cursor-\(UUID().uuidString)")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-cursor-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
     let recorder = CursorRecorder(directory: dir, indexURL: dir.appendingPathComponent("cursors.json"))

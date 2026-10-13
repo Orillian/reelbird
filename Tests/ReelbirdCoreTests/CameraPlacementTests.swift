@@ -25,7 +25,7 @@ private func close(_ a: NormPoint, _ b: NormPoint, _ tol: Double = 1e-6) -> Bool
 }
 
 @Test func cameraEventsRoundTripThroughTheLog() throws {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-cam-\(UUID().uuidString)")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-cam-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
     let url = dir.appendingPathComponent("events.jsonl")

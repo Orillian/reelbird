@@ -216,7 +216,7 @@ enum SecretFixture {
     }
 
     static func make(seconds: Double) async throws -> Fixture {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("rb-secrets-\(UUID().uuidString).mp4")
+        let url = testTemporaryDirectory.appendingPathComponent("rb-secrets-\(UUID().uuidString).mp4")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: width, AVVideoHeightKey: height,

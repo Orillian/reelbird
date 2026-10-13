@@ -22,7 +22,7 @@ private func flatEdit(_ manifest: ProjectManifest) -> EditDocument {
 /// clicks at the same instants: a clapperboard for A/V sync.
 private func clapperBundle(width: Int = 640, height: Int = 360, fps: Int = 30, seconds: Double, flashes: [Double],
                            microphone: Bool = true) async throws -> ProjectBundle {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-sync-\(UUID().uuidString).reelbird")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-sync-\(UUID().uuidString).reelbird")
     let bundle = try ProjectBundle.create(at: dir)
     let fm = FileManager.default
     for k in [TrackKind.screen, .microphone] { try fm.createDirectory(at: bundle.directory(for: k), withIntermediateDirectories: true) }
@@ -125,7 +125,7 @@ private func clickTimes(_ url: URL) async throws -> [Double] {
     edit.cuts = [TimeRange(start: 1.13, end: 1.41), TimeRange(start: 3.37, end: 3.52)]
     let timeline = EditTimeline(duration: 6, trim: edit.trim, cuts: edit.cuts)
     for fps in [30, 60] {
-        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("rb-sync-\(UUID().uuidString).mp4")
+        let dest = testTemporaryDirectory.appendingPathComponent("rb-sync-\(UUID().uuidString).mp4")
         defer { try? FileManager.default.removeItem(at: dest) }
         _ = try await Exporter.export(bundle: bundle, edit: edit, options: ExportOptions(format: .mp4H264, frameRate: fps, destination: dest)) { _ in }
         let video = try await flashTimes(dest), audio = try await clickTimes(dest)
@@ -147,7 +147,7 @@ private func clickTimes(_ url: URL) async throws -> [Double] {
     let manifest = try bundle.readManifest()
     let edit = flatEdit(manifest)
     for format in [ExportOptions.Format.mp4H264, .mp4HEVC] {
-        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("rb-color-\(UUID().uuidString).mp4")
+        let dest = testTemporaryDirectory.appendingPathComponent("rb-color-\(UUID().uuidString).mp4")
         defer { try? FileManager.default.removeItem(at: dest) }
         _ = try await Exporter.export(bundle: bundle, edit: edit, options: ExportOptions(format: format, destination: dest)) { _ in }
         let asset = AVURLAsset(url: dest)
@@ -175,7 +175,7 @@ private func clickTimes(_ url: URL) async throws -> [Double] {
                                    (.vertical, 1920, CGSize(width: 1080, height: 1920)),
                                    (.square, 721, CGSize(width: 722, height: 722))] {
         edit.canvas.aspect = aspect
-        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("rb-odd-\(UUID().uuidString).mp4")
+        let dest = testTemporaryDirectory.appendingPathComponent("rb-odd-\(UUID().uuidString).mp4")
         defer { try? FileManager.default.removeItem(at: dest) }
         _ = try await Exporter.export(bundle: bundle, edit: edit, options: ExportOptions(format: .mp4H264, height: height, destination: dest)) { _ in }
         let info = try await inspect(dest)

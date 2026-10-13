@@ -210,7 +210,7 @@ private func bundle(microphone samples: [Float], seconds: Double) async throws -
     #expect(await AudioAnalyzer.analysis(bundle: b) == analysis)
 
     // Export with auto level on: the voice lands near −16 LUFS and peaks stay under −1 dBFS.
-    let dest = FileManager.default.temporaryDirectory.appendingPathComponent("rb-level-\(UUID().uuidString).mp4")
+    let dest = testTemporaryDirectory.appendingPathComponent("rb-level-\(UUID().uuidString).mp4")
     defer { try? FileManager.default.removeItem(at: dest) }
     // Enhance off: this test is about auto level on the raw voice (VoiceStemTests cover the enhanced path).
     var plain = try b.readEdit()

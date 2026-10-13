@@ -5,7 +5,7 @@ import Foundation
 /// Test fixtures: synthetic audio files written with the real encoders.
 enum TestAudio {
     static func tempURL(_ ext: String) -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("reelbird-test-\(UUID().uuidString).\(ext)")
+        testTemporaryDirectory.appendingPathComponent("reelbird-test-\(UUID().uuidString).\(ext)")
     }
 
     /// One piece of a generated signal: a sine tone (`amplitude` > 0) or silence.

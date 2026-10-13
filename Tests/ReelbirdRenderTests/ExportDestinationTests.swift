@@ -4,7 +4,7 @@ import ReelbirdCore
 @testable import ReelbirdRender
 
 @Test func exportIntoChosenFolderUsesDefaultNameInsideIt() throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("rb-dest-\(UUID().uuidString)")
+    let root = testTemporaryDirectory.appendingPathComponent("rb-dest-\(UUID().uuidString)")
     let folder = root.appendingPathComponent("Downloads", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }

@@ -8,7 +8,7 @@ import Testing
 /// Feeds 6 s of a 440 Hz tone through an `AudioTrackFeed` whose encoder refuses `refusals` appends at
 /// 2 s, and returns the consolidated file plus the feed.
 private func feedThroughBusyEncoder(refusals: Int, capacity: Int) async throws -> (URL, AudioTrackFeed, URL) {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-busy-\(UUID().uuidString)/microphone")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-busy-\(UUID().uuidString)/microphone")
     let writer = try SegmentedWriter(kind: .microphone, directory: dir, video: nil, audio: EncoderSettings.microphone, realTime: false)
     try writer.start(at: 0)
     let feed = AudioTrackFeed(writer: writer, channels: 1, pendingCapacity: capacity)
@@ -124,7 +124,7 @@ extension RecordingTests {
 
 /// Window recordings log keystrokes only while the recorded window's app is in front.
 @Test func windowRecordingsKeepOtherAppsKeystrokesOut() throws {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-keys-\(UUID().uuidString).reelbird")
+    let dir = testTemporaryDirectory.appendingPathComponent("rb-keys-\(UUID().uuidString).reelbird")
     let bundle = try ProjectBundle.create(at: dir)
     defer { try? FileManager.default.removeItem(at: dir) }
     let log = try EventLogWriter(url: bundle.eventsURL)

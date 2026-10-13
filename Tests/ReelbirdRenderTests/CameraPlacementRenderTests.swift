@@ -229,7 +229,7 @@ private func cameraBox(_ px: Pixels) -> CGRect? {
 
 /// Exports `edit` to an H.264 file and decodes the frame at `t`.
 private func exportedFrame(_ bundle: ProjectBundle, _ edit: EditDocument, at t: Double) async throws -> Pixels {
-    let dest = FileManager.default.temporaryDirectory.appendingPathComponent("rb-wysiwyg-\(UUID().uuidString).mp4")
+    let dest = testTemporaryDirectory.appendingPathComponent("rb-wysiwyg-\(UUID().uuidString).mp4")
     defer { try? FileManager.default.removeItem(at: dest) }
     let url = try await Exporter.export(bundle: bundle, edit: edit, options: ExportOptions(format: .mp4H264, destination: dest)) { _ in }
     let gen = AVAssetImageGenerator(asset: AVURLAsset(url: url))
