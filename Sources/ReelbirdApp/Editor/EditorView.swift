@@ -75,8 +75,6 @@ struct EditorTopBar: View {
             Menu {
                 Button("Library") { app?.openLibrary() }
                 Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.bundle.url]) }
-                Divider()
-                Button("Move to Trash…", role: .destructive) { app?.moveToTrash(model.bundle) }
             } label: {
                 Image(systemName: "ellipsis.circle").font(.system(size: 15))
             }
@@ -88,6 +86,10 @@ struct EditorTopBar: View {
             .help("More")
             .accessibilityLabel("More")
             HStack(spacing: 2) {
+                Button { app?.moveToTrash(model.bundle) } label: { Image(systemName: "trash") }
+                    .buttonStyle(IconButtonStyle(size: 28))
+                    .help("Move to Trash (⌘⌫)")
+                    .accessibilityLabel("Move to Trash")
                 Button { model.undoManager.undo() } label: { Image(systemName: "arrow.uturn.backward") }
                     .buttonStyle(IconButtonStyle(size: 28))
                     .disabled(!model.undoManager.canUndo)
