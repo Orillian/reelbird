@@ -59,7 +59,7 @@ export const PREBUILT = {
   sha256: "e1670fdce17990647d6d375d948e97717a7a06dde586bb30ca07bec82fb3e262",
 };
 
-/** Donations. The /support page and nothing else reads these. */
+/** Donations. Read by the /support page and the thank-you after a download. */
 export const DONATION_LINKS = {
   once: "https://buy.stripe.com/fZu14m0FO3v050PfqP3ks00",
   monthly: [

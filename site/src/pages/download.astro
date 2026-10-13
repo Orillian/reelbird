@@ -3,7 +3,7 @@ import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import Code from "../components/Code.astro";
 import Icon from "../components/Icon.astro";
-import { GITHUB_URL, PREBUILT, APP_VERSION, REQUIREMENTS } from "../config/site";
+import { GITHUB_URL, PREBUILT, APP_VERSION, REQUIREMENTS, DONATION_LINKS } from "../config/site";
 
 const permissions = [
   ["Screen & System Audio Recording", "Recording the screen and system sound. Required."],
@@ -31,7 +31,7 @@ const permissions = [
         <section class="prebuilt" aria-labelledby="prebuilt-title">
           <h2 id="prebuilt-title">Download the app</h2>
           <p class="muted">{PREBUILT.note}</p>
-          <a class="btn btn-primary" href={PREBUILT.url}><Icon name="download" />{PREBUILT.label}</a>
+          <a class="btn btn-primary" href={PREBUILT.url} data-download data-umami-event="download-zip"><Icon name="download" />{PREBUILT.label}</a>
           <ol class="prebuilt-steps">
             <li>Unzip it and drag <strong>Reelbird</strong> to your Applications folder.</li>
             <li>Open it. macOS says it can't verify the developer. Choose <strong>Done</strong>.</li>
@@ -142,7 +142,46 @@ const permissions = [
   </div>
 </Base>
 
+<dialog class="thanks" id="thanks" aria-labelledby="thanks-title">
+  <form method="dialog" class="thanks-close"><button aria-label="Close" value="close">×</button></form>
+  <img src="/anim/celebrating.svg" alt="" width="88" height="88" class="only-light" />
+  <img src="/anim/celebrating-dark.svg" alt="" width="88" height="88" class="only-dark" />
+  <h2 id="thanks-title">Your download has started</h2>
+  <p>Unzip it, drag Reelbird to Applications, then choose <strong>Open Anyway</strong> in System Settings → Privacy &amp; Security the first time.</p>
+  <p class="muted">Reelbird is free, with no account and no ads. If it saves you a subscription, a one-time tip keeps it going.</p>
+  <div class="thanks-actions">
+    <a class="btn btn-primary" href={DONATION_LINKS.once} target="_blank" rel="noopener" data-umami-event="tip-after-download">Leave a tip</a>
+    <form method="dialog"><button class="btn btn-ghost" value="later">Maybe later</button></form>
+  </div>
+  <p class="muted small"><a href="/support/">Other ways to support Reelbird</a></p>
+</dialog>
+
+<script>
+  const dlg = document.getElementById("thanks") as HTMLDialogElement | null;
+  const KEY = "rb-thanks-shown";
+  document.querySelectorAll<HTMLAnchorElement>("[data-download]").forEach((a) => {
+    a.addEventListener("click", () => {
+      let seen = false;
+      try { seen = localStorage.getItem(KEY) === "1"; localStorage.setItem(KEY, "1"); } catch {}
+      if (!dlg || seen || typeof dlg.showModal !== "function") return;
+      setTimeout(() => dlg.showModal(), 700);   // let the download start first
+    });
+  });
+  dlg?.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });   // click outside closes
+</script>
+
 <style>
+  .thanks { margin: auto; inset: 0; position: fixed; max-height: calc(100dvh - 2rem); width: min(26rem, calc(100vw - 2rem)); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: 1.75rem 1.5rem 1.25rem; background: var(--bg-raised); color: var(--text); text-align: center; }
+  .thanks[open] { display: grid; gap: 0.75rem; justify-items: center; animation: thanks-in 220ms ease-out; }
+  .thanks::backdrop { background: color-mix(in srgb, var(--ink) 35%, transparent); }
+  .thanks h2 { font-size: var(--step-1); }
+  .thanks p { font-size: 0.9375rem; }
+  .thanks .muted { color: var(--text-muted); }
+  .thanks-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; margin-top: 0.25rem; }
+  .thanks-close { position: absolute; top: 0.5rem; right: 0.6rem; }
+  .thanks-close button { background: none; border: 0; font-size: 1.4rem; line-height: 1; color: var(--text-muted); cursor: pointer; padding: 0.25rem 0.4rem; }
+  @keyframes thanks-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .thanks[open] { animation: none; } }
   .prebuilt-steps { margin: 1rem 0 0.75rem; padding-left: 1.25rem; display: grid; gap: 0.4rem; }
   .hash { word-break: break-all; }
   .layout { display: grid; grid-template-columns: minmax(0, 1fr) 20rem; gap: clamp(2rem, 1rem + 4vw, 5rem); padding-bottom: var(--section); align-items: start; }
