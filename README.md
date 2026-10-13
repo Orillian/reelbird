@@ -58,7 +58,7 @@ Reelbird isn't on the App Store and doesn't have a signed download yet, so you b
 
 You need:
 
-- macOS 15 or later, on Apple silicon. Intel Macs that run macOS 15 should build too, but nobody has tested one yet.
+- macOS 15 or later, on Apple silicon. It also compiles for Intel Macs that run macOS 15, but it hasn't been tested on one yet.
 - The Command Line Tools (`xcode-select --install`). Xcode works too but isn't required.
 
 ```sh
