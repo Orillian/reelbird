@@ -196,6 +196,15 @@ public struct AudioSettings: Codable, Hashable, Sendable {
     public var systemMuted = false
     /// Bring the voice to a steady loudness (−16 LUFS) from its measured level (`analysis.json`).
     public var autoLevel = true
+    /// Clean up the voice: high-pass, noise removal, gentle expander, compressor, de-esser and presence EQ,
+    /// rendered once into the voice stem (`voice/`). The raw microphone track is never changed.
+    public var enhance = true
+    /// How much background noise enhance may remove.
+    public var enhanceStrength: EnhanceStrength = .medium
+    /// Blend of the enhanced voice with the original: 0 = original, 1 = fully enhanced.
+    public var enhanceMix: Double = 1
+    /// Lower system audio by about 12 dB while the voice is speaking.
+    public var duckSystemAudio = true
 
     public init() {}
     public init(from decoder: any Decoder) throws {
@@ -206,7 +215,37 @@ public struct AudioSettings: Codable, Hashable, Sendable {
         microphoneMuted = try c.decodeIfPresent(Bool.self, forKey: .microphoneMuted) ?? d.microphoneMuted
         systemMuted = try c.decodeIfPresent(Bool.self, forKey: .systemMuted) ?? d.systemMuted
         autoLevel = try c.decodeIfPresent(Bool.self, forKey: .autoLevel) ?? d.autoLevel
+        enhance = try c.decodeIfPresent(Bool.self, forKey: .enhance) ?? d.enhance
+        // An unknown strength (from a newer version) falls back to the default instead of failing the document.
+        enhanceStrength = (try? c.decodeIfPresent(EnhanceStrength.self, forKey: .enhanceStrength)) ?? d.enhanceStrength
+        enhanceMix = min(1, max(0, try c.decodeIfPresent(Double.self, forKey: .enhanceMix) ?? d.enhanceMix))
+        duckSystemAudio = try c.decodeIfPresent(Bool.self, forKey: .duckSystemAudio) ?? d.duckSystemAudio
     }
+}
+
+/// How much background noise "Enhance voice" may remove. Capping the attenuation keeps voices natural:
+/// full-strength ML denoising is where robotic tone and dropped word endings come from.
+public enum EnhanceStrength: String, Codable, Hashable, Sendable, CaseIterable {
+    case light, medium, strong, max
+
+    /// Most noise reduction in dB, or `nil` for no cap.
+    public var attenuationCapDB: Double? {
+        switch self {
+        case .light: 6
+        case .medium: 12
+        case .strong: 24
+        case .max: nil
+        }
+    }
+
+    /// Share of the denoised signal blended with the (aligned) input, so that fully removed noise is reduced
+    /// by exactly `attenuationCapDB`: residual = 1 − wet.
+    public var denoiseWet: Double {
+        guard let cap = attenuationCapDB else { return 1 }
+        return 1 - pow(10, -cap / 20)
+    }
+
+    public var title: String { rawValue.capitalized }
 }
 
 public struct CaptionSettings: Codable, Hashable, Sendable {

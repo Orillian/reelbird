@@ -4,19 +4,31 @@ import Foundation
 /// Regenerable: deleting the file only means the next export or editor session measures again.
 public struct AudioAnalysis: Codable, Hashable, Sendable {
     /// Bumped when the measurement changes; files with another version are measured again.
-    public static let currentVersion = 1
+    /// 2: voice activity (`speech`), the raw microphone next to the stem, and system audio.
+    public static let currentVersion = 2
 
     public var version: Int = AudioAnalysis.currentVersion
-    /// The microphone track, when there is one.
+    /// The voice as it plays: the voice stem when enhance is on and rendered, else the raw microphone track.
     public var microphone: TrackLoudness?
+    /// The raw microphone track, measured too when `microphone` is the stem (for "Hear original").
+    public var rawMicrophone: TrackLoudness?
+    /// The system audio track, when there is one.
+    public var systemAudio: TrackLoudness?
 
-    public init(microphone: TrackLoudness? = nil) { self.microphone = microphone }
+    public init(microphone: TrackLoudness? = nil, rawMicrophone: TrackLoudness? = nil, systemAudio: TrackLoudness? = nil) {
+        self.microphone = microphone; self.rawMicrophone = rawMicrophone; self.systemAudio = systemAudio
+    }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 0
         microphone = try c.decodeIfPresent(TrackLoudness.self, forKey: .microphone)
+        rawMicrophone = try c.decodeIfPresent(TrackLoudness.self, forKey: .rawMicrophone)
+        systemAudio = try c.decodeIfPresent(TrackLoudness.self, forKey: .systemAudio)
     }
+
+    /// The raw microphone's loudness: `rawMicrophone` when the voice is the stem, else `microphone`.
+    public var originalVoice: TrackLoudness? { rawMicrophone ?? microphone }
 }
 
 /// Loudness of one audio track.
@@ -32,10 +44,15 @@ public struct TrackLoudness: Codable, Hashable, Sendable {
     public var peakDBFS: Double?
     /// Seconds of audio measured.
     public var duration: Double
+    /// Where someone is speaking, in seconds from the file's first sample (`VoiceActivity`). Voice tracks only.
+    public var speech: [TimeRange]?
+    /// Noise floor in dBFS (mono): the 10th percentile of 10 ms frame levels. `nil` when not measured.
+    public var noiseFloorDB: Double?
 
-    public init(file: String, fileSize: Int64, integratedLUFS: Double?, peakDBFS: Double?, duration: Double) {
+    public init(file: String, fileSize: Int64, integratedLUFS: Double?, peakDBFS: Double?, duration: Double,
+                speech: [TimeRange]? = nil, noiseFloorDB: Double? = nil) {
         self.file = file; self.fileSize = fileSize; self.integratedLUFS = integratedLUFS
-        self.peakDBFS = peakDBFS; self.duration = duration
+        self.peakDBFS = peakDBFS; self.duration = duration; self.speech = speech; self.noiseFloorDB = noiseFloorDB
     }
 
     public init(from decoder: any Decoder) throws {
@@ -45,6 +62,8 @@ public struct TrackLoudness: Codable, Hashable, Sendable {
         integratedLUFS = try c.decodeIfPresent(Double.self, forKey: .integratedLUFS)
         peakDBFS = try c.decodeIfPresent(Double.self, forKey: .peakDBFS)
         duration = try c.decodeIfPresent(Double.self, forKey: .duration) ?? 0
+        speech = try c.decodeIfPresent([TimeRange].self, forKey: .speech)
+        noiseFloorDB = try c.decodeIfPresent(Double.self, forKey: .noiseFloorDB)
     }
 }
 
@@ -84,6 +103,14 @@ extension AudioSettings {
         default:
             return nil
         }
+    }
+
+    /// Linear gain for the raw microphone when it stands in for the voice ("Hear original"): auto level from the
+    /// raw track's own loudness plus the boost, so the comparison is loudness-matched. 0 when muted.
+    public func linearGainForOriginalVoice(analysis: AudioAnalysis?) -> Float {
+        guard !microphoneMuted else { return 0 }
+        let auto = autoLevel ? (analysis?.originalVoice).map { AutoLevel.gainDB(integratedLUFS: $0.integratedLUFS) } ?? 0 : 0
+        return Float(pow(10, min(30, max(-60, microphoneGainDB + auto)) / 20))
     }
 
     /// `gainDB(for:analysis:)` as a linear factor, clamped to −60…+30 dB (0 when muted).
