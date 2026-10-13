@@ -123,13 +123,50 @@ for name, fn in [("idle",mascot_idle),("recording",mascot_recording),("celebrati
     for suffix, body, eye in [("", INK, PAPER), ("-dark", PAPER, INK)]:
         w(f"mascot-{name}{suffix}.svg", HDR.format(vb="0 0 256 256", extra='') + fn(body, eye) + "</svg>")
 
-# ---- social preview 1280x640: dark lockup centred on ink
-k=0.64; tx=270; base=129+0.5*136*k
-lw = tx + WW*k + 14 - 8; lh = 192
-S = 820/lw
-ox = (1280 - lw*S)/2 - 8*S; oy = (640 - lh*S)/2 - 33*S
-w("social-preview.svg", f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640">
-<defs><radialGradient id="g" cx="0.5" cy="0.4" r="0.75"><stop offset="0" stop-color="#26201C"/><stop offset="1" stop-color="{INK}"/></radialGradient></defs>
-<rect width="1280" height="640" fill="url(#g)"/>
-<g transform="translate({fmt(ox)} {fmt(oy)}) scale({S:.4f})">{bird(PAPER, INK)}{wordmark_group(PAPER, CORAL, tx, base, k)}</g>
-</svg>''')
+# ---- web: favicon (flat tile, crisp at 16-32 px) and the full-bleed square apple-touch source
+os.makedirs(os.path.join(OUT,"web"),exist_ok=True)
+FAV_BIRD=(f'<g transform="translate(118 104) scale(3.15)"><path d="{BODY}" fill="#FFF4E8"/>'
+          f'<circle cx="146" cy="149" r="40" fill="{CORAL}"/><circle cx="177" cy="80" r="9" fill="{INK}"/></g>')
+w("web/favicon.svg", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="100 100 824 824"><title>Reelbird</title><path d="{SQ}" fill="{INK}"/>{FAV_BIRD}</svg>')
+# apple-touch: iOS/macOS apply their own mask, so the square is full-bleed and the bird sits a bit smaller
+w("web/apple-touch-icon.svg", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><rect width="1024" height="1024" fill="{INK}"/>'
+  f'<g transform="translate(512 512) scale(0.86) translate(-512 -512)">{FAV_BIRD}</g></svg>')
+
+# ---- animations (CSS inside the SVG, so they play in <img> too; reduced motion stops them)
+os.makedirs(os.path.join(OUT,"anim"),exist_ok=True)
+RM='@media (prefers-reduced-motion:reduce){*{animation:none!important}}'
+def anim_recording(body, eye):
+    css=('<style>'
+         '.ring{transform-origin:146px 149px;animation:rb-ring 2.4s cubic-bezier(.3,0,.2,1) infinite}'
+         '.dot{transform-origin:146px 149px;animation:rb-dot 2.4s ease-in-out infinite}'
+         '.eye{transform-origin:177px 80px;animation:rb-blink 5.2s linear infinite}'
+         '@keyframes rb-ring{0%{transform:scale(1);opacity:0}8%{opacity:.7}75%,100%{transform:scale(1.42);opacity:0}}'
+         '@keyframes rb-dot{0%,100%{transform:scale(1)}40%{transform:scale(.93)}}'
+         '@keyframes rb-blink{0%,94%,100%{transform:scaleY(1)}96.5%{transform:scaleY(.12)}}'
+         + RM + '</style>')
+    return (css + f'<path d="{BODY}" fill="{body}"/>'
+            f'<circle class="ring" cx="146" cy="149" r="46" fill="none" stroke="{CORAL}" stroke-width="4"/>'
+            f'<circle class="dot" cx="146" cy="149" r="40" fill="{CORAL}"/>'
+            f'<circle class="eye" cx="177" cy="80" r="8" fill="{eye}"/>')
+def anim_flap(body, eye):
+    wing='M124 94C108 66 88 42 62 26C55 22 49 27 51 34C53 41 56 47 60 52C55 53 53 57 56 61C62 70 69 78 76 85C71 87 70 92 74 96C82 104 91 112 100 118Z'
+    css=('<style>'
+         '.hop{animation:rb-hop 2.4s cubic-bezier(.3,0,.3,1) infinite}'
+         '.wing{transform-origin:116px 110px;animation:rb-flap 2.4s ease-in-out infinite}'
+         '.s{opacity:0;animation:rb-spark 2.4s ease-out infinite}.s2{animation-delay:.08s}.s3{animation-delay:.16s}'
+         '@keyframes rb-hop{0%,60%,100%{transform:translateY(0)}15%{transform:translateY(-7px)}30%{transform:translateY(0)}38%{transform:translateY(-4px)}46%{transform:translateY(0)}}'
+         '@keyframes rb-flap{0%,56%,100%{transform:rotate(0)}10%{transform:rotate(-16deg)}20%{transform:rotate(4deg)}30%{transform:rotate(-14deg)}40%{transform:rotate(2deg)}}'
+         '@keyframes rb-spark{0%,8%{opacity:0;transform:translate(-3px,3px)}16%{opacity:1;transform:translate(0,0)}46%{opacity:1}60%,100%{opacity:0}}'
+         + RM + '</style>')
+    beaks=(f'<path d="M203 70L233 70.5Q238 71.5 233.5 75L205 86Z" fill="{body}"/>'
+           f'<path d="M205 91L228 102Q231.5 104.5 227 105L205 99Z" fill="{body}"/>')
+    g=(f'<g class="hop"><g transform="rotate(-8 128 140) translate(0 -10)"><path class="wing" d="{wing}" fill="{body}"/>'
+       f'<path d="{BODY_NOBEAK}" fill="{body}"/>{beaks}<circle cx="146" cy="149" r="40" fill="{CORAL}"/>'
+       f'<path d="M169 84Q177 74 185 84" fill="none" stroke="{eye}" stroke-width="5" stroke-linecap="round"/>'
+       f'<path d="M116 210L104 228M144 211L136 230" fill="none" stroke="{body}" stroke-width="7" stroke-linecap="round"/></g></g>')
+    sparks=''.join(f'<path class="s s{i+1}" d="{d}" fill="none" stroke="{CORAL}" stroke-width="6" stroke-linecap="round"/>'
+                   for i,d in enumerate(["M206 26L206 12","M222 34L230 20","M240 52L254 46"]))
+    return css + g + sparks
+for suffix, body, eye in [("", INK, PAPER), ("-dark", PAPER, INK)]:
+    w(f"anim/recording{suffix}.svg", HDR.format(vb="0 0 256 256", extra=' role="img" aria-label="Reelbird is recording"') + anim_recording(body, eye) + "</svg>")
+    w(f"anim/celebrating{suffix}.svg", HDR.format(vb="0 0 256 256", extra=' role="img" aria-label="Done"') + anim_flap(body, eye) + "</svg>")

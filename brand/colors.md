@@ -46,7 +46,21 @@ No gradients on UI surfaces. The only gradients are the subtle lighting inside t
 | `mascot-recording(-dark).svg` | Robin with a live ring round the dot | Permission screens, "Recording…" states, countdown |
 | `mascot-celebrating(-dark).svg` | Wing up, singing | Export finished, link copied, first recording done |
 | `mascot-sleeping(-dark).svg` | Eyes shut, record light off | Empty library ("No recordings yet") |
-| `social-preview.png` | 1280×640 card | GitHub social preview, link unfurls |
+| `social-preview.png` | 1280×640 card, from `src/social.html` | GitHub social preview, default link unfurl |
+| `readme/banner-light.png`, `readme/banner-dark.png` | 1600×800 README banner, from `src/banner.html` | Top of README in a `<picture>` |
+| `og/og-default.png`, `src/og.html` | 1200×630 Open Graph image and its per-page template | Website `og:image` |
+| `web/favicon.svg`, `web/favicon-32.png`, `web/icon-512.png`, `web/apple-touch-icon.png` | Flat icon tile for browsers | Website `<head>`, web manifest |
+| `anim/recording(-dark).svg` | Robin with a breathing record ring (CSS in the SVG) | Website "recording" moments; works in `<img>` |
+| `anim/celebrating(-dark).svg` | Robin hops, flaps and sings | Website success states |
+| `illustrations/*.webp` | Shaded robin scenes, 800 px square, transparent: `perch`, `camera`, `link`, `headphones`, `sleeping`, `celebrating` | Website sections, README, OG images |
+| `screenshots/*-light.webp`, `*-dark.webp` | Framed app screens at 2x on paper or ink | Website, README |
+| `screenshots/editor-*-window.webp` | The editor window and its shadow on a transparent background | Compositions (banner, social card, site hero) |
+| `media/hero.webm`, `media/hero.mp4`, `media/hero-poster.webp` | 8 s looping auto-zoom clip, 1080p | Website hero video |
+| `media/demo.gif` | The same clip, 960 px | README |
+
+Illustrations have a cream bird that reads on paper and on ink. Where thin dark details (legs, beak, confetti) would vanish on ink, a `-dark` file has them lightened; use it on dark backgrounds and the plain file elsewhere.
+
+Animated SVGs follow `prefers-reduced-motion` and stop when it is set. The record ring is the only pulse in the brand, and it only ever means "recording".
 
 Mascot files without a suffix have an ink bird for light backgrounds; `-dark` files have a paper bird for dark backgrounds. Use the mascot at most once per screen, at 96 to 160 pt, and never as decoration next to text that already explains the state.
 
@@ -57,4 +71,17 @@ The SVGs use only paths, circles, gradients and `feGaussianBlur`, so `NSImage(da
 - 1024 × 1024 canvas; the tile is Apple's continuous-corner rounded rectangle, 824 × 824 at (100, 100), corner radius 185.4. The path came from SwiftUI's `RoundedRectangle(cornerRadius: 185.4, style: .continuous)`.
 - Nothing is drawn outside the tile: macOS 26 puts icons with pixels outside the shape inside a grey tile. Shadows are inside the tile and clipped to it.
 - Layers, back to front: ink tile with a vertical gradient (`#221D1A` → `#0E0B0A`), a faint coral glow, the bird's soft shadow, the paper bird (`#FFF9F0` → `#F3E0C8`), the record dot (radial `#FF8256` → `#FF5A36` → `#E5432B`), the eye with a catchlight, and a light rim along the tile edge.
-- The SVGs come from `brand/tools/generate-svgs.py` (one robin path, the stroke-built wordmark, the icon layers). Change geometry or colours there, then run `scripts/make-icon.sh` to regenerate every PNG and the `.icns`.
+- The SVGs come from `brand/tools/generate-svgs.py` (one robin path, the stroke-built wordmark, the icon layers, the favicon and the animations). Change geometry or colours there, then run `scripts/make-icon.sh` to regenerate every PNG and the `.icns`.
+
+## Banner, social card and OG image
+
+These are HTML pages in `brand/src/`, set in the website's fonts (Fraunces for headlines, Instrument Sans for small text) and rendered with headless Chrome:
+
+```sh
+brand/tools/render-html.sh brand/src/banner.html brand/readme/banner-dark.png 1600 800 dark
+brand/tools/render-html.sh brand/src/banner.html brand/readme/banner-light.png 1600 800 light
+brand/tools/render-html.sh brand/src/social.html brand/social-preview.png 1280 640
+brand/tools/render-html.sh brand/src/og.html out.png 1200 630 "title=Share%20links%20from%20a%20bucket%20you%20own&section=Docs&art=link"
+```
+
+`og.html` takes `title`, an optional `section` line and an `art` name from `illustrations/`. Compress PNG output with `pngquant` before committing.

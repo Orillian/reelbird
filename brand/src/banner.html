@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- README banner, 1600x800. Render with brand/tools/render-html.sh (light: ?light, dark: ?dark). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reelbird banner</title>
+<style>
+@font-face { font-family: "Fraunces"; src: url("../../site/src/assets/fonts/fraunces-var.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "Instrument Sans"; src: url("../../site/src/assets/fonts/instrument-sans-var.woff2") format("woff2"); font-weight: 400 700; }
+:root { --bg: #FFF4E8; --lift: #FFFBF6; --fg: #1A1512; --muted: #6E645C; }
+:root.dark { --bg: #1A1512; --lift: #2A2320; --fg: #FFF4E8; --muted: #A69C93; }
+* { margin: 0; box-sizing: border-box; }
+html, body { width: 1600px; height: 800px; overflow: hidden; }
+body {
+  background: var(--bg);
+  position: relative;
+  -webkit-font-smoothing: antialiased;
+}
+.lift {
+  position: absolute; left: 50%; top: -420px; width: 1500px; height: 900px; transform: translateX(-50%);
+  background: radial-gradient(closest-side, var(--lift), transparent);
+  opacity: .9;
+}
+.logo { position: absolute; left: 50%; top: 74px; height: 50px; transform: translateX(-50%); }
+h1 {
+  position: absolute; left: 0; right: 0; top: 150px; text-align: center;
+  font: 400 50px/1.1 "Fraunces", serif; font-variation-settings: "opsz" 72, "SOFT" 50;
+  letter-spacing: -0.012em; color: var(--fg);
+}
+.shot { position: absolute; left: 50%; top: 218px; width: 1290px; transform: translateX(-50%); }
+.shot img { width: 100%; display: block; }
+</style>
+</head>
+<body>
+<div class="lift"></div>
+<img class="logo" id="logo" src="../logo.svg" alt="">
+<h1>Record your screen. Send the link. Polish it later.</h1>
+<div class="shot"><img id="shot" src="../screenshots/editor-light-window.webp" alt=""></div>
+<script>
+  if (location.search.includes("dark")) {
+    document.documentElement.classList.add("dark");
+    document.getElementById("logo").src = "../logo-dark.svg";
+    document.getElementById("shot").src = "../screenshots/editor-dark-window.webp";
+  }
+</script>
+</body>
+</html>
