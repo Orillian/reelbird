@@ -86,6 +86,7 @@ import ReelbirdRender
         check(manifest?.pauses.count == 1, "pause recorded in manifest")
         check(manifest?.track(.camera) != nil, "camera track recorded")
         check(session.microphoneTakeSummary.map { !$0.isEssentiallySilent } == true, "mic take summary reported (not silent)")
+        trashForgetsDeletedLink(bundle: bundle, root: root, check: check)
 
         microphoneChoice(services: services, prefs: prefs, check: check)
         await windowSections(services: services, prefs: prefs, check: check)
@@ -252,6 +253,24 @@ import ReelbirdRender
 }
 
 extension SelfTest {
+    /// Move to Trash with "Also delete its share link": once the link is deleted, the trashed copy (or one
+    /// already put back) forgets it; a copy pointing at another link is left alone.
+    static func trashForgetsDeletedLink(bundle: ProjectBundle, root: URL, check: (Bool, String) -> Void) {
+        guard let info = (try? bundle.readManifest())?.share else { check(false, "trash: recording has a share link"); return }
+        let trashed = root.appendingPathComponent("trashed.reelbird"), other = root.appendingPathComponent("other.reelbird")
+        try? FileManager.default.copyItem(at: bundle.url, to: trashed)
+        try? FileManager.default.copyItem(at: bundle.url, to: other)
+        if var m = try? ProjectBundle(url: other).readManifest() {
+            m.share = ShareInfo(key: "r/someOtherLink", url: "https://p/r/someOtherLink")
+            try? ProjectBundle(url: other).writeManifest(m)
+        }
+        AppModel.forgetShare(info, at: [trashed, other, root.appendingPathComponent("missing.reelbird")])
+        check((try? ProjectBundle(url: trashed).readManifest())?.share == nil, "trash: a deleted link is cleared, so a restored copy isn't 'Shared'")
+        check((try? ProjectBundle(url: other).readManifest())?.share?.key == "r/someOtherLink", "trash: another recording's link is untouched")
+        try? FileManager.default.removeItem(at: trashed)
+        try? FileManager.default.removeItem(at: other)
+    }
+
     /// Library multi-selection: click, ⌘-click, ⇧-click ranges, ⇧-arrows, select all, rubber band, trash neighbour.
     static func librarySelection(services: Services, prefs: Preferences, check: (Bool, String) -> Void) {
         let store = LibraryStore(services: services, prefs: prefs)

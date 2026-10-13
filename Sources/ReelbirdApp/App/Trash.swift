@@ -43,15 +43,17 @@ extension AppModel {
 
     private func performTrash(_ bundles: [ProjectBundle], manifests: [ProjectManifest?], deleteLinks: Bool) {
         bundles.forEach { windows.closeEditor(for: $0) }
-        var trashedShares: [ShareInfo] = []
+        // Each shared recording's link and where the bundle went (original place first, then the Trash).
+        var trashedShares: [(info: ShareInfo, places: [URL])] = []
         var failure: (any Error)?
         var failed = 0
         var trashed: Set<URL> = []
         for (bundle, manifest) in zip(bundles, manifests) {
             do {
-                try FileManager.default.trashItem(at: bundle.url, resultingItemURL: nil)
+                var inTrash: NSURL?
+                try FileManager.default.trashItem(at: bundle.url, resultingItemURL: &inTrash)
                 trashed.insert(bundle.url)
-                if let info = manifest?.share { trashedShares.append(info) }
+                if let info = manifest?.share { trashedShares.append((info, [inTrash as URL?, bundle.url].compactMap { $0 })) }
             } catch {
                 failure = failure ?? error
                 failed += 1
@@ -71,8 +73,12 @@ extension AppModel {
         Task {
             var firstError: (any Error)?
             var errors = 0
-            for info in trashedShares {
-                do { try await share.unpublish(info, destination: dest, secret: secret) } catch {
+            for (info, places) in trashedShares {
+                do {
+                    try await share.unpublish(info, destination: dest, secret: secret)
+                    // The link is gone: forget it, so putting the recording back doesn't show a dead link.
+                    Self.forgetShare(info, at: places)
+                } catch {
                     firstError = firstError ?? error
                     errors += 1
                 }
@@ -83,6 +89,19 @@ extension AppModel {
                     : "The recordings are in the Trash, but \(errors) of their links couldn't be deleted"
                 self.present(firstError, title: title)
             }
+        }
+    }
+}
+
+extension AppModel {
+    /// Clears `info` from the manifest of whichever copy of the bundle still has it (in the Trash, or
+    /// already put back). Leaves bundles pointing at another link alone.
+    nonisolated static func forgetShare(_ info: ShareInfo, at places: [URL]) {
+        for url in places {
+            let b = ProjectBundle(url: url)
+            guard var m = try? b.readManifest(), m.share?.key == info.key else { continue }
+            m.share = nil
+            try? b.writeManifest(m)
         }
     }
 }
