@@ -65,7 +65,6 @@ import ReelbirdCore
         alert.messageText = title
         alert.informativeText = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
         alert.alertStyle = .warning
-        NSApp.activate()
-        alert.runModal()
+        alert.present { _ in }
     }
 }

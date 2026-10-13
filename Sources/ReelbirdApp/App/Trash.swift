@@ -35,9 +35,13 @@ extension AppModel {
             alert.accessoryView = box
             unshare = box
         }
-        NSApp.activate()
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        alert.present { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.performTrash(bundles, manifests: manifests, deleteLinks: unshare?.state == .on)
+        }
+    }
 
+    private func performTrash(_ bundles: [ProjectBundle], manifests: [ProjectManifest?], deleteLinks: Bool) {
         bundles.forEach { windows.closeEditor(for: $0) }
         var trashedShares: [ShareInfo] = []
         var failure: (any Error)?
@@ -61,7 +65,7 @@ extension AppModel {
                 : "Couldn't move \(failed) of the \(bundles.count) recordings to the Trash")
         }
 
-        guard unshare?.state == .on, !trashedShares.isEmpty,
+        guard deleteLinks, !trashedShares.isEmpty,
               let dest = services.share.loadDestination(), let secret = services.share.secret() else { return }
         let share = services.share
         Task {
@@ -79,6 +83,20 @@ extension AppModel {
                     : "The recordings are in the Trash, but \(errors) of their links couldn't be deleted"
                 self.present(firstError, title: title)
             }
+        }
+    }
+}
+
+extension NSAlert {
+    /// Shows the alert as a sheet on the window the person is using (so it appears on their screen and
+    /// Space), or as a standalone alert when no suitable window is in front.
+    @MainActor func present(_ completion: @escaping @MainActor (NSApplication.ModalResponse) -> Void) {
+        if let host = NSApp.keyWindow ?? NSApp.mainWindow, host.isVisible, host.attachedSheet == nil,
+           host.styleMask.contains(.titled), !(host is NSPanel) {
+            beginSheetModal(for: host) { response in MainActor.assumeIsolated { completion(response) } }
+        } else {
+            NSApp.activate()
+            completion(runModal())
         }
     }
 }
