@@ -10,8 +10,8 @@ import Icon from "../components/Icon.astro";
 import { GITHUB_URL, SITE_DESCRIPTION, APP_VERSION } from "../config/site";
 import { HOME_FAQ } from "../data/faq";
 import { softwareApplication, softwareSourceCode } from "../lib/jsonld";
-import pickerL from "../assets/shots/picker-light.webp";
-import pickerD from "../assets/shots/picker-dark.webp";
+import pickerL from "../assets/shots/picker-raw-light.webp";
+import pickerD from "../assets/shots/picker-raw-dark.webp";
 import hudL from "../assets/shots/hud-light.webp";
 import hudD from "../assets/shots/hud-dark.webp";
 import shareL from "../assets/shots/share-light.webp";
@@ -92,7 +92,7 @@ const facts: [string, string, string?][] = [
             <h3>Record</h3>
             <p>Pick a display, a window or an area. Camera, microphone and system audio record as separate tracks. <kbd>⌥</kbd><kbd>⇧</kbd><kbd>R</kbd> starts from any app.</p>
           </div>
-          <Shot src={pickerL} dark={pickerD} alt="The Reelbird picker on the Window tab: windows to choose from, and switches for microphone, camera, system audio and Share while recording." sizes="(min-width: 60rem) 560px, 100vw" widths={[560, 840, 1120, 1560]} class="step-shot shot-picker" />
+          <Shot src={pickerL} dark={pickerD} variant="frame" alt="The Reelbird picker on the Window tab: windows to choose from, including ones on other desktops, and switches for microphone, camera, system audio and Share while recording." sizes="(min-width: 60rem) 500px, 100vw" widths={[500, 750, 1000, 1240]} class="step-shot shot-picker" />
         </li>
 
         <li class="step" data-reveal>
@@ -298,9 +298,9 @@ const facts: [string, string, string?][] = [
   .step p { margin-top: 0.85rem; color: var(--text-muted); }
   .step p strong { color: var(--text); font-weight: 600; }
   .step p kbd { margin-inline: 0.05rem; }
-  :global(.shot-picker) { max-width: 31rem; justify-self: center; width: 100%; }
+  :global(.shot-picker) { max-width: 30rem; justify-self: center; width: 100%; }
   .stop-visual { display: grid; justify-items: center; }
-  .stop-visual :global(.share-shot) { width: 72%; margin-top: -3%; }
+  .stop-visual :global(.share-shot) { width: 64%; margin-top: -2%; }
 
   /* Auto-zoom trio */
   .trio { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem 3rem; margin-top: 3rem; }

@@ -52,8 +52,13 @@ const fallback = await getImage({ src: poster, width: 1280, format: "webp", qual
       if (video.paused) { video.play(); setState(true); } else { video.pause(); setState(false); }
     });
     if (!reduce && !saveData) {
-      const start = () => ("requestIdleCallback" in window ? requestIdleCallback(() => load(true), { timeout: 2000 }) : setTimeout(() => load(true), 200));
-      if (document.readyState === "complete") start(); else addEventListener("load", start, { once: true });
+      // Start on the first sign of a person (pointer, touch, scroll, key) or after a few quiet seconds,
+      // so decoding never competes with the first paint. The poster is the clip's first frame.
+      const kick = () => { off(); load(true); };
+      const evs = ["pointermove", "pointerdown", "touchstart", "scroll", "keydown"] as const;
+      const off = () => { evs.forEach((e) => removeEventListener(e, kick)); clearTimeout(timer); };
+      evs.forEach((e) => addEventListener(e, kick, { once: true, passive: true }));
+      const timer = setTimeout(kick, 5000);
     }
     // Pause off-screen to save battery.
     new IntersectionObserver(([e]) => {
