@@ -323,16 +323,20 @@ struct CameraSection: View {
             } else {
                 Toggle("Show camera", isOn: model.binding(\.camera.visible, "Show Camera")).toggleStyle(.brand).font(.system(size: 12))
                 if model.edit.camera.visible {
-                    FieldRow(label: "Shape") {
-                        PillTabs(selection: model.binding(\.camera.shape, "Camera Shape"), items: [
-                            .init(value: .circle, title: "Circle", symbol: "circle"),
-                            .init(value: .roundedSquare, title: "Rounded", symbol: "app"),
-                        ], compact: true)
-                    }
+                    FieldRow(label: "Shape") { shapePicker }
                     FieldRow(label: "Size") {
                         ValueSlider(value: model.binding(\.camera.size, "Camera Size"), range: 0.1...0.45) { "\(Int($0 * 100))%" }
                     }
-                    FieldRow(label: "Corner") { cornerPicker }
+                    FieldRow(label: "Position") {
+                        HStack(spacing: Theme.Space.m) {
+                            cornerPicker
+                            Text("Drag the bubble on the preview to place it anywhere.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    if !model.edit.camera.moves.isEmpty { moves }
                     Toggle("Mirror", isOn: model.binding(\.camera.mirror, "Mirror Camera")).toggleStyle(.brand).font(.system(size: 12))
                     Toggle("Blur background", isOn: model.binding(\.camera.blurBackground, "Blur Background")).toggleStyle(.brand).font(.system(size: 12))
                 }
@@ -340,16 +344,109 @@ struct CameraSection: View {
         }
     }
 
+    /// Circle, squircle square and portrait tile, each with its own outline as the icon.
+    private var shapePicker: some View {
+        let current = model.edit.camera.shape
+        return HStack(spacing: 2) {
+            ForEach(CameraLayout.Shape.allCases, id: \.self) { shape in
+                let selected = shape == current
+                Button { withAnimation(Theme.snappy) { model.change("Camera Shape") { $0.camera.shape = shape } } } label: {
+                    HStack(spacing: 5) {
+                        CameraShapeGlyph(shape: shape, filled: selected)
+                            .frame(width: 12, height: 13)
+                        Text(shape.title).font(.system(size: 11.5, weight: selected ? .semibold : .medium))
+                    }
+                    .foregroundStyle(selected ? Color.primary : Color.secondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 24)
+                    .background {
+                        if selected {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Theme.raised)
+                                .shadow(color: .black.opacity(0.12), radius: 1.5, y: 0.5)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(shape.title)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.fieldFill))
+    }
+
+    /// The recorded moves, each deletable, and "Keep in one place" to drop them all.
+    private var moves: some View {
+        let list = model.edit.camera.moves
+        let timeline = model.timeline
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(list.count == 1 ? "1 move" : "\(list.count) moves")
+                    .font(.system(size: 12, weight: .medium))
+                Spacer()
+                Button("Keep in One Place") { model.keepCameraInOnePlace() }
+                    .buttonStyle(SecondaryButtonStyle(small: true))
+                    .help("Drop the moves: the camera stays where it starts")
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(list.enumerated()), id: \.offset) { i, move in
+                    let out = timeline.outputTime(forSource: move.t)
+                    HStack(spacing: 8) {
+                        Button { model.seek(source: move.t) } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 14)
+                                Text(out.map { "Moved at \(TimeFormat.clock($0))" } ?? "Moved in a cut part")
+                                    .font(.system(size: 12).monospacedDigit())
+                                    .foregroundStyle(out == nil ? .secondary : .primary)
+                                Spacer(minLength: 0)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Go to this move")
+                        Button { model.deleteCameraMove(at: i) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
+                            .buttonStyle(IconButtonStyle(size: 20))
+                            .help("Delete this move")
+                            .accessibilityLabel("Delete move at \(TimeFormat.clock(out ?? move.t))")
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(height: 28)
+                    if i < list.count - 1 { Divider().padding(.leading, 30) }
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.fieldFill))
+        }
+    }
+
+    /// Four corner presets (each pins the bubble there for the whole video). A free place shows as a dot.
     private var cornerPicker: some View {
         let corners: [[CameraLayout.Corner]] = [[.topLeft, .topRight], [.bottomLeft, .bottomRight]]
+        let pinned = model.cameraCorner
+        let start = model.edit.camera.position
         return ZStack {
             RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Theme.fieldFill)
+            if pinned == nil {
+                GeometryReader { g in
+                    let inset: CGFloat = 7 + 6
+                    Circle()
+                        .fill(Theme.ink)
+                        .frame(width: 8, height: 8)
+                        .position(x: inset + (g.size.width - 2 * inset) * start.x, y: inset + (g.size.height - 2 * inset) * start.y)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
             VStack(spacing: 0) {
                 ForEach(0..<2, id: \.self) { row in
                     HStack(spacing: 0) {
                         ForEach(corners[row], id: \.self) { c in
-                            let selected = model.edit.camera.corner == c
-                            Button { model.change("Camera Corner") { $0.camera.corner = c } } label: {
+                            let selected = pinned == c
+                            Button { model.setCameraCorner(c) } label: {
                                 Circle()
                                     .fill(selected ? Theme.ink : Color.primary.opacity(0.18))
                                     .frame(width: 12, height: 12)
@@ -358,6 +455,7 @@ struct CameraSection: View {
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .help(cornerName(c))
                             .accessibilityLabel(cornerName(c))
                             .accessibilityAddTraits(selected ? .isSelected : [])
                         }

@@ -287,19 +287,14 @@ final class MockPreviewView: NSView {
 
     private func drawCamera(_ ctx: CGContext, _ frame: CGRect) {
         let cam = edit.camera
-        let short = min(frame.width, frame.height)
-        let d = short * cam.size
-        let inset = short * cam.inset
-        var origin = CGPoint(x: frame.maxX - inset - d, y: frame.maxY - inset - d)
-        switch cam.corner {
-        case .topLeft: origin = CGPoint(x: frame.minX + inset, y: frame.minY + inset)
-        case .topRight: origin = CGPoint(x: frame.maxX - inset - d, y: frame.minY + inset)
-        case .bottomLeft: origin = CGPoint(x: frame.minX + inset, y: frame.maxY - inset - d)
-        case .bottomRight: break
-        }
-        let rect = CGRect(origin: origin, size: CGSize(width: d, height: d))
-        let path = cam.shape == .circle ? CGPath(ellipseIn: rect, transform: nil)
-            : CGPath(roundedRect: rect, cornerWidth: d * 0.18, cornerHeight: d * 0.18, transform: nil)
+        let place = CameraPlacementPath(cam).position(at: sourceTime)
+        let rect = CameraPlacement.frame(at: place, layout: cam, width: frame.width, height: frame.height)
+            .offsetBy(dx: frame.minX, dy: frame.minY)
+        let d = rect.width
+        let outline = CameraPlacement.outline(shape: cam.shape, width: rect.width, height: rect.height)
+        let path = CGMutablePath()
+        path.addLines(between: outline.map { CGPoint(x: rect.minX + $0.x, y: rect.minY + $0.y) })
+        path.closeSubpath()
         ctx.saveGState()
         ctx.setShadow(offset: CGSize(width: 0, height: d * 0.03), blur: d * 0.12, color: NSColor.black.withAlphaComponent(0.4).cgColor)
         ctx.addPath(path); ctx.setFillColor(NSColor.black.cgColor); ctx.fillPath()

@@ -415,6 +415,16 @@ struct MicMeter: View {
     private var builtWithAccess = false
     private let services: Services
     private let prefs: Preferences
+    private var moveObserver: (any NSObjectProtocol)?
+    private var settleTask: Task<Void, Never>?
+    /// Host time of the last window move (when the bubble got to where the drag left it).
+    private var lastMoveHost: Double?
+    /// Space around the visible bubble inside the panel (room for its shadow).
+    static let padding: CGFloat = 6
+
+    /// Called with the bubble's visible frame (global points, top-left origin; `nil` when it hides), its shape
+    /// and the host time it got there: when it appears and whenever a drag or resize ends.
+    var onPlace: ((CGRect?, CameraLayout.Shape, Double?) -> Void)?
 
     init(services: Services, prefs: Preferences) {
         self.services = services
@@ -425,79 +435,174 @@ struct MicMeter: View {
         // Rebuild when camera access changed too: a bubble made before access was granted only holds a placeholder.
         let access = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
         if panel != nil && self.deviceID == deviceID && builtWithAccess == access { return }
-        hide()
+        let previous = panel?.frame
+        hide(report: false)
         self.deviceID = deviceID
         builtWithAccess = access
-        let d = prefs.cameraBubbleSize.points
+        let size = panelSize()
         // Never key: dragging the bubble mustn't take focus from the app being recorded. It stays
         // out of the screen capture too: the camera is its own track, composited in the editor.
-        let p = FloatingPanel(size: NSSize(width: d, height: d), level: .statusBar, allowsKey: false)
-        let view = CameraBubbleView(camera: services.inputs.makeCameraView(deviceID: deviceID),
-                                    size: prefs.cameraBubbleSize) { [weak self] size in self?.resize(size) }
-        p.contentView = FirstMouseHostingView(rootView: view)
-        let screen = NSScreen.withMouse.visibleFrame
-        p.setFrameOrigin(NSPoint(x: screen.minX + 32, y: screen.minY + 32))
+        let p = FloatingPanel(size: size, level: .statusBar, allowsKey: false)
+        p.contentView = FirstMouseHostingView(rootView: bubbleView(camera: services.inputs.makeCameraView(deviceID: deviceID)))
+        if let previous {
+            p.setFrame(NSRect(origin: NSPoint(x: previous.minX, y: previous.maxY - size.height), size: size), display: false)
+        } else {
+            p.setFrameOrigin(Self.defaultOrigin(size: size, screen: NSScreen.withMouse))
+        }
         p.fadeIn()
         panel = p
+        moveObserver = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: p, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.panelMoved() }
+        }
+        reportPlace()
+    }
+
+    /// Bottom right, the editor's default corner, with the same inset (3.5% of the screen's shorter side).
+    /// The bubble floats above the Dock; a Dock on the right moves it in.
+    static func defaultOrigin(size: NSSize, screen: NSScreen) -> NSPoint {
+        let f = screen.frame, v = screen.visibleFrame
+        let inset = CameraLayout().inset * min(f.width, f.height)
+        return NSPoint(x: min(f.maxX, v.maxX) - inset - size.width + padding, y: f.minY + inset - padding)
+    }
+
+    private func panelSize() -> NSSize {
+        let s = prefs.cameraBubbleSize.size(prefs.cameraShape)
+        return NSSize(width: s.width + Self.padding * 2, height: s.height + Self.padding * 2)
+    }
+
+    private func bubbleView(camera: NSView) -> CameraBubbleView {
+        CameraBubbleView(camera: camera, size: prefs.cameraBubbleSize, shape: prefs.cameraShape,
+                         onResize: { [weak self] s in self?.resize(s) }, onShape: { [weak self] s in self?.setShape(s) })
     }
 
     func resize(_ size: CameraBubbleSize) {
         prefs.cameraBubbleSize = size
+        relayout()
+    }
+
+    func setShape(_ shape: CameraLayout.Shape) {
+        prefs.cameraShape = shape
+        relayout()
+    }
+
+    /// Applies the size and shape, keeping the bubble's top-left corner where it is.
+    private func relayout() {
         guard let p = panel else { return }
         var f = p.frame
-        let d = size.points
-        f.origin.y += f.height - d
-        f.size = NSSize(width: d, height: d)
+        let size = panelSize()
+        f.origin.y += f.height - size.height
+        f.size = size
         p.setFrame(f, display: true, animate: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
         if let hosting = p.contentView as? FirstMouseHostingView<CameraBubbleView> {
-            hosting.rootView = CameraBubbleView(camera: hosting.rootView.camera, size: size) { [weak self] s in self?.resize(s) }
+            hosting.rootView = bubbleView(camera: hosting.rootView.camera)
+        }
+        reportPlace()
+    }
+
+    /// The window moved (dragged, or our own resize): report once the mouse is up and it has settled.
+    private func panelMoved() {
+        lastMoveHost = RecordingSession.hostTime
+        settleTask?.cancel()
+        settleTask = Task { [weak self] in
+            repeat {
+                try? await Task.sleep(for: .milliseconds(80))
+                if Task.isCancelled { return }
+            } while NSEvent.pressedMouseButtons != 0
+            self?.reportPlace(at: self?.lastMoveHost)
         }
     }
 
-    func hide() {
+    /// The visible bubble in global points with a top-left origin (what the recorder normalizes against).
+    var globalFrame: CGRect? {
+        guard let p = panel else { return nil }
+        let f = p.frame.insetBy(dx: Self.padding, dy: Self.padding)
+        let top = NSScreen.screens.first?.frame.maxY ?? f.maxY
+        return CGRect(x: f.minX, y: top - f.maxY, width: f.width, height: f.height)
+    }
+
+    /// Tells `onPlace` where the bubble is now.
+    func reportPlace(at host: Double? = nil) {
+        onPlace?(globalFrame, prefs.cameraShape, host)
+    }
+
+    func hide() { hide(report: true) }
+
+    private func hide(report: Bool) {
+        settleTask?.cancel(); settleTask = nil
+        if let moveObserver { NotificationCenter.default.removeObserver(moveObserver) }
+        moveObserver = nil
         panel?.fadeOut()
         panel = nil
         deviceID = nil
+        if report { onPlace?(nil, prefs.cameraShape, nil) }
     }
 }
 
 struct CameraBubbleView: View {
     let camera: NSView
     let size: CameraBubbleSize
+    var shape: CameraLayout.Shape = .circle
     let onResize: (CameraBubbleSize) -> Void
+    var onShape: (CameraLayout.Shape) -> Void = { _ in }
+    /// Snapshots: show the hover controls.
+    var showControls = false
     @ViewState private var hovering = false
 
     var body: some View {
+        let outline = CameraBubbleShape(shape: shape)
         ZStack(alignment: .bottom) {
             ViewHost(view: camera)
-                .clipShape(Circle())
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.85), lineWidth: 2.5))
+                .clipShape(outline)
+                .overlay(outline.stroke(Color.white.opacity(0.85), lineWidth: 2.5))
                 .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
-            if hovering {
-                HStack(spacing: 2) {
-                    ForEach(CameraBubbleSize.allCases, id: \.self) { s in
-                        Button { onResize(s) } label: {
-                            Text(String(s.title.prefix(1)))
-                                .font(.system(size: 11, weight: .semibold))
-                                .frame(width: 22, height: 20)
-                                .foregroundStyle(s == size ? Color.black : .white)
-                                .background(Capsule().fill(s == size ? Color.white : .clear))
+            if hovering || showControls {
+                VStack(spacing: 4) {
+                    controlRow {
+                        ForEach(CameraLayout.Shape.allCases, id: \.self) { s in
+                            Button { onShape(s) } label: {
+                                CameraShapeGlyph(shape: s, filled: s == shape)
+                                    .foregroundStyle(s == shape ? Color.black : .white)
+                                    .frame(width: 22, height: 20)
+                                    .background(Capsule().fill(s == shape ? Color.white : .clear))
+                            }
+                            .buttonStyle(.plain)
+                            .help(s.title)
+                            .accessibilityLabel("\(s.title) camera shape")
+                            .accessibilityAddTraits(s == shape ? .isSelected : [])
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("\(s.title) camera bubble")
+                    }
+                    controlRow {
+                        ForEach(CameraBubbleSize.allCases, id: \.self) { s in
+                            Button { onResize(s) } label: {
+                                Text(String(s.title.prefix(1)))
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .frame(width: 22, height: 20)
+                                    .foregroundStyle(s == size ? Color.black : .white)
+                                    .background(Capsule().fill(s == size ? Color.white : .clear))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(s.title) camera bubble")
+                            .accessibilityAddTraits(s == size ? .isSelected : [])
+                        }
                     }
                 }
-                .padding(3)
-                .background(Capsule().fill(Color.black.opacity(0.6)))
-                .padding(.bottom, 12)
+                .padding(.bottom, shape == .circle ? 12 : 9)
                 .transition(.opacity)
             }
         }
-        .padding(6)
+        .padding(CameraBubbleController.padding)
         .onHover { h in withAnimation(Theme.snappy) { hovering = h } }
         .contextMenu {
+            ForEach(CameraLayout.Shape.allCases, id: \.self) { s in Button(s.title) { onShape(s) } }
+            Divider()
             ForEach(CameraBubbleSize.allCases, id: \.self) { s in Button(s.title) { onResize(s) } }
         }
+    }
+
+    private func controlRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: 2) { content() }
+            .padding(3)
+            .background(Capsule().fill(Color.black.opacity(0.6)))
     }
 }
 

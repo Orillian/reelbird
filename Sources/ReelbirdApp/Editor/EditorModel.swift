@@ -91,6 +91,9 @@ enum CaptionState: Equatable {
     private(set) var isDetectingToolbar = false
     /// Crop mode: the crop being drawn on the preview (full-screen coordinates). `nil` when not cropping.
     private(set) var cropDraft: NormRect?
+    /// The camera bubble's place while it is being dragged on the preview, and the lines it snapped to.
+    private(set) var cameraDraft: NormPoint?
+    private(set) var cameraGuides: CameraPlacement.Guides = []
 
     @ObservationIgnored let undoManager = UndoManager()
     /// Off in snapshots so scenes don't write into the shared demo bundle.
@@ -392,6 +395,72 @@ enum CaptionState: Equatable {
         return edit.zoom.regions.first { $0.id == id }
     }
 
+    // Camera placement
+
+    /// The output canvas in pixels (the preview letterboxes it the same way).
+    var canvasPixelSize: PixelSize {
+        RenderPlan.canvasSize(source: CropSpace(edit.crop).pixelSize(of: screenPixelSize), aspect: edit.canvas.aspect,
+                              height: edit.canvas.outputHeight)
+    }
+
+    /// Whether the bubble can be dragged on the preview now.
+    var canDragCamera: Bool { hasCamera && edit.camera.visible && !isCropping && player != nil }
+
+    /// The bubble's place at the playhead (the drag in progress, if any).
+    var cameraPosition: NormPoint { cameraDraft ?? edit.camera.path.position(at: playhead) }
+
+    /// Starts dragging the bubble on the preview (playback pauses: the drag sets the place at the playhead).
+    func beginCameraDrag() {
+        if isPlaying { pause() }
+        cameraDraft = edit.camera.path.position(at: playhead)
+        cameraGuides = []
+    }
+
+    func updateCameraDrag(_ p: NormPoint, guides: CameraPlacement.Guides) {
+        guard cameraDraft != nil else { return }
+        cameraDraft = p
+        cameraGuides = guides
+        player?.update(edit: previewEdit)
+    }
+
+    /// Ends the drag: one undo step that sets the place in effect at the playhead.
+    func endCameraDrag() {
+        guard let p = cameraDraft else { return }
+        cameraDraft = nil
+        cameraGuides = []
+        let t = playhead
+        change("Move Camera") { $0.camera.setPosition(p, at: t) }
+        player?.update(edit: previewEdit)
+    }
+
+    func cancelCameraDrag() {
+        guard cameraDraft != nil else { return }
+        cameraDraft = nil
+        cameraGuides = []
+        player?.update(edit: previewEdit)
+    }
+
+    /// Corner presets: the bubble stays in that corner for the whole video.
+    func setCameraCorner(_ c: CameraLayout.Corner) {
+        change("Camera Corner") { $0.camera.pin(to: c) }
+    }
+
+    /// The preset corner the bubble sits in for the whole video, if any.
+    var cameraCorner: CameraLayout.Corner? {
+        guard edit.camera.moves.isEmpty else { return nil }
+        return CameraLayout.Corner.allCases.first { $0.position == edit.camera.position }
+    }
+
+    /// Drops every move, keeping the bubble where it starts.
+    func keepCameraInOnePlace() {
+        change("Keep Camera in One Place") { $0.camera.moves = [] }
+    }
+
+    func deleteCameraMove(at index: Int) {
+        guard edit.camera.moves.indices.contains(index) else { return }
+        change("Delete Camera Move") { _ = $0.camera.moves.remove(at: index) }
+    }
+
     // Crop
 
     /// The app name when this is a recording of a browser window.
@@ -471,6 +540,11 @@ enum CaptionState: Equatable {
     /// What the preview draws: the edit, or in crop mode the whole uncropped screen without background,
     /// zoom, cursor or overlays, so the crop handles sit on the full frame.
     var previewEdit: EditDocument {
+        if let p = cameraDraft, !isCropping {
+            var e = edit
+            e.camera.setPosition(p, at: playhead)
+            return e
+        }
         guard isCropping else { return edit }
         var e = edit
         e.crop = nil

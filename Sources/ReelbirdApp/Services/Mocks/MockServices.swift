@@ -255,6 +255,11 @@ final class MockRecordingSession: RecordingSessionHandle, @unchecked Sendable {
     var microphoneLevels: MicLevelReading { lock.withLock { pauseStart == nil ? levels : MicLevelReading() } }
     var microphoneTakeSummary: MicTakeSummary? { lock.withLock { summary } }
     var trackIssues: [TrackKind: String] { get async { [:] } }
+    /// Camera bubble places reported while this session lived (self test).
+    private(set) var cameraUpdates: [(frame: CGRect?, shape: CameraLayout.Shape)] = []
+    func updateCameraBubble(frame: CGRect?, shape: CameraLayout.Shape, atHostTime host: Double?) {
+        lock.withLock { cameraUpdates.append((frame, shape)) }
+    }
 
     func discard() async {
         ticker?.cancel()

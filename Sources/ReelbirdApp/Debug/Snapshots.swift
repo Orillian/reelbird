@@ -177,6 +177,13 @@ import SwiftUI
         scenes.append(Scene(name: "camera-bubble", size: CGSize(width: 320, height: 300), backdrop: true) {
             AnyView(CameraBubbleView(camera: MockCameraView(frame: .zero), size: .medium, onResize: { _ in }).frame(width: 212, height: 212))
         })
+        for shape in [CameraLayout.Shape.roundedSquare, .portrait] {
+            let s = CameraBubbleSize.medium.size(shape)
+            scenes.append(Scene(name: "camera-bubble-\(shape.rawValue)", size: CGSize(width: 320, height: 320), backdrop: true) {
+                AnyView(CameraBubbleView(camera: MockCameraView(frame: .zero), size: .medium, shape: shape, onResize: { _ in }, showControls: true)
+                    .frame(width: s.width + 12, height: s.height + 12))
+            })
+        }
 
         // Editor
         func editor(_ section: InspectorSection, variant: String? = nil, bundle: ProjectBundle? = nil,

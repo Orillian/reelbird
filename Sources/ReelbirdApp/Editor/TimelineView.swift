@@ -86,6 +86,7 @@ struct TimelineContent: View {
             cutsOverlay
             trimOverlay
             splitMarks
+            cameraMoveMarks
             segmentSelection
             Playhead(model: model, scale: scale, height: lanesBottom + 6)
         }
@@ -236,6 +237,29 @@ struct TimelineContent: View {
             }
             .stroke(Theme.ink.opacity(0.55), style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
             .allowsHitTesting(false)
+        }
+    }
+
+    /// Where the camera bubble moves: a small mark in its shape just above the video lane. Click to go there;
+    /// the Camera panel lists and deletes them.
+    @ViewBuilder private var cameraMoveMarks: some View {
+        if model.hasCamera, model.edit.camera.visible {
+            let shape = model.edit.camera.shape
+            ForEach(Array(model.edit.camera.moves.enumerated()), id: \.offset) { _, move in
+                let size = shape.glyphSize
+                Button { model.seek(source: move.t) } label: {
+                    CameraBubbleShape(shape: shape)
+                        .fill(Theme.ink.opacity(0.7))
+                        .overlay(CameraBubbleShape(shape: shape).stroke(Theme.panel, lineWidth: 1))
+                        .frame(width: size.width * 0.8, height: size.height * 0.8)
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Camera moves at \(TimeFormat.clock(model.timeline.outputTime(forSource: move.t) ?? move.t))")
+                .accessibilityLabel("Camera move")
+                .offset(x: scale.x(move.t) - 8, y: videoTop - 15)
+            }
         }
     }
 
