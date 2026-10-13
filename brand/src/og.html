@@ -1,0 +1,52 @@
+<!doctype html>
+<!--
+  Open Graph image template for site pages, 1200x630 (render at scale 1).
+  Query parameters: title (required), section (small line above the title), art (an illustration
+  name from brand/illustrations: perch, camera, link, headphones, sleeping, celebrating; default perch).
+    brand/tools/render-html.sh brand/src/og.html out.png 1200 630 "title=Share%20links%20to%20your%20own%20bucket&section=Docs&art=link"
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reelbird OG image</title>
+<style>
+@font-face { font-family: "Fraunces"; src: url("../../site/src/assets/fonts/fraunces-var.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "Instrument Sans"; src: url("../../site/src/assets/fonts/instrument-sans-var.woff2") format("woff2"); font-weight: 400 700; }
+* { margin: 0; box-sizing: border-box; }
+html, body { width: 1200px; height: 630px; overflow: hidden; }
+body { background: #1A1512; position: relative; -webkit-font-smoothing: antialiased; color: #FFF4E8; }
+.lift { position: absolute; right: -300px; top: -300px; width: 1000px; height: 1000px;
+  background: radial-gradient(closest-side, #2A2320, transparent); opacity: .9; }
+.logo { position: absolute; left: 80px; top: 72px; height: 40px; }
+.text { position: absolute; left: 80px; bottom: 92px; width: 640px; }
+.section { font: 600 20px/1 "Instrument Sans", sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #A69C93; margin-bottom: 22px; }
+.section:empty { display: none; }
+h1 { font: 400 64px/1.06 "Fraunces", serif; font-variation-settings: "opsz" 96, "SOFT" 50; letter-spacing: -0.018em;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; text-wrap: balance; }
+h1.long { font-size: 52px; }
+.art { position: absolute; right: 36px; bottom: 40px; width: 400px; height: 400px; object-fit: contain; }
+</style>
+</head>
+<body>
+<div class="lift"></div>
+<img class="logo" src="../logo-dark.svg" alt="">
+<div class="text"><div class="section" id="section"></div><h1 id="title"></h1></div>
+<img class="art" id="art" src="../illustrations/perch-dark.webp" alt="">
+<script>
+  const q = new URLSearchParams(location.search);
+  const title = q.get("title") || "A free, open-source screen recorder for the Mac";
+  const t = document.getElementById("title");
+  // keep hyphenated words whole ("open-source"), and drop a size for long titles
+  for (const part of title.split(/(\S+-\S+)/)) {
+    if (/\S+-\S+/.test(part)) { const s = document.createElement("span"); s.style.whiteSpace = "nowrap"; s.textContent = part; t.append(s); }
+    else t.append(part);
+  }
+  if (title.length > 40) t.classList.add("long");
+  document.getElementById("section").textContent = q.get("section") || "";
+  const art = (q.get("art") || "perch").replace(/[^a-z-]/g, "");
+  // the card is ink, so use the dark-background variant where one exists
+  const hasDark = ["perch", "camera", "celebrating"].includes(art);
+  document.getElementById("art").src = "../illustrations/" + art + (hasDark ? "-dark" : "") + ".webp";
+</script>
+</body>
+</html>
