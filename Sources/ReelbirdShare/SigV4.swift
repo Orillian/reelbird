@@ -5,8 +5,9 @@ import Foundation
 ///
 /// Pure and deterministic: given the same inputs it produces the same `Authorization` value,
 /// which is what the published AWS test vectors check.
-public struct SigV4Signer: Sendable {
+public struct SigV4Signer: Sendable, CustomStringConvertible, CustomReflectable {
     public var accessKeyID: String
+    /// Never printed: `description` and `dump`/`Mirror` redact it.
     public var secretAccessKey: String
     /// "auto" for Cloudflare R2.
     public var region: String
@@ -22,6 +23,11 @@ public struct SigV4Signer: Sendable {
         self.secretAccessKey = secretAccessKey
         self.region = region
         self.service = service
+    }
+
+    public var description: String { "SigV4Signer(accessKeyID: \(accessKeyID), region: \(region), service: \(service), secretAccessKey: <redacted>)" }
+    public var customMirror: Mirror {
+        Mirror(self, children: ["accessKeyID": accessKeyID, "secretAccessKey": "<redacted>", "region": region, "service": service])
     }
 
     public struct Signature: Sendable {
