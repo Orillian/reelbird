@@ -17,6 +17,7 @@ Demo.reelbird/
   transcript.json   optional, word-timed transcript behind captions.vtt (source timeline)
   analysis.json     optional cache: loudness, noise floor and speech ranges of the audio (AudioAnalysis)
   voice/            optional cache: the enhanced voice stem (voice-<hash>.caf + stem.json)
+  crop-suggestion.json  optional cache: the detected browser toolbar (CropSuggestion)
   exports/          rendered files
 ```
 
@@ -44,6 +45,20 @@ Positions in events and edits are normalized to the captured area: `(0, 0)` top-
 ```
 
 `button` is 0 for left, 1 for right, 2 for other. `key` events appear only when keystroke recording was on. `cursor` names a file stem in `cursors/`. A `focus` event with a `rect` (normalized) is reserved for focused-element frames; current builds don't write it.
+
+## Crop
+
+`edit.json → crop` is the part of the screen video that stays visible, normalized to the screen video with a top-left origin: `{"x": 0, "y": 0.08, "width": 1, "height": 0.92}`. Absent or `null` = the whole screen. The media is never changed.
+
+- Readers are lenient: a missing `x`/`y` is 0 and a missing `width`/`height` reaches the right/bottom edge (`{"y": 0.08}` hides the top 8%); values are clamped inside the screen with a 5% minimum side; anything unusable, or a crop of the whole screen, reads as no crop.
+- Event positions, annotation `rect`s and zoom `focus` points stay in full-screen coordinates, so changing the crop never moves them off the content they point at. The renderer maps them into the crop.
+- The output canvas follows the crop (aspect `source` = the crop's pixel size); zooms and the camera work inside it; automatic zooms ignore clicks, typing and focus outside it; the cursor and click effects fade out within 6 points past a cropped edge. Captions, keystrokes and the camera bubble sit on the canvas as before. Posters, preview and export all apply it.
+
+`crop-suggestion.json` caches the browser toolbar found in the screen video (`reelbird edit --crop-toolbar` and the editor's Hide Browser Toolbar use it). Detection needs no permission: 16 frames spread over the recording are decoded at full height (at most 480 columns, luma); per row it measures the change between neighbouring samples and the share of the width with a horizontal edge above it. The toolbar is the deepest full-width edge inside the still band at the top, 40–220 points tall and at least 3% of the height, with the content below it changing. Without such an edge the end of the still band is used with confidence ≤ 0.45. The editor offers the crop at confidence ≥ 0.6. Ignored when `version`, `file` or `fileSize` don't match the screen video; deleting it is always safe.
+
+```json
+{"version": 1, "file": "screen/screen.mp4", "fileSize": 48213377, "height": 2234, "topPixels": 214, "confidence": 0.93, "seconds": 0.41}
+```
 
 ## Audio
 
