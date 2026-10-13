@@ -23,3 +23,6 @@ notes/
 *.pem
 
 .DS_Store
+
+# Launch video workspace (HyperFrames projects, captures, music)
+/launch/
