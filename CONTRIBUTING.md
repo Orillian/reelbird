@@ -11,6 +11,7 @@ make build      # debug build of every module
 make test       # the test suite (swift-testing)
 make app        # build/Reelbird.app, release, signed ad hoc
 make install    # build the app and copy it to /Applications
+make dist       # build/Reelbird-<version>.zip and its SHA-256, for a download
 make icon       # regenerate the icon and menu bar glyphs from brand/*.svg
 ```
 
