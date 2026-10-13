@@ -66,7 +66,7 @@ mv "$STAGING" "$DEST"
 
 echo "Installed $DEST"
 echo "Open it with: open \"$DEST\""
-if [ -z "${RB_SIGN_IDENTITY:-}" ]; then
+if codesign -dv "$DEST" 2>&1 | grep -q "Signature=adhoc"; then
   echo "This build is signed ad hoc, so macOS asks for Screen Recording again after each rebuild."
   echo "To keep the permission, run scripts/dev-signing.sh once (see the README)."
 fi
