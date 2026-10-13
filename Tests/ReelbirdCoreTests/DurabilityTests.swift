@@ -73,3 +73,47 @@ private func tempBundle() throws -> ProjectBundle {
     #expect(b.removeSegments(of: .microphone) == 60)
     #expect(try Set(FileManager.default.contentsOfDirectory(atPath: dir.path)) == ["microphone.mp4", "notes.txt"])
 }
+
+@Test func editRevisionsCountEveryWriteAndRefuseStaleOnes() throws {
+    let b = try tempBundle()
+    defer { try? FileManager.default.removeItem(at: b.url) }
+    try b.writeManifest(ProjectManifest(title: "E", appVersion: "test",
+                                        capture: CaptureInfo(source: .synthetic(name: "t"), pixelSize: PixelSize(width: 640, height: 360), scale: 1, frameRate: 30),
+                                        clock: ClockInfo(originHostTime: 0)))
+    #expect(b.readEditRevision() == 0)
+    var e = EditDocument()
+    #expect(try b.writeEdit(e, ifRevision: 0) == 1)
+    e.zoom.intensity = 0.9
+    #expect(try b.writeEdit(e) == 2)                       // the CLI: no check, still counts
+    #expect(throws: EditConflict(expected: 1, found: 2)) { try b.writeEdit(e, ifRevision: 1) }
+    let (read, revision) = try b.readEditStamped()
+    #expect(revision == 2 && read.zoom.intensity == 0.9)
+    #expect(try b.readEdit() == read)                      // older readers ignore the counter
+    let json = try String(contentsOf: b.editURL, encoding: .utf8)
+    #expect(json.contains("\"revision\" : 2"))
+}
+
+@Test func editMergeKeepsBothSidesAndReportsClashes() {
+    var base = EditDocument()
+    base.zoom.intensity = 0.5
+    var ours = base, theirs = base
+    ours.background.padding = 0.2                              // only the editor
+    ours.zoom.regions = [ZoomRegion(id: "z1", range: TimeRange(start: 1, end: 2), scale: 2)]
+    theirs.zoom.intensity = 0.8                                // only the CLI, same object as ours' change
+    theirs.title = "From the CLI"
+    var r = EditMerge.merge(base: base, ours: ours, theirs: theirs)
+    #expect(r.conflicts.isEmpty)
+    #expect(r.edit.background.padding == 0.2 && r.edit.zoom.regions.map(\.id) == ["z1"])
+    #expect(r.edit.zoom.intensity == 0.8 && r.edit.title == "From the CLI")
+
+    theirs.background.padding = 0.05                           // both changed padding: ours wins, reported
+    r = EditMerge.merge(base: base, ours: ours, theirs: theirs)
+    #expect(r.conflicts == ["background.padding"])
+    #expect(r.edit.background.padding == 0.2 && r.edit.title == "From the CLI")
+
+    theirs.trim = TimeRange(start: 1, end: 5)                  // a key the base didn't have
+    r = EditMerge.merge(base: base, ours: ours, theirs: theirs)
+    #expect(r.edit.trim == TimeRange(start: 1, end: 5))
+    ours.title = nil; theirs.title = nil
+    #expect(EditMerge.merge(base: base, ours: ours, theirs: theirs).edit.title == nil)
+}

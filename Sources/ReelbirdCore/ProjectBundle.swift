@@ -84,8 +84,39 @@ public struct ProjectBundle: Hashable, Sendable {
         return EditDocument.initial(for: try readManifest())
     }
 
-    public func writeEdit(_ e: EditDocument) throws {
-        try JSONCoding.writeAtomically(e, to: editURL, sync: .full)
+    /// Writes `edit.json` (fully flushed) with the next `revision` (one more than the file on disk), so
+    /// every writer (the editor, `reelbird edit`, MCP `set_edit`) leaves a trace others can notice.
+    /// Returns the revision written.
+    @discardableResult
+    public func writeEdit(_ e: EditDocument) throws -> Int {
+        try writeEdit(e, ifRevision: nil)
+    }
+
+    /// Like `writeEdit(_:)`, but only if `edit.json` is still at `expected` (0 = no file yet); otherwise
+    /// throws `EditConflict` and writes nothing, so the caller can merge the other writer's changes first.
+    @discardableResult
+    public func writeEdit(_ e: EditDocument, ifRevision expected: Int?) throws -> Int {
+        let current = readEditRevision()
+        if let expected, current != expected { throw EditConflict(expected: expected, found: current) }
+        let next = current + 1
+        let data = try JSONCoding.encoder.encode(StampedEdit(edit: e, revision: next))
+        try DurableFile.write(data, to: editURL, sync: .full)
+        return next
+    }
+
+    /// `edit.json` and its `revision` (0 for a file without one, or no file: then the initial edit).
+    public func readEditStamped() throws -> (edit: EditDocument, revision: Int) {
+        guard FileManager.default.fileExists(atPath: editURL.path) else { return (EditDocument.initial(for: try readManifest()), 0) }
+        let data = try Data(contentsOf: editURL)
+        let edit = try JSONCoding.decoder.decode(EditDocument.self, from: data)
+        let revision = (try? JSONCoding.decoder.decode(EditRevision.self, from: data))?.revision ?? 0
+        return (edit, revision)
+    }
+
+    /// The `revision` in `edit.json` (0 when missing or unreadable).
+    public func readEditRevision() -> Int {
+        guard let data = try? Data(contentsOf: editURL) else { return 0 }
+        return (try? JSONCoding.decoder.decode(EditRevision.self, from: data))?.revision ?? 0
     }
 
     /// The cached `analysis.json`, or `nil` when missing, unreadable or from another analysis version.
@@ -140,6 +171,26 @@ public struct ProjectBundle: Hashable, Sendable {
     public func mediaURL(for kind: TrackKind, in manifest: ProjectManifest) -> URL? {
         guard let t = manifest.track(kind), let f = t.file else { return nil }
         return resolve(f)
+    }
+}
+
+/// `edit.json` changed since the caller read it (another process wrote it).
+public struct EditConflict: Error, Equatable {
+    public var expected: Int
+    public var found: Int
+}
+
+private struct EditRevision: Decodable { var revision: Int? }
+
+/// An `EditDocument` plus the file's `revision` counter, written side by side in one JSON object.
+private struct StampedEdit: Encodable {
+    let edit: EditDocument
+    let revision: Int
+    enum Key: String, CodingKey { case revision }
+    func encode(to encoder: any Encoder) throws {
+        try edit.encode(to: encoder)
+        var c = encoder.container(keyedBy: Key.self)
+        try c.encode(revision, forKey: .revision)
     }
 }
 

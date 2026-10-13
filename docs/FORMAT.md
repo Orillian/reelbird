@@ -22,6 +22,8 @@ Demo.reelbird/
   exports/          rendered files
 ```
 
+`edit.json` also carries `revision`, a counter every writer (the editor, `reelbird edit`, MCP `set_edit`) raises by one, so an editor with the project open notices outside changes. It picks them up straight away when it has no unsaved changes of its own, and merges them setting by setting when it does. Where both changed the same setting, the editor's choice stays and the other version is saved next to it as `edit.outside-<date>-<time>.json`. Closing the editor writes `edit.json` only if something changed there.
+
 The Swift types in `Sources/ReelbirdCore` are the schema: `ProjectManifest` for `project.json`, `EditDocument` for `edit.json`, `InputEvent` for each line of `events.jsonl`. Readers ignore unknown keys and fill missing keys with defaults, so files written by older or newer versions still open.
 
 ## Time

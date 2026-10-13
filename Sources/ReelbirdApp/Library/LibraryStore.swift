@@ -144,7 +144,7 @@ struct LibraryItem: Identifiable, Equatable {
             }
             if var e = try? copy.readEdit() {
                 e.title = "\(item.title) copy"
-                try? copy.writeEdit(e)
+                _ = try? copy.writeEdit(e)
             }
             reload()
         } catch {

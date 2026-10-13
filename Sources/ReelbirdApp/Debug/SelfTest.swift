@@ -137,6 +137,7 @@ import ReelbirdRender
         try? await Task.sleep(for: .milliseconds(900))
         let saved = try? bundle.readEdit()
         check(saved?.trim?.start == 0.5, "edits autosave to edit.json")
+        outsideEdits(editor: editor, bundle: bundle, root: root, check: check)
 
         // Export
         editor.export(ExportOptions(format: .mp4H264, height: 720, destination: root.appendingPathComponent("out")))
@@ -211,7 +212,7 @@ import ReelbirdRender
         try? vtt.write(to: bundle.captionsURL, atomically: true, encoding: .utf8)
         var edit = (try? bundle.readEdit()) ?? EditDocument.initial(for: manifest)
         edit.captions.file = "captions.vtt"
-        try? bundle.writeEdit(edit)
+        _ = try? bundle.writeEdit(edit)
 
         // Editor
         guard let editor = try? EditorModel(bundle: bundle, services: services) else { check(false, "editor opens"); return false }
@@ -253,6 +254,39 @@ import ReelbirdRender
 }
 
 extension SelfTest {
+    /// `reelbird edit` / MCP `set_edit` while the editor is open: picked up, never overwritten on close,
+    /// merged with the editor's own changes, and a clash keeps both versions.
+    static func outsideEdits(editor: EditorModel, bundle: ProjectBundle, root: URL, check: (Bool, String) -> Void) {
+        func outside(_ change: (inout EditDocument) -> Void) {
+            guard var e = try? bundle.readEdit() else { return }
+            change(&e)
+            _ = try? bundle.writeEdit(e)
+        }
+        outside { $0.zoom.intensity = 0.3 }
+        editor.checkForExternalEdits()
+        check(editor.edit.zoom.intensity == 0.3 && editor.edit.trim?.start == 0.5 && !editor.isDirty,
+              "outside edits: the editor picks up a CLI change")
+        let revision = bundle.readEditRevision()
+        editor.saveNow()
+        check(bundle.readEditRevision() == revision, "outside edits: closing an unchanged editor writes nothing")
+        outside { $0.title = "Renamed by an agent" }               // not checked for yet: found on save
+        editor.change("Padding") { $0.background.padding = 0.2 }
+        editor.saveNow()
+        let merged = try? bundle.readEdit()
+        check(merged?.title == "Renamed by an agent" && merged?.background.padding == 0.2 && editor.edit.title == "Renamed by an agent",
+              "outside edits: saving merges the editor's change with the agent's")
+        editor.change("Padding") { $0.background.padding = 0.25 }
+        outside { $0.background.padding = 0.01 }
+        editor.saveNow()
+        let kept = ((try? FileManager.default.contentsOfDirectory(atPath: bundle.url.path)) ?? []).filter { $0.hasPrefix("edit.outside-") }
+        let other = kept.first.flatMap { try? Data(contentsOf: bundle.url.appendingPathComponent($0)) }
+            .flatMap { try? JSONCoding.decoder.decode(EditDocument.self, from: $0) }
+        check((try? bundle.readEdit())?.background.padding == 0.25 && other?.background.padding == 0.01,
+              "outside edits: a clash keeps the editor's choice and saves the other version")
+        kept.forEach { try? FileManager.default.removeItem(at: bundle.url.appendingPathComponent($0)) }
+        editor.undoManager.removeAllActions()
+    }
+
     /// Move to Trash with "Also delete its share link": once the link is deleted, the trashed copy (or one
     /// already put back) forgets it; a copy pointing at another link is left alone.
     static func trashForgetsDeletedLink(bundle: ProjectBundle, root: URL, check: (Bool, String) -> Void) {

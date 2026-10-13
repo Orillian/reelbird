@@ -47,6 +47,7 @@ import SwiftUI
         // must not leave an export or upload running for a window that's gone.
         model.cancelWork()
         model.pause()
+        model.stopWatchingEdits()
         model.saveNow()
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
