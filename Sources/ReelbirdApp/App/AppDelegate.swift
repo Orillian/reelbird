@@ -129,6 +129,9 @@ import ReelbirdCore
     @objc func openPermissions(_ sender: Any?) { model.openSettings(.permissions) }
     @objc func openAbout(_ sender: Any?) { model.openSettings(.about) }
     @objc func showOnboarding(_ sender: Any?) { model.showOnboarding() }
+    @objc func openWebsite(_ sender: Any?) {
+        if let u = URL(string: ReelbirdInfo.websiteURL) { NSWorkspace.shared.open(u) }
+    }
     @objc func openRepository(_ sender: Any?) {
         if let u = URL(string: ReelbirdInfo.repositoryURL) { NSWorkspace.shared.open(u) }
     }

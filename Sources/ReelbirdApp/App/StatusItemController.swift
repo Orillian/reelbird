@@ -118,6 +118,7 @@ import ReelbirdCore
         let lib = add("Open Library", #selector(openLibrary), symbol: "square.grid.2x2")
         lib.keyEquivalent = "l"; lib.keyEquivalentModifierMask = [.command, .shift]
         add("Settings…", #selector(openSettings), symbol: "gearshape").keyEquivalent = ","
+        add("About Reelbird", #selector(openAbout), symbol: "info.circle")
         menu.addItem(.separator())
         add("Quit Reelbird", #selector(quit), symbol: nil).keyEquivalent = "q"
     }
@@ -223,6 +224,7 @@ import ReelbirdCore
     @objc private func openLibrary() { app.openLibrary() }
     @objc private func openSettings() { app.openSettings() }
     @objc private func openPermissions() { app.openSettings(.permissions) }
+    @objc private func openAbout() { app.openSettings(.about) }
     @objc private func quit() { NSApp.terminate(nil) }
     @objc private func copyLiveLink() {
         guard let url = app.recording.status.shareURL else { return }

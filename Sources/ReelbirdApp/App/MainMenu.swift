@@ -132,6 +132,7 @@ import AppKit
         // Help
         let help = NSMenu(title: "Help")
         help.addItem(item("Welcome Tour", #selector(AppDelegate.showOnboarding(_:)), target: target))
+        help.addItem(item("Reelbird Website", #selector(AppDelegate.openWebsite(_:)), target: target))
         help.addItem(item("Reelbird on GitHub", #selector(AppDelegate.openRepository(_:)), target: target))
         help.addItem(item("Report a Problem…", #selector(AppDelegate.reportIssue(_:)), target: target))
         help.addItem(.separator())
