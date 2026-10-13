@@ -55,6 +55,17 @@ public struct EditDocument: Codable, Hashable, Sendable {
         e.camera.visible = manifest.track(.camera) != nil
         return e
     }
+
+    /// The initial edit with the camera placed where the live bubble was during the recording (the `camera`
+    /// events: its first place, then a glide for each later move).
+    public static func initial(for manifest: ProjectManifest, events: [InputEvent]) -> EditDocument {
+        var e = initial(for: manifest)
+        if manifest.track(.camera) != nil {
+            let screen = manifest.track(.screen)?.pixelSize ?? manifest.capture.pixelSize
+            CameraPlacement.apply(events: events, screen: screen, crop: e.crop, to: &e.camera)
+        }
+        return e
+    }
 }
 
 public struct ZoomSettings: Codable, Hashable, Sendable {
@@ -147,15 +158,51 @@ public struct BackgroundSettings: Codable, Hashable, Sendable {
 }
 
 public struct CameraLayout: Codable, Hashable, Sendable {
-    public enum Shape: String, Codable, Hashable, Sendable { case circle, roundedRect }
-    public enum Corner: String, Codable, Hashable, Sendable { case topLeft, topRight, bottomLeft, bottomRight }
+    public enum Shape: String, Codable, Hashable, Sendable, CaseIterable {
+        /// A circle (the default).
+        case circle
+        /// A square with continuous ("squircle") corners, like a macOS app icon.
+        case roundedSquare
+        /// A 3:4 tile with the same continuous corners, sized for a face.
+        case portrait
+
+        public init(from decoder: any Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            // "roundedRect" is the name older versions wrote for the rounded shape.
+            if raw == "roundedRect" { self = .roundedSquare; return }
+            guard let s = Shape(rawValue: raw) else {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown camera shape '\(raw)'."))
+            }
+            self = s
+        }
+    }
+    public enum Corner: String, Codable, Hashable, Sendable, CaseIterable { case topLeft, topRight, bottomLeft, bottomRight }
+
+    /// A recorded (or added) change of place: from recording time `t` the bubble glides to (`x`, `y`) over
+    /// `CameraPlacement.glideDuration`. `x` and `y` work like `CameraLayout.x` and `y`.
+    public struct Move: Codable, Hashable, Sendable {
+        public var t: Double
+        public var x: Double
+        public var y: Double
+        public init(t: Double, x: Double, y: Double) { self.t = t; self.x = x; self.y = y }
+        public var position: NormPoint { NormPoint(x: x, y: y) }
+    }
+
     public var visible = true
     public var shape: Shape = .circle
-    /// Diameter / width as a fraction of the shorter output side.
+    /// Diameter / width as a fraction of the shorter output side (`portrait`: see `CameraPlacement.bubbleSize`).
     public var size: Double = 0.22
+    /// Preset place, used for whichever of `x` / `y` is `nil`.
     public var corner: Corner = .bottomRight
-    /// Inset from the corner as a fraction of the shorter output side.
+    /// Gap between the bubble and the canvas edge it is against, as a fraction of the shorter output side.
     public var inset: Double = 0.035
+    /// Where the bubble sits, 0...1 across the room it can move in on the canvas: 0 = against the left (top)
+    /// edge at `inset`, 1 = against the right (bottom) edge, 0.5 = centred. `nil` = from `corner`. Stays put
+    /// relative to the frame when the aspect, padding, crop or zoom change, and never leaves the canvas.
+    public var x: Double?
+    public var y: Double?
+    /// Changes of place over time (recording timeline, sorted by `t`). Empty = the bubble stays in one place.
+    public var moves: [Move] = []
     public var mirror = true
     /// Blur the camera background (Vision person segmentation).
     public var blurBackground = false
@@ -169,8 +216,40 @@ public struct CameraLayout: Codable, Hashable, Sendable {
         size = try c.decodeIfPresent(Double.self, forKey: .size) ?? d.size
         corner = try c.decodeIfPresent(Corner.self, forKey: .corner) ?? d.corner
         inset = try c.decodeIfPresent(Double.self, forKey: .inset) ?? d.inset
+        x = try c.decodeIfPresent(Double.self, forKey: .x).map(CameraPlacement.clampUnit)
+        y = try c.decodeIfPresent(Double.self, forKey: .y).map(CameraPlacement.clampUnit)
+        moves = CameraPlacement.normalized(try c.decodeIfPresent([Move].self, forKey: .moves) ?? d.moves)
         mirror = try c.decodeIfPresent(Bool.self, forKey: .mirror) ?? d.mirror
         blurBackground = try c.decodeIfPresent(Bool.self, forKey: .blurBackground) ?? d.blurBackground
+    }
+
+    /// Where the bubble starts (before any move).
+    public var position: NormPoint {
+        get {
+            let c = corner.position
+            return NormPoint(x: x ?? c.x, y: y ?? c.y)
+        }
+        set { x = CameraPlacement.clampUnit(newValue.x); y = CameraPlacement.clampUnit(newValue.y) }
+    }
+
+    /// Puts the bubble at a preset corner for the whole video (moves dropped).
+    public mutating func pin(to corner: Corner) {
+        self.corner = corner
+        x = nil
+        y = nil
+        moves = []
+    }
+}
+
+extension CameraLayout.Corner {
+    /// The corner as a `CameraLayout.x` / `y` position.
+    public var position: NormPoint {
+        switch self {
+        case .topLeft: NormPoint(x: 0, y: 0)
+        case .topRight: NormPoint(x: 1, y: 0)
+        case .bottomLeft: NormPoint(x: 0, y: 1)
+        case .bottomRight: NormPoint(x: 1, y: 1)
+        }
     }
 }
 

@@ -17,6 +17,9 @@ public struct InputEvent: Codable, Hashable, Sendable {
         case focus
         case pause
         case resume
+        /// The live camera bubble's place: logged when recording starts and whenever a drag (or resize) ends.
+        /// `x`, `y` is its centre and `rect` its frame, moved fully inside the captured area; `shape` its shape.
+        case camera
     }
 
     public var t: Double
@@ -33,12 +36,15 @@ public struct InputEvent: Codable, Hashable, Sendable {
     public var mods: [String]?
     public var image: String?
     public var rect: NormRect?
+    /// `CameraLayout.Shape` raw value for `camera` events.
+    public var shape: String?
 
     public init(t: Double, type: Kind, x: Double? = nil, y: Double? = nil, button: Int? = nil,
                 dx: Double? = nil, dy: Double? = nil, chars: String? = nil, mods: [String]? = nil,
-                image: String? = nil, rect: NormRect? = nil) {
+                image: String? = nil, rect: NormRect? = nil, shape: String? = nil) {
         self.t = t; self.type = type; self.x = x; self.y = y; self.button = button
         self.dx = dx; self.dy = dy; self.chars = chars; self.mods = mods; self.image = image; self.rect = rect
+        self.shape = shape
     }
 
     public var point: NormPoint? {
@@ -52,6 +58,11 @@ public struct InputEvent: Codable, Hashable, Sendable {
     }
     public static func up(_ t: Double, _ p: NormPoint, button: Int = 0) -> InputEvent {
         InputEvent(t: t, type: .up, x: p.x, y: p.y, button: button)
+    }
+    /// The camera bubble at `frame` (normalized to the captured area).
+    public static func camera(_ t: Double, frame: NormRect, shape: CameraLayout.Shape? = nil) -> InputEvent {
+        let c = frame.center
+        return InputEvent(t: t, type: .camera, x: c.x, y: c.y, rect: frame, shape: shape?.rawValue)
     }
 }
 
@@ -130,8 +141,9 @@ public enum EventLog {
 }
 
 /// Parses the common flat event lines (`{"t":1.2,"type":"move","x":0.4,"y":0.2}`) without Codable,
-/// which is ~10x faster on hour-long logs. Returns nil for anything it does not handle
-/// (arrays, nested objects, escaped strings, unknown keys), so the caller can fall back.
+/// which is ~10x faster on hour-long logs. A `rect` of plain numbers is read too (focus and camera events).
+/// Returns nil for anything it does not handle (arrays, other nested objects, escaped strings, unknown
+/// keys), so the caller can fall back.
 enum FlatEventParser {
     static func parse(_ b: UnsafeBufferPointer<UInt8>) -> InputEvent? {
         var i = 0
@@ -178,10 +190,39 @@ enum FlatEventParser {
             i += 1
             skipSpace()
             switch key {
-            case "type", "chars", "image":
+            case "type", "chars", "image", "shape":
                 guard let v = readString() else { return nil }
-                if key == "type" { guard let k = InputEvent.Kind(rawValue: v) else { return nil }; type = k }
-                else if key == "chars" { e.chars = v } else { e.image = v }
+                switch key {
+                case "type": guard let k = InputEvent.Kind(rawValue: v) else { return nil }; type = k
+                case "chars": e.chars = v
+                case "image": e.image = v
+                default: e.shape = v
+                }
+            case "rect":
+                guard i < n, b[i] == 0x7B else { return nil }
+                i += 1
+                var rx: Double?, ry: Double?, rw: Double?, rh: Double?
+                while true {
+                    skipSpace()
+                    guard i < n else { return nil }
+                    if b[i] == 0x7D { i += 1; break }
+                    if b[i] == 0x2C { i += 1; continue }
+                    guard let k = readString() else { return nil }
+                    skipSpace()
+                    guard i < n, b[i] == 0x3A else { return nil }
+                    i += 1
+                    skipSpace()
+                    guard let v = readNumber() else { return nil }
+                    switch k {
+                    case "x": rx = v
+                    case "y": ry = v
+                    case "width": rw = v
+                    case "height": rh = v
+                    default: return nil
+                    }
+                }
+                guard let rx, let ry, let rw, let rh else { return nil }
+                e.rect = NormRect(x: rx, y: ry, width: rw, height: rh)
             case "t", "x", "y", "dx", "dy", "button":
                 guard let v = readNumber() else { return nil }
                 switch key {

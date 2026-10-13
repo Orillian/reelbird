@@ -326,7 +326,7 @@ struct CameraSection: View {
                     FieldRow(label: "Shape") {
                         PillTabs(selection: model.binding(\.camera.shape, "Camera Shape"), items: [
                             .init(value: .circle, title: "Circle", symbol: "circle"),
-                            .init(value: .roundedRect, title: "Rounded", symbol: "app"),
+                            .init(value: .roundedSquare, title: "Rounded", symbol: "app"),
                         ], compact: true)
                     }
                     FieldRow(label: "Size") {

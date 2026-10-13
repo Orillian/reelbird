@@ -81,7 +81,15 @@ public struct ProjectBundle: Hashable, Sendable {
         if FileManager.default.fileExists(atPath: editURL.path) {
             return try JSONCoding.decoder.decode(EditDocument.self, from: Data(contentsOf: editURL))
         }
-        return EditDocument.initial(for: try readManifest())
+        return try initialEdit()
+    }
+
+    /// The edit for a recording opened for the first time: `EditDocument.initial`, with the camera placed
+    /// where the live bubble was (read from `events.jsonl` when there is a camera track).
+    public func initialEdit(manifest: ProjectManifest? = nil, events: [InputEvent]? = nil) throws -> EditDocument {
+        let m = try manifest ?? readManifest()
+        guard m.track(.camera) != nil else { return EditDocument.initial(for: m) }
+        return EditDocument.initial(for: m, events: try events ?? ((try? readEvents()) ?? []))
     }
 
     /// Writes `edit.json` (fully flushed) with the next `revision` (one more than the file on disk), so
@@ -106,7 +114,7 @@ public struct ProjectBundle: Hashable, Sendable {
 
     /// `edit.json` and its `revision` (0 for a file without one, or no file: then the initial edit).
     public func readEditStamped() throws -> (edit: EditDocument, revision: Int) {
-        guard FileManager.default.fileExists(atPath: editURL.path) else { return (EditDocument.initial(for: try readManifest()), 0) }
+        guard FileManager.default.fileExists(atPath: editURL.path) else { return (try initialEdit(), 0) }
         let data = try Data(contentsOf: editURL)
         let edit = try JSONCoding.decoder.decode(EditDocument.self, from: data)
         let revision = (try? JSONCoding.decoder.decode(EditRevision.self, from: data))?.revision ?? 0

@@ -123,7 +123,7 @@ enum CaptionState: Equatable {
         let manifest = try bundle.readManifest()
         let events = (try? bundle.readEvents()) ?? []
         let fresh = !FileManager.default.fileExists(atPath: bundle.editURL.path)
-        let stamped = (try? bundle.readEditStamped()) ?? (edit: EditDocument.initial(for: manifest), revision: 0)
+        let stamped = (try? bundle.readEditStamped()) ?? (edit: EditDocument.initial(for: manifest, events: events), revision: 0)
         savedEdit = stamped.edit
         savedRevision = fresh ? 0 : stamped.revision
         var edit = stamped.edit

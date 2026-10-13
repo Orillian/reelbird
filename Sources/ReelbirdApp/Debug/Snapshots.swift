@@ -199,7 +199,7 @@ import SwiftUI
             m.addZoomAtPlayhead()
             m.setPlayheadForSnapshot(13.6)
         })
-        scenes.append(editor(.camera) { m in m.change("x") { $0.camera.shape = .roundedRect; $0.canvas.aspect = .wide } })
+        scenes.append(editor(.camera) { m in m.change("x") { $0.camera.shape = .roundedSquare; $0.canvas.aspect = .wide } })
         scenes.append(editor(.canvas) { m in m.change("x") { $0.canvas.aspect = .vertical } })
         // Crop: a Chrome window before and after "Hide Browser Toolbar", and crop mode on the preview.
         func toolbar(_ m: EditorModel) {
