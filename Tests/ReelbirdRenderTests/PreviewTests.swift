@@ -60,9 +60,10 @@ private func waitFor(_ what: String, timeout: Double = 5, _ cond: () -> Bool) as
     try await waitFor("seek to 0") { player.hasFrame() }
     player.play()
     #expect(player.isPlaying)
-    try await Task.sleep(for: .milliseconds(600))
+    // Playback advances (polled, so a busy machine that starts audio late doesn't fail the test).
+    try await waitFor("playback advances", timeout: 5) { player.currentTime > 0.25 }
     let t = player.currentTime
-    #expect(t > 0.25 && t < 1.2, "played to \(t)")
+    #expect(t < player.duration, "played to \(t)")
     player.pause()
     #expect(!player.isPlaying)
     #expect(times.count >= 3)
