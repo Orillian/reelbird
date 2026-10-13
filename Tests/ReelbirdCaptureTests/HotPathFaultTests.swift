@@ -121,3 +121,25 @@ extension RecordingTests {
         #expect(session.currentStatus.warnings.contains { $0.message.contains("microphone") })
     }
 }
+
+/// Window recordings log keystrokes only while the recorded window's app is in front.
+@Test func windowRecordingsKeepOtherAppsKeystrokesOut() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rb-keys-\(UUID().uuidString).reelbird")
+    let bundle = try ProjectBundle.create(at: dir)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let log = try EventLogWriter(url: bundle.eventsURL)
+    defer { log.close() }
+    var config = InputEventRecorder.Configuration(captureKeystrokes: true, capturedArea: { nil })
+    config.keystrokeOwnerPID = 4242
+    let window = InputEventRecorder(log: log, bundle: bundle, configuration: config)
+    #expect(window.keyBelongsToRecording())          // front app not known yet: keep
+    window.setFrontmost(4242)
+    #expect(window.keyBelongsToRecording())
+    window.setFrontmost(777)
+    #expect(!window.keyBelongsToRecording())
+
+    let display = InputEventRecorder(log: log, bundle: bundle, configuration: InputEventRecorder.Configuration(captureKeystrokes: true, capturedArea: { nil }))
+    display.setFrontmost(777)
+    #expect(display.keyBelongsToRecording())         // a display shows every app: every key counts
+    #expect(SessionEngine.ownerPID(ofWindow: 0xFFFF_FFF0) == nil)
+}

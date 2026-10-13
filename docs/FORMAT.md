@@ -47,7 +47,7 @@ Positions in events and edits are normalized to the captured area: `(0, 0)` top-
 {"t":5.000,"type":"resume"}
 ```
 
-`button` is 0 for left, 1 for right, 2 for other. `key` events appear only when keystroke recording was on. `cursor` names a file stem in `cursors/`. A `focus` event with a `rect` (normalized) is reserved for focused-element frames; current builds don't write it.
+`button` is 0 for left, 1 for right, 2 for other. `key` events appear only when keystroke recording was on; for a window recording, only keys typed while that window's app was in front. `cursor` names a file stem in `cursors/`. A `focus` event with a `rect` (normalized) is reserved for focused-element frames; current builds don't write it.
 
 ## Crop
 

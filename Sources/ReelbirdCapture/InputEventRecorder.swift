@@ -19,6 +19,10 @@ final class InputEventRecorder: @unchecked Sendable {
         var capturedArea: @Sendable () -> CGRect?
         /// Synthetic pointer (tests). When set, the system pointer, clicks and cursor are not recorded.
         var simulatedPointer: (@Sendable (Double) -> NormPoint?)?
+        /// For a window recording: the process that owns the window. Keystrokes are then logged only
+        /// while that app is in front, so typing into other apps (a password manager, a chat) stays out
+        /// of the project. `nil` (display and area recordings) logs every key, like the screen shows.
+        var keystrokeOwnerPID: pid_t?
     }
 
     private let log: EventLogWriter
@@ -50,6 +54,17 @@ final class InputEventRecorder: @unchecked Sendable {
     /// Whether the keystroke tap is running (needs Input Monitoring; see `Permission.inputMonitoring`).
     var keystrokesActive: Bool { keyTapRunning.withLock { $0 } }
     private let keyTapRunning = Mutex(false)
+    /// The frontmost app's process (kept current from the main thread; 0 = not known yet).
+    private let frontmostPID = Atomic<Int32>(0)
+
+    func setFrontmost(_ pid: pid_t) { frontmostPID.store(pid, ordering: .relaxed) }
+
+    /// Whether a key typed now belongs in the log (see `Configuration.keystrokeOwnerPID`).
+    func keyBelongsToRecording() -> Bool {
+        guard let owner = config.keystrokeOwnerPID else { return true }
+        let front = frontmostPID.load(ordering: .relaxed)
+        return front == 0 || front == owner
+    }
 
     func start(origin: Double, isPaused: @escaping @Sendable (Double) -> Bool) {
         state.withLock { $0.origin = origin; $0.running = true; $0.paused = isPaused }
@@ -163,6 +178,7 @@ final class InputEventRecorder: @unchecked Sendable {
     }
 
     private func recordKey(chars: String, mods: [String]) {
+        guard keyBelongsToRecording() else { return }
         let now = HostClock.now()
         guard let t = timeline(now) else { return }
         state.withLock { $0.lastActivityHost = now }
@@ -177,6 +193,7 @@ final class InputEventRecorder: @unchecked Sendable {
     private weak var recorder: InputEventRecorder?
     private var monitors: [Any] = []
     private var cursorTimer: Timer?
+    private var activationObserver: (any NSObjectProtocol)?
     private var lastImage: ObjectIdentifier?
     private var lastID: String?
 
@@ -192,6 +209,12 @@ final class InputEventRecorder: @unchecked Sendable {
             MainActor.assumeIsolated { self?.handle(e) }
             return e
         }) { monitors.append(m) }
+        if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier { recorder?.setFrontmost(pid) }
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            let pid = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
+            MainActor.assumeIsolated { if let pid { self?.recorder?.setFrontmost(pid) } }
+        }
         pollCursor()
         cursorTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.pollCursor() }
@@ -201,6 +224,8 @@ final class InputEventRecorder: @unchecked Sendable {
     func stop() {
         monitors.forEach(NSEvent.removeMonitor)
         monitors = []
+        if let activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(activationObserver) }
+        activationObserver = nil
         cursorTimer?.invalidate()
         cursorTimer = nil
     }

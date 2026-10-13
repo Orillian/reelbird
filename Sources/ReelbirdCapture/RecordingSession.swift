@@ -351,8 +351,9 @@ actor SessionEngine {
         let area: @Sendable () -> CGRect? = { src?.capturedArea() }
         var pointer: (@Sendable (Double) -> NormPoint?)?
         if simulated { pointer = { @Sendable t in src?.simulatedPointer(atHostTime: t) } }
-        let config = InputEventRecorder.Configuration(captureKeystrokes: options.captureKeystrokes,
+        var config = InputEventRecorder.Configuration(captureKeystrokes: options.captureKeystrokes,
                                                       capturedArea: area, simulatedPointer: pointer)
+        if options.captureKeystrokes, case .window(let id, _, _) = fmt.source { config.keystrokeOwnerPID = Self.ownerPID(ofWindow: id) }
         let recorder = InputEventRecorder(log: eventLog, bundle: bundle, configuration: config)
         if fmt.isRealTime { recorder.start(origin: origin) { [weak pipeline] t in pipeline?.isPaused(t) ?? false } }
         self.recorder = recorder
@@ -367,6 +368,13 @@ actor SessionEngine {
                 n += 1
             }
         }
+    }
+
+    /// The process that owns a window (keystrokes are logged only while it's in front).
+    static func ownerPID(ofWindow id: UInt32) -> pid_t? {
+        guard let list = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(id)) as? [[CFString: Any]],
+              let pid = list.first?[kCGWindowOwnerPID] as? pid_t, pid > 0 else { return nil }
+        return pid
     }
 
     private func teardownAfterFailedStart() async {
