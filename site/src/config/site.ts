@@ -27,7 +27,7 @@ export const SITE_DESCRIPTION =
   "Reelbird is a free, open-source screen recorder for macOS that copies a share link the moment you stop recording, then lets you polish the same take with auto-zoom, a smooth cursor and captions without changing the link.";
 
 /** The canonical three-sentence description (homepage intro, llms.txt, directories). */
-export const SITE_DESCRIPTION_LONG = `${SITE_DESCRIPTION} It is a native Swift app with no account, no telemetry and no Reelbird server: share links point at a storage bucket you own, such as Cloudflare R2. It includes a command-line tool and an MCP server so coding agents can record and share demos, and for now you install it by building from source on macOS 15 or later.`;
+export const SITE_DESCRIPTION_LONG = `${SITE_DESCRIPTION} It is a native Swift app with no account, no telemetry and no Reelbird server: share links point at a storage bucket you own, such as Cloudflare R2. It includes a command-line tool and an MCP server so coding agents can record and share demos, and you can download it (not yet notarised by Apple) or build it from source, on macOS 15 or later.`;
 
 export const SITE_TAGLINE = "Record. Get a link. Polish it later.";
 
@@ -39,11 +39,11 @@ export const SITE_SHORT = "Free, open-source Mac screen recorder. A share link w
  * Set `url` to an MP4 (self-hosted or your bucket) or a YouTube/Vimeo embed URL.
  */
 export const LAUNCH_VIDEO = {
-  url: "",
+  url: "/media/reelbird-launch.mp4",
   /** "file" plays an MP4 in a <video>; "embed" loads an iframe on click. */
   kind: "file" as "file" | "embed",
-  title: "Reelbird in two minutes",
-  duration: "",
+  title: "Watch the launch film",
+  duration: "0:58",
 };
 
 /**
@@ -52,10 +52,11 @@ export const LAUNCH_VIDEO = {
  * build-from-source steps.
  */
 export const PREBUILT = {
-  enabled: false,
+  enabled: true,
   url: `${GITHUB_RELEASES_URL}/download/v${"0.1.0"}/Reelbird-0.1.0.zip`,
   label: "Download Reelbird 0.1.0 (.zip)",
-  note: "Built by scripts/dist.sh. It's signed ad hoc, not notarised: unzip it, move Reelbird to Applications, open it once, then choose Open Anyway in System Settings → Privacy & Security.",
+  note: "For Apple silicon Macs on macOS 15 or later. It isn't notarised by Apple yet, so macOS asks you to approve it once.",
+  sha256: "e1670fdce17990647d6d375d948e97717a7a06dde586bb30ca07bec82fb3e262",
 };
 
 /** Donations. The /support page and nothing else reads these. */

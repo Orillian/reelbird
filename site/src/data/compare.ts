@@ -39,7 +39,7 @@ export const PRODUCTS: Product[] = [
     links: "Copied the moment you stop. Hosted in your own S3 or R2 bucket. The same link updates after editing",
     autoZoom: "Yes, from clicks and typing. Every zoom editable",
     download: "Always. Every take is MP4 files on your Mac",
-    notes: "Native Swift. Build from source for now. No account, no telemetry. CLI and MCP server",
+    notes: "Native Swift. Free download (not yet notarised) or build from source. No account, no telemetry. CLI and MCP server",
     bestFor: "Mac users who want a link the moment they stop, auto-zoom polish later under the same link, their own storage, and no bill.",
     keepInMind: "No notarised download yet, so you build it from source. Mac only. Links need a bucket you own. No comments or view counts.",
     sources: [{ label: "github.com/btahir/reelbird", href: "https://github.com/btahir/reelbird" }],

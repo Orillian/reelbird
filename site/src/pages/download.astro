@@ -14,14 +14,14 @@ const permissions = [
 ];
 ---
 <Base
-  title="Download Reelbird: build it from source on macOS 15+"
-  description="Install Reelbird, the free open-source Mac screen recorder: clone and run make install. Runs on macOS 15+; builds with the Xcode 26 Command Line Tools."
+  title="Download Reelbird: free screen recorder for macOS 15+"
+  description="Download Reelbird, the free open-source Mac screen recorder, for Apple silicon on macOS 15+, or build it from source with make install. No account."
   og="download"
   crumbs={[{ name: "Download", path: "/download/" }]}
 >
   <PageHead
     title="Get Reelbird"
-    lede="Reelbird is free and open source. There's no signed download yet, so you build it from the source code. It takes a few minutes, needs no Xcode, and you only do it once."
+    lede="Reelbird is free and open source. Download the app and approve it once, or build it from the source code in a few minutes with no Xcode."
     crumbs={[{ name: "Download", path: "/download/" }]}
   />
 
@@ -29,10 +29,17 @@ const permissions = [
     <div class="main">
       {PREBUILT.enabled && (
         <section class="prebuilt" aria-labelledby="prebuilt-title">
-          <h2 id="prebuilt-title">Prebuilt app</h2>
+          <h2 id="prebuilt-title">Download the app</h2>
           <p class="muted">{PREBUILT.note}</p>
           <a class="btn btn-primary" href={PREBUILT.url}><Icon name="download" />{PREBUILT.label}</a>
-          <p class="muted small">Prefer to build it yourself? The steps are below.</p>
+          <ol class="prebuilt-steps">
+            <li>Unzip it and drag <strong>Reelbird</strong> to your Applications folder.</li>
+            <li>Open it. macOS says it can't verify the developer. Choose <strong>Done</strong>.</li>
+            <li>Open <strong>System Settings → Privacy &amp; Security</strong>, scroll down and choose <strong>Open Anyway</strong> next to Reelbird. You only do this once.</li>
+            <li>Reelbird's welcome tour asks for Screen Recording, microphone and camera. After an update, macOS may ask for Screen Recording again, because the app isn't signed with an Apple Developer ID.</li>
+          </ol>
+          <p class="muted small">SHA-256: <code class="hash">{PREBUILT.sha256}</code></p>
+          <p class="muted small">Prefer to build it yourself? Building from source avoids the approval step. The steps are below.</p>
         </section>
       )}
 
@@ -136,6 +143,8 @@ const permissions = [
 </Base>
 
 <style>
+  .prebuilt-steps { margin: 1rem 0 0.75rem; padding-left: 1.25rem; display: grid; gap: 0.4rem; }
+  .hash { word-break: break-all; }
   .layout { display: grid; grid-template-columns: minmax(0, 1fr) 20rem; gap: clamp(2rem, 1rem + 4vw, 5rem); padding-bottom: var(--section); align-items: start; }
   .main { max-width: 44rem; min-width: 0; }
   .prebuilt { border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 3rem; display: grid; gap: 0.9rem; justify-items: start; }
