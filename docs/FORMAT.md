@@ -12,7 +12,7 @@ Demo.reelbird/
   camera/           same layout (optional)
   microphone/       same layout, audio only (optional)
   systemAudio/      same layout, audio only (optional)
-  share/            the quick-share stream (optional)
+  share/            the quick-share stream (optional; its timeline skips paused ranges)
   captions.vtt      optional
   transcript.json   optional, word-timed transcript behind captions.vtt (source timeline)
   exports/          rendered files

@@ -61,7 +61,8 @@ public struct CursorImageInfo: Codable, Hashable, Sendable {
     /// Hot spot in image pixels from the top-left.
     public var hotX: Double
     public var hotY: Double
-    /// Image size in points (the PNG is stored at 2x).
+    /// Image size in points. The PNG is stored at a higher scale (4x by default); the scale is the
+    /// PNG's pixel width divided by `width`.
     public var width: Double
     public var height: Double
     public init(id: String, hotX: Double, hotY: Double, width: Double, height: Double) {

@@ -245,7 +245,8 @@ import ReelbirdCore
                 self.status = st
                 if st.phase == .failed {
                     self.teardown()
-                    self.app.present(RecordingFailure(), title: "Recording stopped")
+                    self.app.present(RecordingFailure(warnings: st.warnings), title: "Recording stopped")
+                    self.app.library.reload()
                 }
             }
         }
@@ -346,7 +347,12 @@ import ReelbirdCore
 }
 
 struct RecordingFailure: LocalizedError {
+    /// The recorder's last warnings, which usually say why it stopped (disk full, capture ended).
+    var warnings: [HealthWarning] = []
     var errorDescription: String? {
-        "Something went wrong while recording. Everything captured so far was saved and is in your Library."
+        let reason = warnings.first { $0.kind == .lowDisk || $0.kind == .captureStalled }?.message
+            ?? warnings.first?.message
+        let saved = "Everything captured so far was saved and is in your Library."
+        return reason.map { "\($0) \(saved)" } ?? "Something went wrong while recording. \(saved)"
     }
 }
