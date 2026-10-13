@@ -54,6 +54,8 @@ It's a native Swift app with no account, no telemetry and no Reelbird server: sh
 
 **Records what you need, as separate tracks.** A display, a window or an area, plus camera, microphone and system audio, with no virtual audio driver. Camera and audio stay on their own tracks, so you can move the camera bubble or mute system sound after recording.
 
+**The camera goes where you put it.** Drag the camera bubble while you record and the video follows: it starts where the bubble was and glides each time you moved it. In the editor, drag it anywhere on the preview (it snaps to the edges and centre lines), pick a corner, delete single moves or keep it in one place. Circle, rounded square or a 3:4 portrait tile.
+
 **Keeps your take if the app quits.** Every track is written to disk in 2-second segments from the first frame. If Reelbird crashes or quits mid-recording, the take is recovered the next time Reelbird opens, minus at most the last two seconds.
 
 **Warns you while it matters.** If the microphone is recording silence, capture stalls, audio drifts, the disk is filling up or uploads fall behind, you see it during the recording, not after.
@@ -66,7 +68,7 @@ It's a native Swift app with no account, no telemetry and no Reelbird server: sh
 
 **Captions on your Mac.** Captions come from Apple's on-device speech recognition. Burn them into the export, or let viewers turn them on from the share page. **Cut Long Silences** removes the pauses in one go. From the command line, `reelbird suggest` writes a title and chapters with Apple's on-device model on Macs with Apple Intelligence. No API keys.
 
-**Clean frames.** Backgrounds, padding, rounded corners, aspect ratios for every platform, a movable camera bubble, and **Hide Browser Toolbar** to crop the tabs and bookmarks bar off a browser window.
+**Clean frames.** Backgrounds, padding, rounded corners, aspect ratios for every platform, and **Hide Browser Toolbar** to crop the tabs and bookmarks bar off a browser window.
 
 **Exports the usual formats.** MP4 (H.264), HEVC and ProRes with hardware encoding, plus GIF.
 
@@ -199,6 +201,7 @@ reelbird record --display 1 --duration 30      # 30 seconds of the main display
 reelbird record --window 1234 --share          # a window by ID from `sources`; Ctrl-C stops
 reelbird list                                  # recent recordings
 reelbird edit latest --set zoom.intensity=0.7 --trim 0:05-end
+reelbird edit latest --set camera.x=0.5 --set camera.y=1 --clear-camera-moves   # camera bottom centre, in one place
 reelbird export latest --format mp4 --height 1080
 reelbird captions latest                       # captions.vtt, made on this Mac
 reelbird enhance latest --strength medium      # clean up the voice; the raw mic is kept
@@ -215,7 +218,7 @@ When you record from a terminal, macOS asks for Screen Recording permission for 
 
 ## MCP server
 
-`reelbird mcp` runs an MCP server over stdio. Agents get tools to list sources, start and stop recordings, list and inspect projects, edit (including crop), export, caption, enhance the voice, find silences, suggest chapters, and share or unshare.
+`reelbird mcp` runs an MCP server over stdio. Agents get tools to list sources, start and stop recordings, list and inspect projects, edit (including crop and camera placement), export, caption, enhance the voice, find silences, suggest chapters, and share or unshare.
 
 **Claude Code**
 
