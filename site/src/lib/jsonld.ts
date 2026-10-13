@@ -1,4 +1,4 @@
-import { GITHUB_URL, MIN_MACOS, SITE_DESCRIPTION, SITE_NAME, SITE_URL, abs } from "../config/site";
+import { GITHUB_URL, LAUNCH_VIDEO, MIN_MACOS, PREBUILT, SITE_DESCRIPTION, SITE_NAME, SITE_URL, abs } from "../config/site";
 
 const ORG_ID = `${SITE_URL}/#organization`;
 const SITE_ID = `${SITE_URL}/#website`;
@@ -41,7 +41,7 @@ export const softwareApplication = () => ({
   alternateName: "Reelbird screen recorder",
   description: SITE_DESCRIPTION,
   url: `${SITE_URL}/`,
-  downloadUrl: GITHUB_URL,
+  downloadUrl: PREBUILT.url,
   installUrl: abs("/download/"),
   applicationCategory: "MultimediaApplication",
   applicationSubCategory: "Screen recorder",
@@ -110,3 +110,17 @@ export const breadcrumbs = (trail: { name: string; path: string }[]) => ({
 });
 
 export const graph = (...nodes: object[]) => ({ "@context": "https://schema.org", "@graph": nodes });
+
+export const videoObject = () => ({
+  "@type": "VideoObject",
+  "@id": `${SITE_URL}/#launch-film`,
+  name: LAUNCH_VIDEO.name,
+  description: SITE_DESCRIPTION,
+  thumbnailUrl: [`https://i.ytimg.com/vi/${LAUNCH_VIDEO.youtubeId}/maxresdefault.jpg`],
+  uploadDate: LAUNCH_VIDEO.uploadDate,
+  duration: "PT58S",
+  embedUrl: `https://www.youtube.com/embed/${LAUNCH_VIDEO.youtubeId}`,
+  contentUrl: `https://www.youtube.com/watch?v=${LAUNCH_VIDEO.youtubeId}`,
+  publisher: { "@id": ORG_ID },
+  about: { "@id": APP_ID },
+});

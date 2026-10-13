@@ -10,7 +10,7 @@ import VsBand from "../components/VsBand.astro";
 import Icon from "../components/Icon.astro";
 import { GITHUB_URL, SITE_DESCRIPTION, APP_VERSION } from "../config/site";
 import { HOME_FAQ } from "../data/faq";
-import { softwareApplication, softwareSourceCode } from "../lib/jsonld";
+import { softwareApplication, softwareSourceCode, videoObject } from "../lib/jsonld";
 import pickerL from "../assets/shots/picker-raw-light.webp";
 import pickerD from "../assets/shots/picker-raw-dark.webp";
 import hudL from "../assets/shots/hud-light.webp";
@@ -59,7 +59,7 @@ const facts: [string, string, string?][] = [
   title="Reelbird: free, open-source screen recorder for Mac"
   description="Record your Mac screen, camera and mic. A share link is on your clipboard when you stop; add auto-zoom and captions later under the same link. Free, MIT."
   og="home"
-  schema={[softwareApplication(), softwareSourceCode()]}
+  schema={[softwareApplication(), softwareSourceCode(), videoObject()]}
 >
   <section class="hero">
     <div class="wrap hero-copy">

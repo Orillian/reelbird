@@ -39,9 +39,12 @@ export const SITE_SHORT = "Free, open-source Mac screen recorder. A share link w
  * Set `url` to an MP4 (self-hosted or your bucket) or a YouTube/Vimeo embed URL.
  */
 export const LAUNCH_VIDEO = {
-  url: "/media/reelbird-launch.mp4",
+  url: "https://www.youtube-nocookie.com/embed/NFlK-cOgRRE",
   /** "file" plays an MP4 in a <video>; "embed" loads an iframe on click. */
-  kind: "file" as "file" | "embed",
+  kind: "embed" as "file" | "embed",
+  youtubeId: "NFlK-cOgRRE",
+  uploadDate: "2026-10-13",
+  name: "Free, open-source Loom and Screen Studio alternative for Mac | Reelbird",
   title: "Watch the launch film",
   duration: "0:58",
 };
