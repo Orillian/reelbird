@@ -115,9 +115,9 @@ const crumbs = [{ name: "Features", path: "/features/" }];
   .plain { padding-left: 1.1rem; display: grid; gap: 0.7rem; color: var(--text-muted); }
   .plain strong { color: var(--text); font-weight: 600; }
   @media (max-width: 60rem) {
-    .row, .lib { grid-template-columns: 1fr; }
+    .row, .lib { grid-template-columns: minmax(0, 1fr); }
     .row.flip > :first-child { order: 0; }
-    .more dl { grid-template-columns: 1fr; }
+    .more dl { grid-template-columns: minmax(0, 1fr); }
   }
-  @media (max-width: 40rem) { .more dl > div { grid-template-columns: 1fr; gap: 0.25rem; } }
+  @media (max-width: 40rem) { .more dl > div { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; } }
 </style>

@@ -21,11 +21,11 @@ const tools = [
   title="A screen recorder your coding agent can use"
   lede="The reelbird command line tool and its MCP server drive the same engine as the app. Your agent can record a demo of the change it just made, export it and hand you the link."
 >
-  <section class="fsec wrap fgrid">
+  <section class="fsec wrap fgrid add">
     <div>
       <h2>Add it to your agent</h2>
       <p>The tool ships inside the app. <code>reelbird mcp</code> runs an MCP server over stdio.</p>
-      <p>Then ask: “Record a 20-second demo of the settings page you just changed and give me the share link.”</p>
+      <p>Then ask it to "record a 20-second demo of the settings page you just changed and give me the share link".</p>
       <p class="small">Recording through an agent needs Screen Recording permission for the app that runs it, such as your terminal or editor.</p>
       <p><a class="link-arrow" href="/docs/mcp/">Setup for Codex and Cursor</a></p>
     </div>
@@ -59,7 +59,9 @@ const tools = [
 </Feature>
 
 <style>
-  .stack { display: grid; gap: 0.6rem; }
+  .stack { display: grid; gap: 0.6rem; min-width: 0; }
+  .add { grid-template-columns: minmax(0, 4fr) minmax(0, 8fr) !important; }
+  @media (max-width: 60rem) { .add { grid-template-columns: minmax(0, 1fr) !important; } }
   .label { font-size: var(--step--1); font-weight: 600; margin-top: 0.6rem !important; color: var(--text) !important; }
   .small { font-size: var(--step--1); }
   .tools { margin-top: 1.5rem; }

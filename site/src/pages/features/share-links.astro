@@ -56,16 +56,14 @@ r/7Hk2pQx9/captions.2.vtt  captions, if you made them`}</code></pre>
     <Shot src={sharingL} dark={sharingD} variant="frame" alt="Reelbird's Sharing settings: endpoint, bucket, region, access key, secret, public URL and prefix, with Test Connection and Save." sizes="(min-width: 60rem) 520px, 100vw" widths={[520, 1040, 1120]} class="narrow" />
   </section>
 
-  <section class="fsec wrap fgrid flip">
-    <div>
+  <section class="fsec wrap term-sec">
+    <div class="term-text">
       <h2>From the terminal too</h2>
       <p>The command line tool uses the same settings, or environment variables on a CI machine without a Keychain.</p>
       <p><a class="link-arrow" href="/docs/sharing/#command-line-and-ci">Command line and CI</a></p>
     </div>
-    <div class="term-col">
-      <Code code={"reelbird share latest              # upload and print the link\nreelbird share latest --polished   # render the edit, same link\nreelbird unshare latest            # delete it"} />
-      <Illustration src={link} size={160} class="illo-link" />
-    </div>
+    <Code code={"reelbird share latest              # upload and print the link\nreelbird share latest --polished   # render the edit, same link\nreelbird unshare latest            # delete it"} />
+    <Illustration src={link} size={180} class="illo-link" />
   </section>
 </Feature>
 
@@ -73,6 +71,6 @@ r/7Hk2pQx9/captions.2.vtt  captions, if you made them`}</code></pre>
   .label { font-size: var(--step--1); font-weight: 600; color: var(--text); margin-bottom: 0.6rem; }
   .tree { font-size: 0.8125rem; white-space: pre; }
   :global(.narrow) { max-width: 30rem; justify-self: center; width: 100%; }
-  .term-col { display: grid; gap: 1.5rem; justify-items: end; }
-  .term-col > :first-child { width: 100%; }
+  .term-sec { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 6fr) auto; gap: 2.5rem; align-items: center; }
+  @media (max-width: 60rem) { .term-sec { grid-template-columns: minmax(0, 1fr); } .term-sec :global(.illo-link) { display: none; } }
 </style>

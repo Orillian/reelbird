@@ -89,7 +89,7 @@ const crumbs = [{ name: title, path }];
   .facts td { width: 39%; color: var(--text-muted); }
   .facts td:first-of-type { color: var(--text); }
   .facts thead th { font-size: 1rem; color: var(--text); }
-  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; }
+  .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3rem; }
   .two h2 { font-size: var(--step-2); }
   .plain { padding-left: 1.1rem; display: grid; gap: 0.7rem; color: var(--text-muted); }
   .faq { max-width: 52rem; margin-inline: auto; }
@@ -97,5 +97,5 @@ const crumbs = [{ name: title, path }];
   .end { text-align: center; display: grid; justify-items: center; gap: 0.5rem; padding-bottom: var(--section); }
   .end h2 { margin-bottom: 0.5rem; }
   .end .cta { justify-content: center; }
-  @media (max-width: 48rem) { .two { grid-template-columns: 1fr; } }
+  @media (max-width: 48rem) { .two { grid-template-columns: minmax(0, 1fr); } }
 </style>

@@ -53,7 +53,37 @@ const crumbs = [{ name: "Docs", path: "/docs/" }, ...(path === "/docs/" ? [] : [
   </div>
 </Base>
 
+<script>
+  // Copy buttons for the Markdown code blocks.
+  document.querySelectorAll<HTMLPreElement>(".body pre").forEach((pre) => {
+    const wrap = document.createElement("div");
+    wrap.className = "md-code";
+    pre.replaceWith(wrap);
+    wrap.append(pre);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "md-copy";
+    btn.textContent = "Copy";
+    btn.setAttribute("aria-label", "Copy code");
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(pre.innerText.trimEnd());
+        btn.textContent = "Copied";
+        setTimeout(() => (btn.textContent = "Copy"), 1600);
+      } catch {}
+    });
+    wrap.append(btn);
+  });
+</script>
+
 <style>
+  .body :global(.md-code) { position: relative; display: flex; align-items: flex-start; background: var(--code-bg); border-radius: var(--radius); margin-block: 1.4em; }
+  .body :global(.md-code pre) { flex: 1; min-width: 0; margin: 0 !important; background: transparent !important; }
+  .body :global(.md-copy) {
+    flex: none; margin: 0.55rem 0.55rem 0.55rem 0; height: 2rem; padding: 0 0.7rem; border-radius: 8px;
+    border: 1px solid var(--line-strong); background: var(--bg-raised); color: var(--text-muted); font-size: 0.8125rem; font-weight: 600;
+  }
+  .body :global(.md-copy:hover) { color: var(--text); }
   .docs { display: grid; grid-template-columns: 13rem minmax(0, 1fr) 13rem; gap: clamp(2rem, 1rem + 3vw, 4rem); padding-block: clamp(2.5rem, 2rem + 2vw, 4rem) var(--section); align-items: start; }
   .side, .toc { position: sticky; top: 5.5rem; font-size: 0.9375rem; max-height: calc(100dvh - 7rem); overflow-y: auto; }
   .side-title { font-size: var(--step--1); font-weight: 600; color: var(--text); margin: 0 0 0.6rem; }
@@ -72,7 +102,7 @@ const crumbs = [{ name: "Docs", path: "/docs/" }, ...(path === "/docs/" ? [] : [
   .meta a { color: inherit; }
   @media (max-width: 72rem) { .docs { grid-template-columns: 12rem minmax(0, 1fr); } .toc { display: none; } }
   @media (max-width: 52rem) {
-    .docs { grid-template-columns: 1fr; }
+    .docs { grid-template-columns: minmax(0, 1fr); }
     .side { position: static; max-height: none; order: 2; border-top: 1px solid var(--line); padding-top: 2rem; }
   }
 </style>

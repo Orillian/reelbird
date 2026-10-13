@@ -70,7 +70,7 @@ const pages = [
     source: "README.md",
     title: "Install from source",
     seoTitle: "Install Reelbird from source on macOS 15+",
-    description: "Clone the repo and run make install. Needs macOS 15 or later and Apple’s Command Line Tools; no Xcode. Permissions and local signing explained.",
+    description: "Clone the repo and run make install. Needs macOS 15 or later and Apple's Command Line Tools; no Xcode. Permissions and local signing explained.",
     order: 1,
     body: section(readme, "Install from source"),
   },

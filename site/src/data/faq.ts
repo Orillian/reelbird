@@ -67,8 +67,8 @@ export const FAQ: Faq[] = [
   {
     id: "privacy",
     q: "Is my data private?",
-    a: "Recordings, edits and captions stay in ~/Movies/Reelbird. There's no analytics, telemetry, crash reporting or update checks. Captions use Apple's on-device frameworks. Share links are unlisted, not secret: anyone with a link can watch.",
-    html: `Recordings, edits and captions stay in <code>~/Movies/Reelbird</code>. There's no analytics, telemetry, crash reporting or update checks. Captions use Apple's on-device frameworks. Share links are unlisted, not secret: anyone with a link can watch. More on the <a href="/privacy/">privacy page</a>.`,
+    a: "Recordings, edits and captions stay in ~/Movies/Reelbird. There's no analytics, telemetry, crash reporting or update checks. Captions use Apple's on-device frameworks. Share links are unlisted, not secret. Anyone with a link can watch.",
+    html: `Recordings, edits and captions stay in <code>~/Movies/Reelbird</code>. There's no analytics, telemetry, crash reporting or update checks. Captions use Apple's on-device frameworks. Share links are unlisted, not secret. Anyone with a link can watch. More on the <a href="/privacy/">privacy page</a>.`,
   },
   {
     id: "crash",

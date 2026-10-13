@@ -185,6 +185,7 @@ kbd {
 /* Code blocks (markdown and components) */
 pre {
   position: relative;
+  max-width: 100%;
   background: var(--code-bg);
   border-radius: var(--radius);
   padding: 1rem 1.15rem;

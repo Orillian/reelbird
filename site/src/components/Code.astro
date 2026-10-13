@@ -30,12 +30,13 @@ const lines = code.trim().split("\n");
 </script>
 
 <style>
-  .code { position: relative; }
-  pre { padding-right: 5.5rem; white-space: pre; }
+  /* The copy button sits in its own column, so it never covers a long line. */
+  .code { position: relative; min-width: 0; max-width: 100%; display: flex; align-items: flex-start; background: var(--code-bg); border-radius: var(--radius); }
+  pre { flex: 1; min-width: 0; margin: 0 !important; background: transparent; white-space: pre; }
   .p { color: var(--text-muted); user-select: none; }
   .c { color: var(--text-muted); }
   .copy {
-    position: absolute; top: 0.55rem; right: 0.55rem;
+    flex: none; margin: 0.55rem 0.55rem 0.55rem 0;
     display: inline-flex; align-items: center; gap: 0.35rem;
     height: 2rem; padding: 0 0.65rem; border-radius: 8px;
     border: 1px solid var(--line-strong); background: var(--bg-raised); color: var(--text-muted);
@@ -44,4 +45,5 @@ const lines = code.trim().split("\n");
   }
   .copy:hover { color: var(--text); border-color: var(--text-muted); }
   .copy.done { color: var(--text); }
+  :global(.prose) .code { margin-block: 1.4em; }
 </style>
