@@ -1,30 +1,42 @@
 ---
-// "X alternative" pages: H1 with the keyword, the canonical sentence, a dated fact table,
-// where the other app is better, a short clip, FAQ and the install CTA with its caveat.
+// "X alternative" pages, answer first: H1 with the keyword, a self-contained answer paragraph,
+// a dated fact table, who should pick which, a short clip, an FAQ that names the other app,
+// and the install CTA with its caveat. JSON-LD (Article + FAQPage) mirrors the visible text.
 import Base from "./Base.astro";
 import PageHead from "../components/PageHead.astro";
 import ClipLoop from "../components/ClipLoop.astro";
 import Faq from "../components/Faq.astro";
 import Icon from "../components/Icon.astro";
 import type { Faq as FaqItem } from "../data/faq";
-import { CHECKED_LABEL, byId } from "../data/compare";
-import { GITHUB_URL, SITE_DESCRIPTION } from "../config/site";
+import { CHECKED, CHECKED_LABEL, byId } from "../data/compare";
+import { GITHUB_URL, RELEASE_DATE } from "../config/site";
+import { article, faqPage } from "../lib/jsonld";
 
 interface Props {
   seoTitle: string; description: string; path: string; og: string;
-  title: string; intro: string; rival: string;
+  title: string;
+  /** The direct answer: first paragraph, quotable on its own. */
+  answer: string;
+  /** One-sentence verdict under the table. */
+  verdict: string;
+  rival: string;
   rows: [string, string, string][];
   better: string[];
   ours: string[];
   faq: FaqItem[];
 }
-const { seoTitle, description, path, og, title, intro, rival, rows, better, ours, faq } = Astro.props;
+const { seoTitle, description, path, og, title, answer, verdict, rival, rows, better, ours, faq } = Astro.props;
 const r = byId(rival);
 const crumbs = [{ name: title, path }];
+const schema = [
+  article({ title, description, path, datePublished: RELEASE_DATE, dateModified: CHECKED }),
+  faqPage(faq),
+];
 ---
-<Base title={seoTitle} description={description} og={og} crumbs={crumbs} type="article">
-  <PageHead title={title} lede={SITE_DESCRIPTION} crumbs={crumbs}>
-    <p class="intro">{intro}</p>
+<Base title={seoTitle} description={description} og={og} crumbs={crumbs} type="article" schema={schema}>
+  <PageHead title={title} crumbs={crumbs}>
+    <p class="answer">{answer}</p>
+    <p class="stamp">Updated <time datetime={CHECKED}>{CHECKED_LABEL}</time>. {r.name} facts from {r.sources.map((s, i) => <>{i > 0 && " and "}<a href={s.href}>{s.label}</a></>)}.</p>
     <div class="cta">
       <a class="btn btn-primary" href="/download/"><Icon name="download" />Get Reelbird — free</a>
       <span class="caveat">Build from source on macOS 15 or later. Mac only. A few minutes, no Xcode.</span>
@@ -32,7 +44,7 @@ const crumbs = [{ name: title, path }];
   </PageHead>
 
   <section class="wrap block" aria-labelledby="facts">
-    <h2 id="facts">Reelbird and {r.name}, side by side</h2>
+    <h2 id="facts">Reelbird vs {r.name}, side by side</h2>
     <div class="table-wrap">
       <table class="facts">
         <caption>Prices and features checked {CHECKED_LABEL}. Sources: {r.sources.map((s, i) => <>{i > 0 && ", "}<a href={s.href}>{s.label}</a></>)}.</caption>
@@ -42,15 +54,17 @@ const crumbs = [{ name: title, path }];
         </tbody>
       </table>
     </div>
+    <p class="verdict">{verdict}</p>
   </section>
 
-  <section class="wrap block two" aria-label="Strengths">
+  <section class="wrap block two" aria-labelledby="pick">
+    <h2 id="pick" class="sr-only">Who should pick which</h2>
     <div>
-      <h2>Where {r.name} is better</h2>
+      <h3>Pick {r.name} if</h3>
       <ul class="plain">{better.map((b) => <li set:html={b} />)}</ul>
     </div>
     <div>
-      <h2>Where Reelbird fits</h2>
+      <h3>Pick Reelbird if</h3>
       <ul class="plain">{ours.map((b) => <li set:html={b} />)}</ul>
     </div>
   </section>
@@ -61,9 +75,9 @@ const crumbs = [{ name: title, path }];
   </section>
 
   <section class="wrap block faq" aria-labelledby="alt-faq">
-    <h2 id="alt-faq">Questions</h2>
+    <h2 id="alt-faq">{r.name} and Reelbird: questions</h2>
     <Faq items={faq} />
-    <p class="more"><a class="link-arrow" href="/compare/">Compare more Mac screen recorders</a></p>
+    <p class="more"><a class="link-arrow" href="/compare/">Compare eight Mac screen recorders</a></p>
   </section>
 
   <section class="wrap block end">
@@ -77,7 +91,9 @@ const crumbs = [{ name: title, path }];
 </Base>
 
 <style>
-  .intro { margin-top: 1rem; max-width: 40rem; color: var(--text-muted); font-size: 1.0625rem; }
+  .answer { margin-top: 1.25rem; max-width: 44rem; font-size: var(--step-1); line-height: 1.5; color: var(--text-muted); }
+  .stamp { margin-top: 0.9rem; font-size: var(--step--1); color: var(--text-muted); }
+  .stamp a { color: inherit; }
   .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; margin-top: 2rem; }
   .caveat { font-size: var(--step--1); color: var(--text-muted); max-width: 22rem; }
   .block { padding-block: clamp(2.5rem, 2rem + 2vw, 4rem); border-top: 1px solid var(--line); }
@@ -89,8 +105,9 @@ const crumbs = [{ name: title, path }];
   .facts td { width: 39%; color: var(--text-muted); }
   .facts td:first-of-type { color: var(--text); }
   .facts thead th { font-size: 1rem; color: var(--text); }
+  .verdict { margin-top: 1.75rem; max-width: 44rem; font-size: 1.0625rem; }
   .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3rem; }
-  .two h2 { font-size: var(--step-2); }
+  .two h3 { font-family: var(--font-display); font-weight: 520; font-size: var(--step-2); letter-spacing: -0.01em; margin-bottom: 1.25rem; }
   .plain { padding-left: 1.1rem; display: grid; gap: 0.7rem; color: var(--text-muted); }
   .faq { max-width: 52rem; margin-inline: auto; }
   .more { margin-top: 2rem; }

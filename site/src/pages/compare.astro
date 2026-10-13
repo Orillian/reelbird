@@ -1,24 +1,64 @@
 ---
 import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
+import Faq from "../components/Faq.astro";
 import Icon from "../components/Icon.astro";
-import { PRODUCTS, CHECKED_LABEL } from "../data/compare";
-const cols: [keyof (typeof PRODUCTS)[number], string][] = [
-  ["price", "Price"], ["platforms", "Platforms"], ["openSource", "Open source"], ["links", "Instant share links"], ["autoZoom", "Auto-zoom"], ["notes", "Notes"],
-];
-const crumbs = [{ name: "Compare", path: "/compare/" }];
----
-<Base
-  title="Mac screen recorders compared: Loom, Screen Studio, Cap"
-  description="Prices, platforms, licences, share links and auto-zoom for Reelbird, Loom, Screen Studio, Cap, OpenScreen, CleanShot X and Tella. Checked October 2026."
-  og="compare"
-  brand={false}
-  crumbs={crumbs}
-  type="article"
->
-  <PageHead title="Mac screen recorders compared" lede={`Prices, platforms, licences, share links and auto-zoom for seven screen recorders, checked ${CHECKED_LABEL}. Each row links its source. Prices change, so check before you buy.`} crumbs={crumbs} />
+import { PRODUCTS, CHECKED, CHECKED_LABEL, byId } from "../data/compare";
+import { RELEASE_DATE, abs } from "../config/site";
+import { article, faqPage } from "../lib/jsonld";
 
-  <section class="wrap tablesec" aria-label="Comparison table">
+type Key = "price" | "freePlan" | "platforms" | "openSource" | "links" | "autoZoom" | "download";
+const cols: [Key, string][] = [
+  ["price", "Price"], ["freePlan", "Free plan"], ["platforms", "Platforms"], ["openSource", "Open source"],
+  ["links", "Instant share links"], ["autoZoom", "Auto-zoom"], ["download", "Keep the file"],
+];
+const loom = byId("loom");
+const ss = byId("screen-studio");
+const title = "Mac screen recorders compared";
+const seoTitle = "Mac screen recorders compared: Loom, Screen Studio, Cap";
+const description = "Prices, free-plan limits, licences, share links and auto-zoom for Reelbird, Loom, Screen Studio, Cap, OpenScreen, CleanShot X, Tella and Screenity.";
+const path = "/compare/";
+const crumbs = [{ name: "Compare", path }];
+
+const picks = [
+  { id: "loom", text: "a team tool with comments and view counts on every platform, and you're happy to pay per user" },
+  { id: "screen-studio", text: "the most mature auto-zoom editor on the Mac, and a subscription is fine" },
+  { id: "cap", text: "an open-source Loom alternative that also runs on Windows or Linux, with hosted plans" },
+  { id: "openscreen", text: "a free, signed, cross-platform editor and you'll host the files yourself" },
+  { id: "screenity", text: "free recording in Chrome on any operating system" },
+  { id: "reelbird", text: "a link the moment you stop, auto-zoom polish under the same link, your own storage and no bill, on a Mac" },
+];
+
+const faq = [
+  { id: "loom-or-screen-studio", q: "Loom or Screen Studio: which should I use?", a: `They do different jobs. Loom is for quick, hosted links and team feedback: a link when you stop, comments and view counts, on Mac, Windows, the web and phones, with no auto-zoom. Its free plan stops videos at 5 minutes and can't download; Business is $18 per user a month. Screen Studio is for polished Mac product videos: auto-zoom, a smooth cursor and camera layouts, with a share link after you export, for $29 a month or $9 billed yearly. Reelbird does both jobs from one take on the Mac, free: the link when you stop, the polish later under the same link. Checked ${CHECKED_LABEL}.` },
+  { id: "free-auto-zoom", q: "Which free Mac screen recorders have auto-zoom?", a: "Reelbird (MIT, native Swift, with share links to your own bucket), OpenScreen (MIT, Electron, no share links) and Cap (free for personal use, with auto-zoom in Studio mode). Screenity's auto-zoom needs Pro, and Screen Studio, CleanShot X and Tella are paid." },
+  { id: "open-source", q: "Which of these screen recorders are open source?", a: "Reelbird (MIT), OpenScreen (MIT), Cap (AGPLv3, with some parts MIT) and Screenity's Chrome recorder (GPL-3.0). Loom, Screen Studio, CleanShot X and Tella are proprietary." },
+  { id: "free-link", q: "Which free recorders give you a share link when you stop?", a: "Reelbird, with no limit from Reelbird, hosted in your own S3 or R2 bucket. Loom's free Starter plan, with 5-minute videos and 25 per person. Cap's free plan, for personal use, with 5-minute links. Screenity's links need Pro, OpenScreen has none, and Screen Studio's come after export." },
+  { id: "keep-files", q: "Which ones let me keep my video files for free?", a: "Reelbird saves every take as MP4 files on your Mac. OpenScreen, Screenity's free recorder and Cap's free plan (personal use) export files too. Loom's free Starter plan can't download videos; that needs Business or higher." },
+];
+
+const schema = [
+  article({ title: seoTitle, description, path, datePublished: RELEASE_DATE, dateModified: CHECKED }),
+  { "@type": "ItemList", name: "Mac screen recorders compared", itemListOrder: "https://schema.org/ItemListUnordered", numberOfItems: PRODUCTS.length,
+    itemListElement: PRODUCTS.map((p, i) => ({ "@type": "ListItem", position: i + 1, name: p.name, url: abs(`${path}#${p.id}`) })) },
+  faqPage(faq),
+];
+---
+<Base title={seoTitle} description={description} og="compare" brand={false} crumbs={crumbs} type="article" schema={schema}>
+  <PageHead title={title} crumbs={crumbs}>
+    <p class="answer">Eight screen recorders, compared on price, free-plan limits, licence, share links and auto-zoom. In short: Loom is the team tool, Screen Studio the most mature Mac editor, Cap the open-source pick for Windows and Linux, and OpenScreen the free cross-platform editor without links. Reelbird, which we make, gives you a link the moment you stop and lets you polish the same take under the same link, free and open source, on the Mac.</p>
+    <p class="stamp">Updated <time datetime={CHECKED}>{CHECKED_LABEL}</time> from each vendor's own pages. Every row links its source. Prices change, so check before you buy.</p>
+  </PageHead>
+
+  <section class="wrap block" aria-labelledby="picks">
+    <h2 id="picks">Quick picks</h2>
+    <ul class="picks">
+      {picks.map((p) => <li><a href={`#${p.id}`}>{byId(p.id).name}</a><span> if you want {p.text}.</span></li>)}
+    </ul>
+  </section>
+
+  <section class="wrap block" aria-labelledby="table">
+    <h2 id="table">The table</h2>
     <div class="table-wrap">
       <table class="cmp">
         <caption class="sr-only">Screen recorders compared, checked {CHECKED_LABEL}</caption>
@@ -27,7 +67,7 @@ const crumbs = [{ name: "Compare", path: "/compare/" }];
           {PRODUCTS.map((p) => (
             <tr class:list={[p.id === "reelbird" && "ours"]}>
               <th scope="row">{p.name}</th>
-              {cols.map(([k]) => <td>{p[k] as string}</td>)}
+              {cols.map(([k]) => <td>{p[k]}</td>)}
               <td class="src">{p.sources.map((s) => <a href={s.href}>{s.label}</a>)}</td>
             </tr>
           ))}
@@ -37,25 +77,49 @@ const crumbs = [{ name: "Compare", path: "/compare/" }];
     <p class="hint muted">Scroll the table sideways on small screens.</p>
   </section>
 
-  <section class="wrap prose-sec">
+  <section class="wrap block prose-sec" aria-labelledby="loom-vs-ss">
     <div class="prose">
-      <h2>How to choose</h2>
-      <ul>
-        <li><strong>You need Windows, the web or phones:</strong> Loom, Cap, OpenScreen or Tella. Reelbird and Screen Studio are Mac only.</li>
-        <li><strong>You want team features</strong> such as comments, view counts and shared workspaces: Loom or Tella.</li>
-        <li><strong>You want the most mature auto-zoom editor and don't mind a subscription:</strong> Screen Studio.</li>
-        <li><strong>You want a signed, cross-platform open-source app without share links:</strong> OpenScreen.</li>
-        <li><strong>You want a link the moment you stop, auto-zoom polish under the same link, your own storage and no cost:</strong> Reelbird, if you're happy to build it from source for now.</li>
-      </ul>
-      <h2>Reelbird's limits</h2>
+      <h2 id="loom-vs-ss">Loom vs Screen Studio</h2>
+      <p>Loom and Screen Studio solve different halves of the same problem. <strong>Loom is fast:</strong> the link is ready when you stop, viewers comment and you see who watched, but there's no auto-zoom, and the free plan stops each video at 5 minutes, keeps 25 and can't download. Business is $18 per user a month. <strong>Screen Studio is polished:</strong> auto-zoom, a smooth cursor and camera layouts, but it's Mac only, costs $29 a month or $9 billed yearly, and the share link comes after you export.</p>
+      <p>Reelbird is built for the gap between them: the Loom-style link the moment you stop, then Screen Studio-style polish on the same take, published under the same link. More detail: <a href="/loom-alternative/">Reelbird vs Loom</a> and <a href="/screen-studio-alternative/">Reelbird vs Screen Studio</a>.</p>
+    </div>
+  </section>
+
+  <section class="wrap block" aria-labelledby="each">
+    <h2 id="each">Each recorder, briefly</h2>
+    <ol class="each">
+      {PRODUCTS.map((p) => (
+        <li id={p.id}>
+          <h3>{p.name}<span class="kind">{p.kind}</span></h3>
+          <dl>
+            <div><dt>Best for</dt><dd>{p.bestFor}</dd></div>
+            <div><dt>Keep in mind</dt><dd>{p.keepInMind}</dd></div>
+            <div><dt>Price</dt><dd>{p.price}.</dd></div>
+            <div><dt>Source</dt><dd>{p.sources.map((s, i) => <>{i > 0 && ", "}<a href={s.href}>{s.label}</a></>)}</dd></div>
+          </dl>
+          {p.id === "loom" && <p class="more-link"><a class="link-arrow" href="/loom-alternative/">Reelbird vs Loom</a></p>}
+          {p.id === "screen-studio" && <p class="more-link"><a class="link-arrow" href="/screen-studio-alternative/">Reelbird vs Screen Studio</a></p>}
+        </li>
+      ))}
+    </ol>
+  </section>
+
+  <section class="wrap block prose-sec" aria-labelledby="limits">
+    <div class="prose">
+      <h2 id="limits">Reelbird's limits</h2>
       <ul>
         <li>Build from source: there's no signed or notarised download yet.</li>
         <li>Mac only, macOS 15 or later. Windows and Linux aren't planned.</li>
         <li>Share links need your own S3-compatible bucket. Cloudflare R2's free tier works, and needs a payment method on file.</li>
+        <li>No comments, reactions or view counts on links.</li>
         <li>Zooms follow clicks, and typing when keystroke recording is on. Zooms that track the focused text field, annotations and joining clips are on the roadmap.</li>
       </ul>
-      <p>More detail: <a href="/loom-alternative/">Reelbird as a Loom alternative</a> and <a href="/screen-studio-alternative/">as a Screen Studio alternative</a>.</p>
     </div>
+  </section>
+
+  <section class="wrap block faqsec" aria-labelledby="cmp-faq">
+    <h2 id="cmp-faq">Questions</h2>
+    <Faq items={faq} />
     <div class="cta">
       <a class="btn btn-primary" href="/download/"><Icon name="download" />Get Reelbird — free</a>
       <span class="muted caveat">Build from source on macOS 15 or later.</span>
@@ -64,18 +128,36 @@ const crumbs = [{ name: "Compare", path: "/compare/" }];
 </Base>
 
 <style>
-  .tablesec { padding-bottom: 3rem; }
-  .cmp { min-width: 68rem; font-size: 0.9rem; }
-  .cmp th[scope="row"] { font-weight: 600; white-space: nowrap; }
+  .answer { margin-top: 1.25rem; max-width: 46rem; font-size: var(--step-1); line-height: 1.5; color: var(--text-muted); }
+  .stamp { margin-top: 0.9rem; font-size: var(--step--1); color: var(--text-muted); }
+  .block { padding-block: clamp(2.5rem, 2rem + 2vw, 4rem); border-top: 1px solid var(--line); }
+  .block > h2, .prose h2 { font-size: var(--step-3); margin-bottom: 1.5rem; }
+  .prose > h2:first-child { margin-top: 0; }
+  .picks { list-style: none; padding: 0; display: grid; gap: 0.6rem; max-width: 48rem; color: var(--text-muted); }
+  .picks a { color: var(--text); font-weight: 600; }
+  .cmp { min-width: 74rem; font-size: 0.9rem; }
+  .cmp th[scope="row"] { font-weight: 600; white-space: nowrap; color: var(--text); position: sticky; left: 0; background: var(--bg); }
   .cmp td { color: var(--text-muted); }
   .cmp tr.ours th, .cmp tr.ours td { color: var(--text); background: var(--bg-raised); }
-  .cmp tr.ours th { box-shadow: inset 2px 0 0 var(--text); padding-left: 0.75rem; }
+  .cmp tr.ours th { box-shadow: inset 2px 0 0 var(--text); }
   .cmp th:first-child { padding-left: 0.75rem; }
-  .src { display: grid; gap: 0.25rem; }
-  .src a { color: inherit; font-size: 0.85rem; }
+  .src { min-width: 9rem; }
+  .src a { display: block; color: inherit; font-size: 0.85rem; margin-bottom: 0.25rem; overflow-wrap: anywhere; }
   .hint { font-size: var(--step--1); margin-top: 0.75rem; display: none; }
-  .prose-sec { padding-bottom: var(--section); border-top: 1px solid var(--line); padding-top: 1rem; }
+  .each { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 3rem; border-top: 1px solid var(--line); }
+  .each li { padding: 1.75rem 0; border-bottom: 1px solid var(--line); scroll-margin-top: 5rem; }
+  .each h3 { font-family: var(--font-display); font-weight: 520; font-size: var(--step-2); letter-spacing: -0.01em; display: grid; gap: 0.2rem; }
+  .kind { font-family: var(--font-sans); font-size: var(--step--1); font-weight: 500; color: var(--text-muted); letter-spacing: 0; }
+  .each dl { margin-top: 1rem; display: grid; gap: 0.55rem; font-size: 0.9375rem; }
+  .each dl > div { display: grid; grid-template-columns: 7.5rem 1fr; gap: 1rem; }
+  .each dt { color: var(--text); font-weight: 600; }
+  .each dd { color: var(--text-muted); }
+  .each dd a { color: inherit; }
+  .more-link { margin-top: 1rem; font-size: 0.9375rem; }
+  .faqsec { max-width: 52rem; margin-inline: auto; padding-bottom: var(--section); }
   .cta { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; align-items: center; margin-top: 3rem; }
   .caveat { font-size: var(--step--1); }
   @media (max-width: 72rem) { .hint { display: block; } }
+  @media (max-width: 52rem) { .each { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 30rem) { .each dl > div { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; } }
 </style>

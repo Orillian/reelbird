@@ -31,6 +31,8 @@
 
 It's a native Swift app with no account, no telemetry and no Reelbird server: share links point at a storage bucket you own, such as Cloudflare R2. It includes a command-line tool and an MCP server, so coding agents can record and share demos too. For now you install it by building from source on macOS 15 or later.
 
+**Why not just use Loom or Screen Studio?** Loom's free plan stops each video at 5 minutes and won't let you download it; Screen Studio costs $29 a month and gives you a link only after you export. Reelbird gives you the link when you stop and the auto-zoom polish later, under the same link, for free. [How it compares](#how-it-compares).
+
 ## How it works
 
 1. **Record.** Pick a display, a window or an area, with camera, microphone and system audio if you want them. Press ⌥⇧R from any app.
@@ -76,16 +78,18 @@ It's a native Swift app with no account, no telemetry and no Reelbird server: sh
 
 | | Reelbird | Loom | Screen Studio | Cap | OpenScreen |
 |---|---|---|---|---|---|
-| Price | Free | Free plan: 25 videos, 5 min, 720p; Business $18/user/mo | $29/mo, or $9/mo billed yearly | Free for personal use; paid from $58 one-time | Free |
-| Open source | MIT | No | No | Source available | MIT |
-| Link when you stop | Yes, to your own bucket | Yes | After export | Yes (Instant mode) | No |
+| Price | Free | Free plan; Business $18/user/mo | $29/mo, or $9/mo billed yearly | Free for personal use; paid from $29/yr | Free |
+| Free-plan limits | None | 25 videos, 5 min each, 720p | No free plan listed | Personal use, 5-min links | None |
+| Open source | MIT | No | No | AGPLv3 (some parts MIT) | MIT |
+| Link when you stop | Yes, to your own bucket | Yes, on Loom's cloud | After export | Yes (Instant mode) | No links |
 | Auto-zoom and smooth cursor | Yes | No | Yes | Yes (Studio mode) | Yes |
-| Polish an instant link later, same URL | Yes | No auto-zoom | Link comes after export | Pick Instant or Studio before recording | No links |
-| Download your video | Always | Paid plans only | Yes | Yes | Yes |
-| Platforms | Mac | Mac, Windows, web | Mac | Mac, Windows | Mac, Windows, Linux |
+| Polish an instant link later, same URL | Yes | No auto-zoom | Link comes after export | Instant and Studio are separate modes | No links |
+| Download your video | Always | Business plans and up | Yes | Yes | Yes |
+| Comments or viewer stats | No | Yes | Yes | Viewer analytics on Pro | No links |
+| Platforms | Mac | Mac, Windows, web, mobile | Mac | Mac, Windows (beta), Linux | Mac, Windows, Linux |
 | Signed download | Not yet; build from source | Yes | Yes | Yes | Yes |
 
-Prices checked 12 October 2026 on each product's own pricing page. Loom has comments, analytics and team features; Screen Studio is more mature; Cap and OpenScreen run on Windows. More detail at [reelbird.shiptiffin.app/compare](https://reelbird.shiptiffin.app/compare/).
+Checked 12 October 2026 on each vendor's own pages: [Loom pricing](https://www.loom.com/pricing), [Loom downloads](https://support.atlassian.com/loom/docs/download-your-loom-video/), [Screen Studio](https://screen.studio/), [Cap pricing](https://cap.so/pricing), [OpenScreen](https://github.com/getopenscreen/openscreen). Loom is the better team tool and runs everywhere; Screen Studio has the more mature editor; Cap and OpenScreen run on Windows and Linux. More detail, plus CleanShot X, Tella and Screenity, at [reelbird.shiptiffin.app/compare](https://reelbird.shiptiffin.app/compare/).
 
 ## Install from source
 

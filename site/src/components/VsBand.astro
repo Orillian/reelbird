@@ -1,0 +1,77 @@
+---
+// Homepage band under the hero: Loom's free plan and Screen Studio next to Reelbird, five rows,
+// dated and sourced. A real <table> so search engines and LLMs can lift it as it is.
+import { HOME_VS, CHECKED_LABEL, CHECKED_SHORT, byId } from "../data/compare";
+const loom = byId("loom");
+const ss = byId("screen-studio");
+const sources = [...loom.sources, ...ss.sources];
+const last = HOME_VS.cols.length - 1;
+const colLinks = ["/loom-alternative/", "/screen-studio-alternative/", ""];
+---
+<section class="vs wrap" aria-labelledby="vs-title">
+  <h2 id="vs-title">Why not just use Loom or Screen Studio?</h2>
+  <p class="vs-lede">Loom gets you a link fast. Screen Studio makes it look good. Reelbird does both from one take, for free.</p>
+  <div class="vs-table">
+    <table>
+      <caption class="sr-only">Reelbird compared with Loom's free Starter plan and Screen Studio, checked {CHECKED_LABEL}</caption>
+      <thead>
+        <tr>
+          <td class="corner"></td>
+          {HOME_VS.cols.map((c, i) => (
+            <th scope="col" class:list={[i === last && "ours"]}>
+              {colLinks[i] ? <a href={colLinks[i]}>{c}</a> : c}{HOME_VS.colNotes[i] && <span class="colnote">{HOME_VS.colNotes[i]}</span>}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {HOME_VS.rows.map((r) => (
+          <tr>
+            <th scope="row">{r.k}</th>
+            {r.v.map((v, i) => <td class:list={[i === last && "ours"]}>{v}</td>)}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+  <p class="vs-foot">
+    Checked {CHECKED_SHORT} on {sources.map((s, i) => <>{i > 0 && (i === sources.length - 1 ? " and " : ", ")}<a href={s.href}>{s.label}</a></>)}.
+    Where they do more: Loom has comments, view counts and apps for every platform; Screen Studio has a more mature editor and a signed download.
+    <a class="link-arrow" href="/compare/">Compare eight recorders</a>
+  </p>
+</section>
+
+<style>
+  .vs { max-width: 54rem; margin-top: clamp(2.5rem, 2rem + 1.5vw, 3rem); text-align: left; }
+  .vs h2 { font-size: var(--step-2); line-height: 1.15; letter-spacing: -0.01em; text-align: center; }
+  .vs-lede { margin: 0.5rem auto 0; max-width: 52rem; text-align: center; color: var(--text-muted); font-size: 1rem; }
+  .vs-table { margin-top: 1.25rem; }
+  table { font-size: 0.9375rem; table-layout: fixed; }
+  th, td { padding: 0.55rem 0.9rem; line-height: 1.4; }
+  .corner { width: 18%; }
+  thead th { font-size: 0.9375rem; color: var(--text); vertical-align: bottom; }
+  thead th a { color: inherit; text-decoration-color: var(--line-strong); text-underline-offset: 0.2em; }
+  .colnote { display: block; font-weight: 400; font-size: 0.8125rem; color: var(--text-muted); }
+  tbody th { font-size: 0.875rem; color: var(--text-muted); font-weight: 500; padding-left: 0; }
+  td { color: var(--text-muted); }
+  .ours { background: var(--bg-raised); color: var(--text); }
+  td.ours { font-weight: 500; }
+  thead th.ours { border-radius: var(--radius) var(--radius) 0 0; box-shadow: inset 0 2px 0 var(--text); }
+  tbody tr:last-child .ours { border-radius: 0 0 var(--radius) var(--radius); }
+  tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
+  .vs-foot { margin-top: 1rem; font-size: 0.8125rem; color: var(--text-muted); line-height: 1.55; }
+  .vs-foot a { color: inherit; }
+  .vs-foot .link-arrow { color: var(--text); font-size: 0.875rem; margin-left: 0.25rem; white-space: nowrap; }
+
+  /* Phones: each row label sits on its own line above the three values. */
+  @media (max-width: 40rem) {
+    table, thead, tbody { display: block; }
+    tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .corner { display: none; }
+    tbody th { grid-column: 1 / -1; padding: 0.9rem 0 0.3rem; border-bottom: 0; font-size: 0.8125rem; }
+    th, td { padding: 0.5rem 0.55rem; font-size: 0.8125rem; }
+    thead th { font-size: 0.875rem; }
+    td:first-of-type, thead th:first-of-type { padding-left: 0; }
+    tbody tr:last-child .ours { border-radius: 0 0 var(--radius) var(--radius); }
+  }
+</style>
