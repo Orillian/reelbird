@@ -1,0 +1,59 @@
+---
+// A short auto-zoom loop (8 s, a real export). Loads when it scrolls into view; paused for reduced motion.
+import { getImage } from "astro:assets";
+import poster from "../assets/shots/zoom-loop-poster.webp";
+interface Props { caption?: string }
+const { caption = "An 8-second loop from a Reelbird export: the camera zooms in on the click, the link is copied, and it eases back out." } = Astro.props;
+const img = await getImage({ src: poster, width: 1280, format: "webp", quality: 74 });
+---
+<figure class="clip">
+  <div class="frame wrapv">
+    <video muted loop playsinline preload="none" poster={img.src} width={poster.width} height={poster.height} data-clip aria-label={caption}>
+      <source data-src="/media/zoom-loop.webm" type="video/webm" />
+      <source data-src="/media/zoom-loop.mp4" type="video/mp4" />
+    </video>
+    <button type="button" class="pp" aria-label="Pause the clip" data-clip-toggle hidden>
+      <svg class="i-pause" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="6.5" y="5" width="3.5" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="3.5" height="14" rx="1" fill="currentColor"/></svg>
+      <svg class="i-play" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5L8 5.5Z" fill="currentColor"/></svg>
+    </button>
+  </div>
+  <figcaption>{caption}</figcaption>
+</figure>
+
+<script>
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  document.querySelectorAll<HTMLVideoElement>("video[data-clip]").forEach((v) => {
+    const io = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) {
+        if (!v.dataset.loaded) {
+          v.querySelectorAll("source").forEach((s) => (s.src = s.dataset.src!));
+          v.load();
+          v.dataset.loaded = "1";
+          if (reduce) return;
+        }
+        if (!reduce && v.dataset.user !== "paused") v.play().catch(() => {});
+      } else if (!v.paused) v.pause();
+    }, { rootMargin: "200px" });
+    io.observe(v);
+    const btn = v.parentElement?.querySelector<HTMLButtonElement>("[data-clip-toggle]");
+    if (btn) {
+      btn.hidden = false;
+      const sync = () => { btn.classList.toggle("paused", v.paused); btn.setAttribute("aria-label", v.paused ? "Play the clip" : "Pause the clip"); };
+      v.addEventListener("play", sync); v.addEventListener("pause", sync); sync();
+      btn.addEventListener("click", () => {
+        if (!v.dataset.loaded) { v.querySelectorAll("source").forEach((s) => (s.src = s.dataset.src!)); v.load(); v.dataset.loaded = "1"; }
+        if (v.paused) { v.dataset.user = ""; v.play(); } else { v.dataset.user = "paused"; v.pause(); }
+      });
+    }
+  });
+</script>
+
+<style>
+  .clip { display: grid; gap: 0.9rem; }
+  video { width: 100%; height: auto; aspect-ratio: 16 / 9; display: block; }
+  .wrapv { position: relative; }
+  .pp { position: absolute; right: 0.9rem; bottom: 0.9rem; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 999px; border: 0; color: #fff4e8; background: rgb(26 21 18 / 0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  .pp .i-play, .pp.paused .i-pause { display: none; }
+  .pp.paused .i-play { display: block; }
+  figcaption { font-size: var(--step--1); color: var(--text-muted); }
+</style>

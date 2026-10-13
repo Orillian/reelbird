@@ -1,0 +1,29 @@
+---
+import type { Faq } from "../data/faq";
+interface Props { items: Faq[]; open?: string; level?: 2 | 3 }
+const { items, open, level = 3 } = Astro.props;
+const H = level === 2 ? "h2" : "h3";
+---
+<div class="faq">
+  {items.map((f) => (
+    <details id={f.id} open={f.id === open}>
+      <summary><H class="q">{f.q}</H><span class="chev" aria-hidden="true"></span></summary>
+      <div class="a">{f.html ? <p set:html={f.html} /> : <p>{f.a}</p>}</div>
+    </details>
+  ))}
+</div>
+
+<style>
+  .faq { border-top: 1px solid var(--line); }
+  details { border-bottom: 1px solid var(--line); }
+  summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: 1.15rem 0; cursor: pointer; list-style: none;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary .q { font-size: 1.0625rem; font-weight: 600; line-height: 1.4; }
+  .chev { flex: none; width: 0.65rem; height: 0.65rem; border-right: 1.75px solid currentColor; border-bottom: 1.75px solid currentColor; rotate: 45deg; translate: 0 -25%; transition: rotate 200ms var(--ease-out); color: var(--text-muted); }
+  details[open] .chev { rotate: 225deg; translate: 0 25%; }
+  .a { padding: 0 2.5rem 1.4rem 0; color: var(--text-muted); max-width: 44rem; }
+  .a :global(a) { color: var(--text); }
+</style>

@@ -1,0 +1,117 @@
+---
+import Logo from "./Logo.astro";
+import Icon from "./Icon.astro";
+import { GITHUB_URL } from "../config/site";
+
+const nav = [
+  { href: "/features/", label: "Features" },
+  { href: "/docs/", label: "Docs" },
+  { href: "/changelog/", label: "Changelog" },
+  { href: "/support/", label: "Support" },
+];
+const path = Astro.url.pathname;
+const current = (href: string) => (path === href || (href !== "/" && path.startsWith(href)) ? "page" : undefined);
+---
+<header class="site-header">
+  <div class="wrap bar">
+    <a href="/" class="brand" aria-label="Reelbird home"><Logo class="logo" /></a>
+    <nav class="nav" aria-label="Main">
+      <ul>
+        {nav.map((n) => <li><a href={n.href} aria-current={current(n.href)}>{n.label}</a></li>)}
+      </ul>
+    </nav>
+    <div class="actions">
+      <a class="icon-btn gh" href={GITHUB_URL} aria-label="Reelbird on GitHub"><Icon name="github" /></a>
+      <button class="icon-btn theme" type="button" aria-label="Switch theme" data-theme-toggle>
+        <Icon name="sun" class="t-light" /><Icon name="moon" class="t-dark" />
+      </button>
+      <a class="btn btn-ink btn-sm dl" href="/download/">Download</a>
+      <button class="icon-btn menu-btn" type="button" popovertarget="mobile-nav" aria-label="Menu"><Icon name="menu" /></button>
+    </div>
+  </div>
+  <nav id="mobile-nav" class="mobile-nav" popover aria-label="Main">
+    <div class="mobile-head">
+      <Logo class="logo" />
+      <button class="icon-btn" type="button" popovertarget="mobile-nav" popovertargetaction="hide" aria-label="Close menu"><Icon name="close" /></button>
+    </div>
+    <ul>
+      {nav.map((n) => <li><a href={n.href} aria-current={current(n.href)}>{n.label}</a></li>)}
+      <li><a href="/download/">Download</a></li>
+      <li><a href={GITHUB_URL}>GitHub</a></li>
+    </ul>
+  </nav>
+</header>
+
+<script>
+  // Flips between light and dark. A choice that matches the system setting is forgotten,
+  // so the site follows the system again; any other choice is kept in localStorage.
+  const btn = document.querySelector<HTMLButtonElement>("[data-theme-toggle]");
+  const root = document.documentElement;
+  const mq = matchMedia("(prefers-color-scheme: dark)");
+  const effective = () => (root.dataset.theme === "light" || root.dataset.theme === "dark" ? root.dataset.theme : mq.matches ? "dark" : "light");
+  const show = () => {
+    const now = effective();
+    btn?.setAttribute("data-mode", now);
+    btn?.setAttribute("aria-label", now === "dark" ? "Switch to light theme" : "Switch to dark theme");
+  };
+  show();
+  mq.addEventListener("change", show);
+  btn?.addEventListener("click", () => {
+    const next = effective() === "dark" ? "light" : "dark";
+    const system = mq.matches ? "dark" : "light";
+    try {
+      if (next === system) { delete root.dataset.theme; localStorage.removeItem("theme"); }
+      else { root.dataset.theme = next; localStorage.setItem("theme", next); }
+    } catch { root.dataset.theme = next; }
+    show();
+  });
+</script>
+
+<style>
+  .site-header {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: saturate(1.4) blur(14px);
+    -webkit-backdrop-filter: saturate(1.4) blur(14px);
+    border-bottom: 1px solid transparent;
+    transition: border-color 200ms;
+  }
+  .bar { display: flex; align-items: center; gap: 1.5rem; height: 4rem; }
+  .brand { display: flex; align-items: center; color: var(--text); margin-right: auto; padding: 0.4rem 0; }
+  .brand :global(.logo), .mobile-head :global(.logo) { height: 1.6rem; width: auto; }
+  .nav ul { display: flex; gap: 0.25rem; list-style: none; padding: 0; }
+  .nav a, .mobile-nav a {
+    display: block; padding: 0.4rem 0.75rem; border-radius: 999px;
+    text-decoration: none; color: var(--text-muted); font-weight: 500; font-size: 0.9375rem;
+    transition: color 150ms, background-color 150ms;
+  }
+  .nav a:hover { color: var(--text); background: var(--bg-raised); }
+  .nav a[aria-current="page"] { color: var(--text); }
+  .actions { display: flex; align-items: center; gap: 0.35rem; }
+  .icon-btn {
+    display: inline-grid; place-items: center; width: 2.25rem; height: 2.25rem;
+    border: 0; border-radius: 999px; background: transparent; color: var(--text-muted);
+    transition: color 150ms, background-color 150ms;
+  }
+  .icon-btn:hover { color: var(--text); background: var(--bg-raised); }
+  .theme :global(svg) { display: none; }
+  .theme:not([data-mode]) :global(.t-light), .theme[data-mode="light"] :global(.t-light), .theme[data-mode="dark"] :global(.t-dark) { display: block; }
+  .dl { margin-left: 0.4rem; }
+  .menu-btn { display: none; }
+
+  .mobile-nav {
+    inset: 0 0 auto auto; width: min(100%, 22rem); height: 100dvh; margin: 0;
+    border: 0; border-left: 1px solid var(--line); background: var(--bg); color: var(--text);
+    padding: 0.75rem var(--gutter) 2rem;
+  }
+  .mobile-nav::backdrop { background: rgb(26 21 18 / 0.4); }
+  .mobile-head { display: flex; justify-content: space-between; align-items: center; height: 3.25rem; margin-bottom: 1rem; }
+  .mobile-nav ul { list-style: none; padding: 0; display: grid; gap: 0.15rem; }
+  .mobile-nav a { font-size: 1.25rem; padding: 0.7rem 0; color: var(--text); border-radius: 0; border-bottom: 1px solid var(--line); }
+
+  @media (max-width: 52rem) {
+    .nav, .gh { display: none; }
+    .menu-btn { display: inline-grid; }
+  }
+  @media (max-width: 22rem) { .dl { display: none; } }
+</style>

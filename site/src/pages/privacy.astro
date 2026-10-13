@@ -1,0 +1,45 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+const crumbs = [{ name: "Privacy", path: "/privacy/" }];
+---
+<Base title="Reelbird privacy: no account, no telemetry" description="Recordings stay on your Mac. No analytics, no crash reporting, no update checks. Shares go only to the bucket you configure." og="privacy" crumbs={crumbs}>
+  <PageHead title="Privacy" lede="Reelbird has no account and no server. Your recordings stay on your Mac unless you share them, and then they go only to storage you own." crumbs={crumbs} />
+  <div class="wrap">
+    <div class="prose body">
+      <h2 id="app">The app</h2>
+      <ul>
+        <li>Recordings, edits, captions and transcripts stay on your Mac, in <code>~/Movies/Reelbird</code> unless you choose another folder.</li>
+        <li>Captions and titles are made on your Mac by Apple's frameworks. No API keys and no cloud services. On macOS 26, macOS downloads Apple's speech model the first time you make captions.</li>
+        <li>Nothing is uploaded unless you share. Shares go only to the bucket you configured, signed with your own keys. The secret key lives in your macOS Keychain and is only sent to your storage endpoint as a request signature.</li>
+        <li>No analytics, no telemetry, no crash reporting and no update checks. The app never contacts a Reelbird server, because there isn't one.</li>
+      </ul>
+
+      <h2 id="links">Share links</h2>
+      <ul>
+        <li><strong>Links are unlisted, not secret.</strong> Anyone who has a link can watch the video and forward the link. Random IDs make links impossible to guess, and the bucket isn't listable, but there's no password.</li>
+        <li><strong>Sharing while recording uploads as you go.</strong> If you discard the take, Reelbird deletes everything it uploaded for it.</li>
+        <li><strong>Stop sharing</strong> deletes every file for that link. A CDN cache may serve a deleted file for a short time, and anyone who downloaded the video keeps their copy.</li>
+        <li><strong>What viewers load.</strong> The viewer page, video and captions all come from your bucket. While a share has only the live stream, browsers without built-in HLS (Chrome, Firefox) also load the hls.js player from jsDelivr, pinned to one version and integrity-checked. Once you update the link, viewers get a plain MP4 and nothing else.</li>
+      </ul>
+      <p>More in <a href="/docs/sharing/#privacy">Sharing setup → Privacy</a>.</p>
+
+      <h2 id="site">This website</h2>
+      <ul>
+        <li>No cookies, no analytics, no trackers and no third-party scripts. Fonts and media are served from this site.</li>
+        <li>Your theme choice, if you pick one, is kept in your browser's local storage and never sent anywhere.</li>
+        <li>The server that hosts this site may keep standard request logs (such as IP address, page and time) to keep it running.</li>
+        <li>The Support page links to Stripe for payments. Stripe's own privacy policy applies there.</li>
+      </ul>
+
+      <h2 id="contact">Questions</h2>
+      <p>Open an issue on <a href="https://github.com/btahir/reelbird/issues">GitHub</a>. For a security problem, follow the repository's <a href="https://github.com/btahir/reelbird/blob/main/SECURITY.md">security policy</a>.</p>
+      <p class="muted">Last updated 12 October 2026.</p>
+    </div>
+  </div>
+</Base>
+
+<style>
+  .body { padding-bottom: var(--section); }
+  .body h2:first-child { margin-top: 0; }
+</style>

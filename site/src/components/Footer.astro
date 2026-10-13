@@ -1,0 +1,55 @@
+---
+import Logo from "./Logo.astro";
+import { APP_VERSION, GITHUB_URL } from "../config/site";
+const cols = [
+  { title: "Product", links: [
+    { href: "/features/", label: "Features" },
+    { href: "/download/", label: "Download" },
+    { href: "/changelog/", label: "Changelog" },
+    { href: "/privacy/", label: "Privacy" },
+  ] },
+  { title: "Docs", links: [
+    { href: "/docs/sharing/", label: "Sharing setup" },
+    { href: "/docs/cli/", label: "Command line" },
+    { href: "/docs/mcp/", label: "MCP server" },
+    { href: "/docs/shortcuts/", label: "Shortcuts" },
+  ] },
+  { title: "Compare", links: [
+    { href: "/loom-alternative/", label: "Loom alternative" },
+    { href: "/screen-studio-alternative/", label: "Screen Studio alternative" },
+  ] },
+  { title: "Project", links: [
+    { href: GITHUB_URL, label: "GitHub" },
+    { href: `${GITHUB_URL}/issues`, label: "Report a bug" },
+    { href: "/support/", label: "Support Reelbird" },
+    { href: `${GITHUB_URL}/blob/main/LICENSE`, label: "MIT licence" },
+  ] },
+];
+---
+<footer class="site-footer">
+  <div class="wrap grid">
+    <div class="about">
+      <a href="/" aria-label="Reelbird home" class="brand"><Logo class="logo" /></a>
+      <p class="muted">A free, open-source screen recorder for the Mac. Version {APP_VERSION}.</p>
+    </div>
+    {cols.map((c) => (
+      <nav aria-label={c.title}>
+        <h2 class="col-title">{c.title}</h2>
+        <ul>{c.links.map((l) => <li><a href={l.href}>{l.label}</a></li>)}</ul>
+      </nav>
+    ))}
+  </div>
+</footer>
+
+<style>
+  .site-footer { border-top: 1px solid var(--line); padding-block: 4rem 3rem; font-size: 0.9375rem; }
+  .grid { display: grid; grid-template-columns: 1.6fr repeat(4, 1fr); gap: 2.5rem 2rem; }
+  .brand { display: inline-block; color: var(--text); }
+  .brand :global(.logo) { height: 1.5rem; width: auto; margin-bottom: 1rem; }
+  .about p { max-width: 18rem; }
+  .col-title { font-family: var(--font-sans); font-size: var(--step--1); font-weight: 600; letter-spacing: 0; color: var(--text); margin-bottom: 0.9rem; }
+  ul { list-style: none; padding: 0; display: grid; gap: 0.55rem; }
+  a { color: var(--text-muted); text-decoration: none; }
+  a:hover { color: var(--text); }
+  @media (max-width: 56rem) { .grid { grid-template-columns: repeat(2, 1fr); } .about { grid-column: 1 / -1; } }
+</style>

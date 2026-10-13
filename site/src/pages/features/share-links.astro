@@ -1,0 +1,76 @@
+---
+import Feature from "../../layouts/Feature.astro";
+import Shot from "../../components/Shot.astro";
+import Code from "../../components/Code.astro";
+import Illustration from "../../components/Illustration.astro";
+import link from "../../assets/illustrations/link.webp";
+import shareL from "../../assets/shots/share-light.webp";
+import shareD from "../../assets/shots/share-dark.webp";
+import sharingL from "../../assets/shots/settings-sharing-light.webp";
+import sharingD from "../../assets/shots/settings-sharing-dark.webp";
+---
+<Feature
+  seoTitle="Instant share links to your own bucket: Reelbird"
+  description="The link is copied when you stop and plays in any browser. Update it after editing and the URL stays the same. Hosted on your S3 or Cloudflare R2."
+  path="/features/share-links/" og="features-share-links" name="Share links"
+  title="Instant share links to your own bucket"
+  lede="With Share while recording on, the link is on your clipboard the moment you stop. Edit later, choose Update link, and the same URL plays the new version. There's no Reelbird server: the files live in a bucket you own."
+>
+  <section class="fsec wrap fgrid">
+    <div>
+      <h2>A link before you've thought about it</h2>
+      <p>When recording starts, Reelbird reserves a short ID and uploads a placeholder viewer page, so the link exists before the first frame. While you record, a 1080p stream goes up in 2-second segments. When you stop, the link is copied at once, and the last segment follows within about a second.</p>
+      <p>If the app quits mid-upload, a small journal lets the next launch finish it.</p>
+    </div>
+    <Shot src={shareL} dark={shareD} alt="The Shared popover: the link with a Copy button, a note that it plays the quick recording, and Open in Browser and Update Link buttons." sizes="(min-width: 60rem) 520px, 100vw" widths={[520, 920]} />
+  </section>
+
+  <section class="fsec wrap fgrid flip">
+    <div>
+      <h2>Polish it, keep the URL</h2>
+      <p>After you edit, <strong>Update link</strong> uploads the polished MP4 under a new revision name and switches the viewer page to it. People who already have the link see the new version next time they open it. Old revisions are deleted.</p>
+      <p><strong>Stop sharing</strong> deletes every file under that link, and it stops working.</p>
+    </div>
+    <div>
+      <p class="label">What goes in your bucket</p>
+      <pre class="tree" tabindex="0"><code>{`r/7Hk2pQx9/index.html      the viewer page (the link)
+r/7Hk2pQx9/meta.json       title, duration, chapters
+r/7Hk2pQx9/hls/            the stream from the recording
+r/7Hk2pQx9/video.2.mp4     the polished version
+r/7Hk2pQx9/poster.2.jpg    preview for link unfurls
+r/7Hk2pQx9/captions.2.vtt  captions, if you made them`}</code></pre>
+    </div>
+  </section>
+
+  <section class="fsec wrap fgrid">
+    <div>
+      <h2>Your bucket, about ten minutes, once</h2>
+      <p>Reelbird signs uploads with AWS Signature Version 4, so any S3-compatible service works: Cloudflare R2, AWS S3, Backblaze B2 or MinIO. R2 is the easy choice because it doesn't charge when people watch.</p>
+      <ul class="plain">
+        <li><strong>R2 free tier:</strong> 10 GB of storage each month and free egress. Past that, 100 GB costs about $1.35 a month (R2 pricing, October 2026).</li>
+        <li><strong>Unlisted, not secret.</strong> Anyone with a link can watch and forward it. IDs are random and the bucket isn't listable.</li>
+        <li><strong>Your keys stay on your Mac.</strong> The secret lives in the Keychain and is only used to sign requests.</li>
+      </ul>
+      <p><a class="link-arrow" href="/docs/sharing/">Set up R2 step by step</a></p>
+    </div>
+    <Shot src={sharingL} dark={sharingD} variant="frame" alt="Reelbird's Sharing settings: endpoint, bucket, region, access key, secret, public URL and prefix, with Test Connection and Save." sizes="(min-width: 60rem) 520px, 100vw" widths={[520, 1040, 1120]} class="narrow" />
+  </section>
+
+  <section class="fsec wrap term-sec">
+    <div class="term-text">
+      <h2>From the terminal too</h2>
+      <p>The command line tool uses the same settings, or environment variables on a CI machine without a Keychain.</p>
+      <p><a class="link-arrow" href="/docs/sharing/#command-line-and-ci">Command line and CI</a></p>
+    </div>
+    <Code code={"reelbird share latest              # upload and print the link\nreelbird share latest --polished   # render the edit, same link\nreelbird unshare latest            # delete it"} />
+    <Illustration src={link} size={180} class="illo-link" />
+  </section>
+</Feature>
+
+<style>
+  .label { font-size: var(--step--1); font-weight: 600; color: var(--text); margin-bottom: 0.6rem; }
+  .tree { font-size: 0.8125rem; white-space: pre; }
+  :global(.narrow) { max-width: 30rem; justify-self: center; width: 100%; }
+  .term-sec { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 6fr) auto; gap: 2.5rem; align-items: center; }
+  @media (max-width: 60rem) { .term-sec { grid-template-columns: minmax(0, 1fr); } .term-sec :global(.illo-link) { display: none; } }
+</style>

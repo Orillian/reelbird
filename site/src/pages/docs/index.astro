@@ -1,0 +1,31 @@
+---
+import { getCollection } from "astro:content";
+import Docs from "../../layouts/Docs.astro";
+import Code from "../../components/Code.astro";
+import { RELEASE_DATE } from "../../config/site";
+const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
+const updated = docs.map((d) => d.data.updated).sort().at(-1) ?? RELEASE_DATE;
+---
+<Docs title="Docs" seoTitle="Reelbird docs: install, sharing, CLI and MCP" description="Install Reelbird from source, set up share links on Cloudflare R2, and use the command-line tool and MCP server." path="/docs/" updated={updated}>
+  <p>Reelbird needs no setup to record, edit and export. These pages cover building it, sharing links from your own bucket, and driving it from a terminal or an agent.</p>
+  <ul class="doc-list">
+    {docs.map((d) => (
+      <li>
+        <a href={`/docs/${d.id}/`}><strong>{d.data.title}</strong></a>
+        <span>{d.data.description}</span>
+      </li>
+    ))}
+  </ul>
+  <h2 id="quick-start">Quick start</h2>
+  <Code code={"git clone https://github.com/btahir/reelbird.git\ncd reelbird\nmake install"} />
+  <p>Then open Reelbird from <code>/Applications</code> and look for the robin in the menu bar. Details on the <a href="/download/">download page</a>.</p>
+</Docs>
+
+<style>
+  .doc-list { list-style: none; padding: 0 !important; border-top: 1px solid var(--line); }
+  .doc-list li { display: grid; gap: 0.25rem; padding: 1rem 0; border-bottom: 1px solid var(--line); margin: 0 !important; }
+  .doc-list a { text-decoration: none; }
+  .doc-list a:hover strong { text-decoration: underline; text-decoration-color: var(--accent-text); }
+  .doc-list strong { font-weight: 600; }
+  .doc-list span { color: var(--text-muted); font-size: 0.975rem; }
+</style>

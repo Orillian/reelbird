@@ -1,0 +1,60 @@
+---
+import Feature from "../../layouts/Feature.astro";
+import Shot from "../../components/Shot.astro";
+import audioL from "../../assets/shots/editor-audio-light.webp";
+import audioD from "../../assets/shots/editor-audio-dark.webp";
+import capL from "../../assets/shots/editor-captions-light.webp";
+import capD from "../../assets/shots/editor-captions-dark.webp";
+---
+<Feature
+  seoTitle="Clean audio and on-device captions: Reelbird"
+  description="Auto levels, voice enhancement and music ducking, plus captions from Apple's on-device speech recognition. No API keys, nothing leaves your Mac."
+  path="/features/audio-captions/" og="features-audio-captions" name="Audio and captions"
+  title="Clean audio and on-device captions"
+  lede="People forgive a soft picture but not bad sound. Reelbird levels your voice, takes out room noise and ducks system audio while you speak. Captions are made on your Mac. Your original tracks are never changed."
+>
+  <section class="fsec wrap fgrid">
+    <div>
+      <h2>Your voice at a normal level</h2>
+      <p>Reelbird measures your voice (ITU-R BS.1770 integrated loudness) and sets it to <strong>−16 LUFS</strong>, so a quiet take doesn't come out quiet. A boost slider sits on top if you want more. Every track and the final mix go through a look-ahead limiter with a <strong>−1.5 dBFS</strong> ceiling, so nothing clips.</p>
+      <p>Microphone and system audio are recorded as separate tracks, so you can mute or lower system sound after the fact.</p>
+    </div>
+    <Shot src={audioL} dark={audioD} alt="The Audio inspector: Enhance voice with a strength choice, Auto level, microphone boost, and Lower system audio while speaking." sizes="(min-width: 60rem) 680px, 100vw" widths={[680, 1020, 1360, 2040, 2960]} />
+  </section>
+
+  <section class="fsec wrap">
+    <div class="cols">
+      <div>
+        <h2>Voice enhance</h2>
+        <p>On Macs that have it, Apple's sound isolation (AUSoundIsolation) removes room noise and hum. Then a downward expander, a gentle compressor, a de-esser and a small presence lift. Pick light, medium, strong or max, and blend with the original. <strong>Hear original</strong> plays the raw track at matched loudness so you can compare.</p>
+      </div>
+      <div>
+        <h2>Ducking</h2>
+        <p>System audio dips about <strong>12 dB</strong> while you speak, starting just before each phrase and coming back over 600 ms, so music and app sounds never fight your voice. Speech is found by an energy detector on your voice track, on your Mac.</p>
+      </div>
+      <div>
+        <h2>Cut Long Silences</h2>
+        <p>One action finds the long pauses and cuts them. Every cut shows on the timeline and can be restored with <kbd>Delete</kbd>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="fsec wrap fgrid flip">
+    <div>
+      <h2>Captions made on your Mac</h2>
+      <p>Captions come from Apple's on-device speech recognition: SpeechAnalyzer on macOS 26 and later, which downloads its language model the first time, and on-device recognition on macOS 15. Both give word timings, saved next to the take.</p>
+      <ul class="plain">
+        <li>Burn them into the export, or offer them as a track viewers can turn on in share links.</li>
+        <li>No API keys and no cloud. Nothing leaves your Mac unless you share it.</li>
+        <li>From the CLI, <code>reelbird suggest</code> writes a title and chapters with Apple's on-device model on Macs with Apple Intelligence.</li>
+      </ul>
+    </div>
+    <Shot src={capL} dark={capD} alt="The Captions inspector with captions shown over the recording in the preview." sizes="(min-width: 60rem) 680px, 100vw" widths={[680, 1020, 1360, 2040, 2960]} />
+  </section>
+</Feature>
+
+<style>
+  .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5rem; }
+  .cols h2 { font-size: var(--step-2) !important; }
+  @media (max-width: 60rem) { .cols { grid-template-columns: minmax(0, 1fr); } }
+</style>

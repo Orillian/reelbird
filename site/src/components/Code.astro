@@ -1,0 +1,49 @@
+---
+// A shell snippet with a copy button. `lines` are shown as-is; comments start with #.
+interface Props { code: string; label?: string; prompt?: boolean; class?: string }
+const { code, label = "Copy", prompt = true, class: cls = "" } = Astro.props;
+const lines = code.trim().split("\n");
+---
+<div class:list={["code", cls]}>
+  <pre tabindex="0"><code>{lines.map((l) => {
+    const m = l.match(/^(.*?)(\s+#.*)?$/)!;
+    return <span class="ln">{prompt && !l.startsWith("#") && <span class="p" aria-hidden="true">$ </span>}{m[1]}{m[2] && <span class="c">{m[2]}</span>}{"\n"}</span>;
+  })}</code></pre>
+  <button type="button" class="copy" data-copy={lines.filter((l) => !l.startsWith("#")).map((l) => l.replace(/\s+#.*$/, "")).join("\n")} aria-label={`${label}: ${lines[0]}`}>
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></svg>
+    <span class="copy-label">Copy</span>
+  </button>
+</div>
+
+<script>
+  document.addEventListener("click", async (e) => {
+    const btn = (e.target as Element).closest<HTMLButtonElement>("button[data-copy]");
+    if (!btn) return;
+    try {
+      await navigator.clipboard.writeText(btn.dataset.copy ?? "");
+      const label = btn.querySelector(".copy-label");
+      btn.classList.add("done");
+      if (label) label.textContent = "Copied";
+      setTimeout(() => { btn.classList.remove("done"); if (label) label.textContent = "Copy"; }, 1600);
+    } catch {}
+  });
+</script>
+
+<style>
+  /* The copy button sits in its own column, so it never covers a long line. */
+  .code { position: relative; min-width: 0; max-width: 100%; display: flex; align-items: flex-start; background: var(--code-bg); border-radius: var(--radius); }
+  pre { flex: 1; min-width: 0; margin: 0 !important; background: transparent; white-space: pre; }
+  .p { color: var(--text-muted); user-select: none; }
+  .c { color: var(--text-muted); }
+  .copy {
+    flex: none; margin: 0.55rem 0.55rem 0.55rem 0;
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    height: 2rem; padding: 0 0.65rem; border-radius: 8px;
+    border: 1px solid var(--line-strong); background: var(--bg-raised); color: var(--text-muted);
+    font-size: 0.8125rem; font-weight: 600;
+    transition: color 150ms, border-color 150ms;
+  }
+  .copy:hover { color: var(--text); border-color: var(--text-muted); }
+  .copy.done { color: var(--text); }
+  :global(.prose) .code { margin-block: 1.4em; }
+</style>

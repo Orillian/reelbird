@@ -1,0 +1,123 @@
+---
+import Base from "../../layouts/Base.astro";
+import PageHead from "../../components/PageHead.astro";
+import Shot from "../../components/Shot.astro";
+import CtaBand from "../../components/CtaBand.astro";
+import zoomL from "../../assets/shots/editor-zoom-light.webp";
+import zoomD from "../../assets/shots/editor-zoom-dark.webp";
+import shareL from "../../assets/shots/share-light.webp";
+import shareD from "../../assets/shots/share-dark.webp";
+import audioL from "../../assets/shots/editor-audio-light.webp";
+import audioD from "../../assets/shots/editor-audio-dark.webp";
+import libL from "../../assets/shots/library-light.webp";
+import libD from "../../assets/shots/library-dark.webp";
+import warnL from "../../assets/shots/controlbar-warning-light.webp";
+import warnD from "../../assets/shots/controlbar-warning-dark.webp";
+
+const main = [
+  { href: "/features/auto-zoom/", short: "auto-zoom", title: "Auto-zoom and a smooth cursor", text: "Zooms planned from your clicks and typing, a cursor redrawn so it glides, and a frame around it all. Every zoom is editable.", img: zoomL, dark: zoomD, alt: "The Zoom inspector and zoom blocks on the editor timeline." },
+  { href: "/features/share-links/", short: "share links", title: "Instant share links", text: "The link is on your clipboard when you stop. Update it after editing and the URL stays the same. Files live in your own bucket.", img: shareL, dark: shareD, alt: "The Shared popover with the link, Copy and Update Link." },
+  { href: "/features/audio-captions/", short: "audio and captions", title: "Audio and captions", text: "Auto level to −16 LUFS, on-device voice enhance, ducking, Cut Long Silences, and captions made on your Mac.", img: audioL, dark: audioD, alt: "The Audio inspector with Enhance voice, Auto level and ducking." },
+];
+const more = [
+  ["Display, window or area", "Pick any display, any window (even on another desktop) or drag out an area. Return starts, Esc closes."],
+  ["Separate tracks", "Screen, camera, microphone and system audio, each on its own track, with no virtual audio driver."],
+  ["Camera bubble", "Its own 30 fps track, so size, shape and corner can change after recording."],
+  ["Crash-safe takes", "2-second segments on disk from the first frame. A crash costs at most two seconds."],
+  ["Hide the browser toolbar", "Reelbird finds the browser chrome at the top of a recording and crops it in one click. The media is never changed."],
+  ["Keystroke overlay", "Optional. Shows the shortcuts you press, and lets auto-zoom follow typing."],
+  ["Export", "MP4 (H.264), HEVC, ProRes and GIF with hardware encoding. Landscape, square, vertical or 4:3."],
+  ["Open project format", "A .reelbird folder of MP4s, JSON and an event log, with relative paths."],
+  ["Keyboard first", "⌥⇧R records from anywhere. J, K, L, S for split, Z for zoom, ⌘E to export."],
+  ["CLI and MCP", "Everything the app does, from a terminal or a coding agent, with JSON output."],
+];
+const crumbs = [{ name: "Features", path: "/features/" }];
+---
+<Base title="Reelbird features: auto-zoom, instant links, clean audio" description="Reelbird records screen, camera and audio as separate tracks, copies a link when you stop, plans auto-zoom, cleans up audio and captions on your Mac." og="features" crumbs={crumbs}>
+  <PageHead title="Everything Reelbird does" lede="Record once. Get a link at once. Make it look and sound good later, under the same link. Here's what's in the app today, and what isn't yet." crumbs={crumbs} />
+
+  <div class="wrap rows">
+    {main.map((m, i) => (
+      <section class:list={["row", i % 2 && "flip"]} data-reveal>
+        <div>
+          <h2><a href={m.href}>{m.title}</a></h2>
+          <p>{m.text}</p>
+          <p><a class="link-arrow" href={m.href}>More on {m.short}</a></p>
+        </div>
+        <Shot src={m.img} dark={m.dark} alt={m.alt} sizes="(min-width: 60rem) 640px, 100vw" widths={[640, 960, 1280, 1920]} />
+      </section>
+    ))}
+
+    <section class="row" data-reveal>
+      <div>
+        <h2><a href="/features/agents/">CLI and MCP for agents</a></h2>
+        <p>Claude Code, Codex or Cursor can list screens, record a demo of the change they made, export it and hand you the link.</p>
+        <p><a class="link-arrow" href="/features/agents/">More on the CLI and MCP</a></p>
+      </div>
+      <pre class="mini" tabindex="0"><code><span class="d">$</span> reelbird record --display 1 --duration 20 --share{"\n"}<span class="d">$</span> reelbird edit latest --set zoom.intensity=0.7{"\n"}<span class="d">$</span> reelbird share latest --polished{"\n"}<span class="d"># same link, polished video</span></code></pre>
+    </section>
+
+    <section class="row flip" data-reveal>
+      <div>
+        <h2>Warnings while it matters</h2>
+        <p>A silent microphone, stalled capture, audio drift, a filling disk or uploads falling behind show up on the recording bar during the take, not after.</p>
+      </div>
+      <Shot src={warnL} dark={warnD} variant="frame" alt="The recording bar with a warning above it: Your mic is silent. Is it muted? Check Sound Settings." sizes="(min-width: 60rem) 620px, 100vw" widths={[620, 1240]} />
+    </section>
+  </div>
+
+  <section class="wrap more" aria-labelledby="more-title">
+    <h2 id="more-title">And the rest</h2>
+    <dl>{more.map(([t, d]) => <div><dt>{t}</dt><dd>{d}</dd></div>)}</dl>
+  </section>
+
+  <section class="wrap more" aria-labelledby="library-title">
+    <div class="lib">
+      <div>
+        <h2 id="library-title">A library of every take</h2>
+        <p class="muted">⇧⌘L opens it. Shared takes are marked, recovered ones too.</p>
+      </div>
+      <Shot src={libL} dark={libD} alt="The Reelbird library: a grid of recordings with durations, some marked Shared and one Recovered." sizes="(min-width: 60rem) 760px, 100vw" widths={[760, 1140, 1520, 2480]} />
+    </div>
+  </section>
+
+  <section class="wrap more" aria-labelledby="not-yet">
+    <h2 id="not-yet">Not there yet</h2>
+    <ul class="plain">
+      <li><strong>Joining clips.</strong> The project format can append takes; the editor has no UI for it yet.</li>
+      <li><strong>Annotations.</strong> Arrows, boxes, text and blur. The renderer draws them; the editor can't add them yet.</li>
+      <li><strong>Zooms that track the focused text field.</strong> Zooms follow clicks and typing bursts today.</li>
+      <li><strong>Titles and chapters in the app.</strong> Available from the CLI and MCP.</li>
+      <li><strong>A signed, notarised download.</strong> For now you build from source.</li>
+    </ul>
+  </section>
+
+  <CtaBand />
+</Base>
+
+<style>
+  .rows { display: grid; gap: clamp(4rem, 3rem + 4vw, 7rem); padding-block: 1rem var(--section); }
+  .row { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(2rem, 1rem + 4vw, 5rem); align-items: center; }
+  .row.flip > :first-child { order: 2; }
+  .row h2 { font-size: var(--step-3); }
+  .row h2 a { text-decoration: none; }
+  .row p { margin-top: 1rem; color: var(--text-muted); }
+  .mini { background: #1a1512; color: #fff4e8; border-radius: var(--radius-lg); padding: 1.5rem; font-size: 0.8125rem; line-height: 1.8; white-space: pre-wrap; box-shadow: var(--shadow-frame); }
+  .mini .d { color: #a69c93; }
+  .more { padding-block: clamp(3rem, 2rem + 3vw, 5rem); border-top: 1px solid var(--line); }
+  .more h2 { font-size: var(--step-3); margin-bottom: 2rem; }
+  .more dl { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 3rem; border-top: 1px solid var(--line); }
+  .more dl > div { padding: 1.1rem 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 12rem 1fr; gap: 1rem; }
+  .more dt { font-weight: 600; }
+  .more dd { color: var(--text-muted); font-size: 0.975rem; }
+  .lib { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 3rem; align-items: center; }
+  .lib h2 { margin-bottom: 1rem; }
+  .plain { padding-left: 1.1rem; display: grid; gap: 0.7rem; color: var(--text-muted); }
+  .plain strong { color: var(--text); font-weight: 600; }
+  @media (max-width: 60rem) {
+    .row, .lib { grid-template-columns: minmax(0, 1fr); }
+    .row.flip > :first-child { order: 0; }
+    .more dl { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 40rem) { .more dl > div { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; } }
+</style>

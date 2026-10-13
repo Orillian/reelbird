@@ -1,0 +1,88 @@
+---
+// The hero clip: a real Reelbird export. The poster is the LCP image; the video loads after the page
+// has loaded, plays muted on a loop, and stays paused for people who ask for reduced motion.
+import { getImage } from "astro:assets";
+import poster from "../assets/shots/hero-poster.webp";
+import Icon from "./Icon.astro";
+
+interface Props { src: string; alt: string }
+const { src, alt } = Astro.props;
+const sizes = "(min-width: 72rem) 1104px, calc(100vw - 2rem)";
+const widths = [640, 960, 1280, 1600];
+const avif = await getImage({ src: poster, widths, format: "avif", quality: 60 });
+const webp = await getImage({ src: poster, widths, format: "webp", quality: 72 });
+const fallback = await getImage({ src: poster, width: 1280, format: "webp", quality: 72 });
+---
+<figure class="hero-video frame" data-hero-video>
+  <picture>
+    <source type="image/avif" srcset={avif.srcSet.attribute} sizes={sizes} />
+    <source type="image/webp" srcset={webp.srcSet.attribute} sizes={sizes} />
+    <img src={fallback.src} width={poster.width} height={poster.height} alt={alt} fetchpriority="high" decoding="async" class="poster" />
+  </picture>
+  <video muted loop playsinline preload="none" data-src={src} aria-hidden="true" tabindex="-1" width={poster.width} height={poster.height}></video>
+  <button type="button" class="toggle" aria-label="Pause the clip" data-video-toggle hidden>
+    <span class="i-pause" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><rect x="6.5" y="5" width="3.5" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="3.5" height="14" rx="1" fill="currentColor"/></svg></span>
+    <span class="i-play" aria-hidden="true"><Icon name="play" size={16} /></span>
+  </button>
+</figure>
+
+<script>
+  const fig = document.querySelector<HTMLElement>("[data-hero-video]");
+  const video = fig?.querySelector("video");
+  const btn = fig?.querySelector<HTMLButtonElement>("[data-video-toggle]");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const conn = (navigator as any).connection;
+  const saveData = conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType ?? "");
+
+  function setState(playing: boolean) {
+    fig?.classList.toggle("is-paused", !playing);
+    btn?.setAttribute("aria-label", playing ? "Pause the clip" : "Play the clip");
+  }
+  function load(play: boolean) {
+    if (!video || video.src) return;
+    video.src = video.dataset.src!;
+    video.addEventListener("playing", () => { fig?.classList.add("is-playing"); setState(true); }, { once: true });
+    if (play) video.play().catch(() => setState(false));
+  }
+  if (video && btn) {
+    btn.hidden = false;
+    setState(false);
+    btn.addEventListener("click", () => {
+      if (!video.src) { load(true); return; }
+      if (video.paused) { video.play(); setState(true); } else { video.pause(); setState(false); }
+    });
+    if (!reduce && !saveData) {
+      // Start on the first sign of a person (pointer, touch, scroll, key) or after a few quiet seconds,
+      // so decoding never competes with the first paint. The poster is the clip's first frame.
+      const kick = () => { off(); load(true); };
+      const evs = ["pointermove", "pointerdown", "touchstart", "scroll", "keydown"] as const;
+      const off = () => { evs.forEach((e) => removeEventListener(e, kick)); clearTimeout(timer); };
+      evs.forEach((e) => addEventListener(e, kick, { once: true, passive: true }));
+      const timer = setTimeout(kick, 5000);
+    }
+    // Pause off-screen to save battery.
+    new IntersectionObserver(([e]) => {
+      if (!video.src || fig?.classList.contains("is-paused")) return;
+      if (e.isIntersecting) video.play().catch(() => {}); else video.pause();
+    }).observe(fig!);
+  }
+</script>
+
+<style>
+  .hero-video { position: relative; aspect-ratio: 16 / 9; }
+  .poster, video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  video { opacity: 0; transition: opacity 500ms ease; }
+  .is-playing video { opacity: 1; }
+  .toggle {
+    position: absolute; right: 0.9rem; bottom: 0.9rem; z-index: 2;
+    display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 999px;
+    border: 0; color: #fff4e8; background: rgb(26 21 18 / 0.55);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    opacity: 0.85; transition: opacity 150ms, background-color 150ms;
+  }
+  .toggle:hover { opacity: 1; background: rgb(26 21 18 / 0.75); }
+  .i-play { display: none; }
+  .is-paused .i-play { display: block; }
+  .is-paused .i-pause { display: none; }
+  .toggle :global(svg) { display: block; }
+</style>

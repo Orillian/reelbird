@@ -27,3 +27,8 @@ launch/
 
 # Launch video workspace (HyperFrames projects, captures, music)
 /launch/
+
+# Website build outputs (site/)
+site/dist/
+site/node_modules/
+site/.astro/

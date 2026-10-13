@@ -1,0 +1,178 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import Code from "../components/Code.astro";
+import Icon from "../components/Icon.astro";
+import { GITHUB_URL, PREBUILT, APP_VERSION, REQUIREMENTS } from "../config/site";
+
+const permissions = [
+  ["Screen & System Audio Recording", "Recording the screen and system sound. Required."],
+  ["Microphone", "Your voice."],
+  ["Camera", "The camera bubble."],
+  ["Accessibility and Input Monitoring", "Optional. The keystroke overlay (Settings… → Recording → Record keystrokes)."],
+  ["Speech Recognition", "Captions on macOS 15 only. macOS 26 and later doesn't ask."],
+];
+---
+<Base
+  title="Download Reelbird: build it from source on macOS 15+"
+  description="Install Reelbird, the free open-source Mac screen recorder: clone and run make install. Runs on macOS 15+; builds with the Xcode 26 Command Line Tools."
+  og="download"
+  crumbs={[{ name: "Download", path: "/download/" }]}
+>
+  <PageHead
+    title="Get Reelbird"
+    lede="Reelbird is free and open source. There's no signed download yet, so you build it from the source code. It takes a few minutes, needs no Xcode, and you only do it once."
+    crumbs={[{ name: "Download", path: "/download/" }]}
+  />
+
+  <div class="wrap layout">
+    <div class="main">
+      {PREBUILT.enabled && (
+        <section class="prebuilt" aria-labelledby="prebuilt-title">
+          <h2 id="prebuilt-title">Prebuilt app</h2>
+          <p class="muted">{PREBUILT.note}</p>
+          <a class="btn btn-primary" href={PREBUILT.url}><Icon name="download" />{PREBUILT.label}</a>
+          <p class="muted small">Prefer to build it yourself? The steps are below.</p>
+        </section>
+      )}
+
+      <ol class="steps">
+        <li id="tools">
+          <h2>Install Apple's Command Line Tools</h2>
+          <p>You need the Command Line Tools for Xcode 26 or later, which bring Swift 6.2 and the macOS 26 SDK. They install on macOS 15.6 and later. Xcode 26 works too, but you don't need it.</p>
+          <Code code="xcode-select --install" />
+          <p class="muted">Already have them? Check the Swift version. It needs to say 6.2 or later; if it doesn't, update the tools in System Settings → General → Software Update.</p>
+          <Code code="swift --version" />
+        </li>
+        <li id="build">
+          <h2>Clone and build</h2>
+          <Code code={`git clone ${GITHUB_URL}.git\ncd reelbird\nmake install`} />
+          <p><code>make install</code> builds a release copy of the app and copies it to <code>/Applications</code>. If Reelbird is already there, it asks before replacing it. Run <code>make</code> to see every target.</p>
+        </li>
+        <li id="open">
+          <h2>Open it</h2>
+          <Code code="open /Applications/Reelbird.app" />
+          <p>Reelbird lives in the menu bar. Look for the robin. <kbd>⌥</kbd><kbd>⇧</kbd><kbd>R</kbd> starts a recording from any app.</p>
+        </li>
+        <li id="permissions">
+          <h2>Allow the permissions</h2>
+          <p>The welcome tour asks for each one in turn. You can change them later in <strong>Settings… → Permissions</strong> or in <strong>System Settings → Privacy &amp; Security</strong>.</p>
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">Permissions Reelbird asks for</caption>
+              <thead><tr><th scope="col">Permission</th><th scope="col">Needed for</th></tr></thead>
+              <tbody>{permissions.map(([p, n]) => <tr><th scope="row">{p}</th><td>{n}</td></tr>)}</tbody>
+            </table>
+          </div>
+          <p class="note"><strong>Screen Recording takes effect only after Reelbird reopens.</strong> After you turn it on, choose <strong>Quit &amp; Reopen</strong> in Reelbird.</p>
+        </li>
+      </ol>
+
+      <section class="extra" aria-labelledby="optional-title">
+        <h2 id="optional-title">Optional, and worth it</h2>
+
+        <h3 id="signing">Keep permissions across rebuilds</h3>
+        <p>By default the app is signed ad hoc, and that signature changes with every build, so macOS forgets the Screen Recording permission each time you rebuild. A local signing certificate fixes that. Create it once:</p>
+        <Code code={`scripts/dev-signing.sh\nexport RB_SIGN_IDENTITY="Reelbird Local Signing"   # add this to your ~/.zshrc\nmake install`} />
+        <p class="muted">The certificate stays in your login keychain and is only trusted for signing your own builds. The first build asks whether <code>codesign</code> may use the key: choose <strong>Always Allow</strong>. <code>scripts/dev-signing.sh --remove</code> deletes it.</p>
+
+        <h3 id="cli">Put the command line tool on your PATH</h3>
+        <Code code={`mkdir -p ~/.local/bin\nln -sf /Applications/Reelbird.app/Contents/Helpers/reelbird ~/.local/bin/reelbird`} />
+        <p class="muted">Then <code>reelbird help</code>. The <a href="/docs/cli/">command line docs</a> and <a href="/docs/mcp/">MCP setup</a> have the rest.</p>
+
+        <h3 id="sharing">Set up share links</h3>
+        <p>Recording, editing and export work without it. For links, connect a storage bucket you own, once. Cloudflare R2's free tier covers most people. <a href="/docs/sharing/">Sharing setup, step by step</a>.</p>
+
+        <h3 id="update">Update</h3>
+        <Code code={`cd reelbird\ngit pull\nmake install`} />
+
+        <h3 id="uninstall">Uninstall</h3>
+        <p>Quit Reelbird from the menu bar and delete <code>/Applications/Reelbird.app</code>. Your recordings stay in <code>~/Movies/Reelbird</code> until you delete them. Sharing settings are in <code>~/Library/Application Support/Reelbird</code>, and the sharing secret is the <code>app.reelbird.share</code> item in Keychain Access.</p>
+      </section>
+
+      <section class="extra" aria-labelledby="trouble-title">
+        <h2 id="trouble-title">If something goes wrong</h2>
+        <dl class="qa">
+          <div>
+            <dt>The build says the Swift tools version is too old</dt>
+            <dd>Reelbird needs the Command Line Tools for Xcode 26 or later (Swift 6.2). Update them in <strong>System Settings → General → Software Update</strong>, or run <code>softwareupdate --list</code>. They install on macOS 15.6 and later, so update macOS first if you're on an earlier 15.x.</dd>
+          </div>
+          <div>
+            <dt>Every Package.swift fails with a SwiftPM error</dt>
+            <dd>Some Command Line Tools installs ship a stale SwiftPM file. Reelbird's scripts detect it and work around it, so use <code>make</code> rather than calling <code>swift</code> yourself.</dd>
+          </div>
+          <div>
+            <dt>Reelbird says Screen Recording is off, but the switch is on</dt>
+            <dd>Quit and reopen Reelbird. If it still fails after a rebuild, remove Reelbird from the Screen Recording list, reopen it and allow it again, then set up <a href="#signing">local signing</a> so it sticks.</dd>
+          </div>
+          <div>
+            <dt>macOS asks every month whether Reelbird may record the screen</dt>
+            <dd>That prompt comes from macOS, which asks you now and then to confirm apps that record the screen. Choose to keep allowing it.</dd>
+          </div>
+        </dl>
+        <p><a class="link-arrow" href="/docs/troubleshooting/">More troubleshooting</a></p>
+      </section>
+    </div>
+
+    <aside class="side" aria-label="Requirements">
+      <div class="req">
+        <h2>Requirements</h2>
+        <ul>
+          <li><strong>{REQUIREMENTS.runs}</strong> to run it. Mac only; Windows and Linux aren't planned.</li>
+          <li><strong>{REQUIREMENTS.tools}</strong> to build it: {REQUIREMENTS.toolsDetail}</li>
+          <li>{REQUIREMENTS.hardware}</li>
+          <li><strong>A few minutes</strong> for the first build.</li>
+        </ul>
+        <h3>Some features need newer systems</h3>
+        <ul class="muted">
+          <li>Captions use SpeechAnalyzer on macOS 26 and on-device speech recognition on macOS 15.</li>
+          <li>Titles and chapters (CLI and MCP) need macOS 26 with Apple Intelligence.</li>
+        </ul>
+        <p class="ver">Version {APP_VERSION} · <a href="/changelog/">Changelog</a></p>
+        <a class="btn btn-ghost btn-sm" href={GITHUB_URL}><Icon name="github" size={18} />View the source</a>
+      </div>
+    </aside>
+  </div>
+</Base>
+
+<style>
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 20rem; gap: clamp(2rem, 1rem + 4vw, 5rem); padding-bottom: var(--section); align-items: start; }
+  .main { max-width: 44rem; min-width: 0; }
+  .prebuilt { border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 3rem; display: grid; gap: 0.9rem; justify-items: start; }
+  .prebuilt h2 { font-size: var(--step-2); }
+  .small { font-size: var(--step--1); }
+  .steps { list-style: none; padding: 0; counter-reset: s; display: grid; gap: 3rem; }
+  .steps > li { counter-increment: s; position: relative; padding-left: 3.5rem; display: grid; gap: 1rem; }
+  .steps > li::before {
+    content: counter(s); position: absolute; left: 0; top: -0.15rem;
+    display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: 999px;
+    border: 1px solid var(--line-strong); font-family: var(--font-display); font-size: 1.05rem;
+  }
+  .steps > li:not(:last-child)::after { content: ""; position: absolute; left: 1.125rem; top: 2.6rem; bottom: -2.4rem; width: 1px; background: var(--line); }
+  .steps h2 { font-size: var(--step-2); }
+  .steps p { color: var(--text-muted); }
+  .steps p strong { color: var(--text); font-weight: 600; }
+  .steps .note { color: var(--text); }
+  th[scope="row"] { color: var(--text); font-size: 0.95rem; font-weight: 600; }
+  .extra { margin-top: 4.5rem; padding-top: 3rem; border-top: 1px solid var(--line); display: grid; gap: 1rem; }
+  .extra h2 { font-size: var(--step-3); }
+  .extra h3 { margin-top: 1.5rem; }
+  .qa { display: grid; gap: 1.5rem; }
+  .qa dt { font-weight: 600; }
+  .qa dd { color: var(--text-muted); margin-top: 0.3rem; }
+  .side { position: sticky; top: 6rem; }
+  .req { border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: 1.5rem; background: var(--bg-raised); display: grid; gap: 0.9rem; justify-items: start; }
+  .req h2 { font-family: var(--font-sans); font-size: 1rem; font-weight: 600; letter-spacing: 0; }
+  .req h3 { font-size: 0.9375rem; margin-top: 0.5rem; }
+  .req ul { padding-left: 1.1rem; display: grid; gap: 0.45rem; font-size: 0.9375rem; }
+  .req strong { font-weight: 600; }
+  .ver { font-size: var(--step--1); color: var(--text-muted); }
+  @media (max-width: 60rem) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .side { position: static; order: -1; }
+  }
+  @media (max-width: 40rem) {
+    .steps > li { padding-left: 0; padding-top: 3rem; }
+    .steps > li::after { display: none; }
+  }
+</style>

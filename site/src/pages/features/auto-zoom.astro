@@ -1,0 +1,49 @@
+---
+import Feature from "../../layouts/Feature.astro";
+import Shot from "../../components/Shot.astro";
+import BeforeAfter from "../../components/BeforeAfter.astro";
+import ClipLoop from "../../components/ClipLoop.astro";
+import zoomL from "../../assets/shots/editor-zoom-light.webp";
+import zoomD from "../../assets/shots/editor-zoom-dark.webp";
+import cursorL from "../../assets/shots/editor-cursor-light.webp";
+import cursorD from "../../assets/shots/editor-cursor-dark.webp";
+---
+<Feature
+  seoTitle="Auto-zoom screen recorder for Mac, free: Reelbird"
+  description="Reelbird plans zooms from your clicks and redraws the cursor so it glides. One slider sets how strong the zoom is; edit every zoom on the timeline."
+  path="/features/auto-zoom/" og="features-auto-zoom" name="Auto-zoom"
+  title="Auto-zoom and a smooth cursor"
+  lede="Reelbird zooms in where you click and eases back out, and redraws your cursor so it glides. You record normally; the polish is planned afterwards from what you did."
+>
+  <section class="fsec wrap"><BeforeAfter /></section>
+
+  <section class="fsec wrap fgrid">
+    <div>
+      <h2>Planned from your clicks</h2>
+      <p>While you record, Reelbird logs every click, scroll and pointer move next to the video, on the same clock. When you open the take, it plans a zoom for each burst of clicks or typing: in on the click, held while you work there, out when you move on.</p>
+      <p>The camera moves on a log scale with a critically damped spring, so zooms start and stop softly instead of snapping, and it's anchored on the point you clicked.</p>
+    </div>
+    <ClipLoop />
+  </section>
+
+  <section class="fsec wrap fgrid flip">
+    <div>
+      <h2>One slider, then every zoom is yours</h2>
+      <p>The Zoom inspector has <strong>Auto</strong>, <strong>Manual</strong> and <strong>Off</strong>. In Auto, one slider runs from subtle to punchy. On the timeline, each zoom is a block you can move, stretch or delete, with its own depth and focus. <kbd>Z</kbd> adds one at the playhead.</p>
+      <ul class="plain">
+        <li>Auto zooms ignore clicks outside a crop, so hiding the browser toolbar doesn't send the camera there.</li>
+        <li>With <strong>Record keystrokes</strong> on, a burst of typing gets its own zoom too, framed around where you clicked to type. Zooms that track the focused text field as it moves are on the roadmap.</li>
+      </ul>
+    </div>
+    <Shot src={zoomL} dark={zoomD} alt="The Zoom inspector: Auto selected, a Subtle to Punchy slider, Add at Playhead, and the selected zoom's depth, focus and time, above zoom blocks on the timeline." sizes="(min-width: 60rem) 680px, 100vw" widths={[680, 1020, 1360, 2040, 2960]} />
+  </section>
+
+  <section class="fsec wrap fgrid">
+    <div>
+      <h2>A cursor that glides</h2>
+      <p>The system cursor is hidden while you record and drawn again from the event log, resampled and spring-damped. It moves smoothly instead of jittering. Make it bigger, hide it, or turn click effects on, after the fact.</p>
+      <p><strong>Preview is the export.</strong> One Metal compositor draws both, from the same plan: background, padded rounded screen with a shadow, zoom, cursor, click effects, camera bubble and captions. What you watched is what you get.</p>
+    </div>
+    <Shot src={cursorL} dark={cursorD} variant="frame" alt="The Cursor inspector in the Reelbird editor, with cursor size, smoothing and click effect settings." sizes="(min-width: 60rem) 680px, 100vw" widths={[680, 1020, 1360, 2040]} />
+  </section>
+</Feature>

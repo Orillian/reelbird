@@ -1,0 +1,22 @@
+---
+import Base from "../../layouts/Base.astro";
+import PageHead from "../../components/PageHead.astro";
+const crumbs = [{ name: "Guides", path: "/guides/" }];
+const guides = [
+  { href: "/guides/record-mac-screen-with-internal-audio/", title: "Record your Mac screen with internal audio", text: "System audio, microphone and screen together on macOS 15 and later, with no virtual audio driver." },
+];
+---
+<Base title="Reelbird guides" description="Step-by-step guides for recording your Mac screen with Reelbird, the free, open-source screen recorder." og="home" crumbs={crumbs}>
+  <PageHead title="Guides" lede="Step by step, with the caveats." crumbs={crumbs} />
+  <div class="wrap list">
+    <ul>{guides.map((g) => <li><a href={g.href}><strong>{g.title}</strong></a><span>{g.text}</span></li>)}</ul>
+  </div>
+</Base>
+<style>
+  .list { padding-bottom: var(--section); }
+  ul { list-style: none; padding: 0; border-top: 1px solid var(--line); max-width: 46rem; }
+  li { display: grid; gap: 0.25rem; padding: 1.25rem 0; border-bottom: 1px solid var(--line); }
+  a { text-decoration: none; font-size: 1.125rem; }
+  strong { font-weight: 600; }
+  span { color: var(--text-muted); }
+</style>

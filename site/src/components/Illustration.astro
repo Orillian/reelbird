@@ -1,0 +1,14 @@
+---
+// A brand illustration (brand/illustrations). Pass `dark` where an ink variant exists.
+// The robin appears at most once per screen.
+import { Picture } from "astro:assets";
+import type { ImageMetadata } from "astro";
+interface Props { src: ImageMetadata; dark?: ImageMetadata; size?: number; class?: string; eager?: boolean }
+const { src, dark, size = 200, class: cls = "", eager = false } = Astro.props;
+const widths = [size, size * 2].filter((w) => w <= src.width);
+const common = { widths, sizes: `${size}px`, formats: ["avif", "webp"] as const, fallbackFormat: "webp" as const, alt: "", loading: eager ? ("eager" as const) : ("lazy" as const), width: size, height: size };
+---
+<div class:list={["illo", cls]} style={`width:${size}px`} aria-hidden="true">
+  <Picture src={src} {...common} class:list={[dark && "only-light"]} />
+  {dark && <Picture src={dark} {...common} class="only-dark" />}
+</div>

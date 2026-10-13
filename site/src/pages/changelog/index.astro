@@ -1,0 +1,44 @@
+---
+import Base from "../../layouts/Base.astro";
+import PageHead from "../../components/PageHead.astro";
+import { RELEASES } from "../../data/changelog";
+import { GITHUB_URL } from "../../config/site";
+const fmt = (d: string) => new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+const crumbs = [{ name: "Changelog", path: "/changelog/" }];
+---
+<Base title="Reelbird changelog" description="What changed in each Reelbird release." og="changelog" crumbs={crumbs}>
+  <PageHead title="Changelog" lede="What changed in each release of Reelbird." crumbs={crumbs}>
+    <p class="feeds"><a href="/changelog/rss.xml">RSS feed</a> · <a href={`${GITHUB_URL}/commits/main`}>Every commit on GitHub</a></p>
+  </PageHead>
+  <div class="wrap list">
+    {RELEASES.map((r) => (
+      <article class="release" id={`v${r.version}`}>
+        <div class="when">
+          <h2><a href={`#v${r.version}`}>{r.version}</a></h2>
+          <time datetime={r.date}>{fmt(r.date)}</time>
+        </div>
+        <div class="what">
+          <h3>{r.title}</h3>
+          <p class="muted">{r.summary}</p>
+          <ul>{r.notes.map((n) => <li>{n}</li>)}</ul>
+        </div>
+      </article>
+    ))}
+  </div>
+</Base>
+
+<style>
+  .feeds { margin-top: 1rem; font-size: var(--step--1); color: var(--text-muted); }
+  .feeds a { color: inherit; }
+  .list { padding-bottom: var(--section); }
+  .release { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 2rem; padding-block: 2.5rem; border-top: 1px solid var(--line); }
+  .when h2 { font-size: var(--step-3); }
+  .when h2 a { text-decoration: none; }
+  .when time { color: var(--text-muted); font-size: var(--step--1); }
+  .what { max-width: 44rem; }
+  .what h3 { font-size: var(--step-2); font-family: var(--font-display); font-weight: 520; }
+  .what p { margin-top: 0.6rem; }
+  .what ul { margin-top: 1.25rem; padding-left: 1.1rem; display: grid; gap: 0.55rem; }
+  .what li::marker { color: var(--text-muted); }
+  @media (max-width: 40rem) { .release { grid-template-columns: minmax(0, 1fr); gap: 1rem; } }
+</style>

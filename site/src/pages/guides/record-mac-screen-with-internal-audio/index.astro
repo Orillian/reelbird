@@ -1,0 +1,76 @@
+---
+import Base from "../../../layouts/Base.astro";
+import PageHead from "../../../components/PageHead.astro";
+import Shot from "../../../components/Shot.astro";
+import Code from "../../../components/Code.astro";
+import Icon from "../../../components/Icon.astro";
+import { article } from "../../../lib/jsonld";
+import pickerL from "../../../assets/shots/picker-light.webp";
+import pickerD from "../../../assets/shots/picker-dark.webp";
+import audioL from "../../../assets/shots/editor-audio-light.webp";
+import audioD from "../../../assets/shots/editor-audio-dark.webp";
+const path = "/guides/record-mac-screen-with-internal-audio/";
+const title = "Record your Mac screen with internal audio, free";
+const description = "How to record system audio, mic and screen together on macOS 15 and later, with no virtual audio driver, using Reelbird. Step by step, with caveats.";
+const crumbs = [{ name: "Guides", path: "/guides/" }, { name: "Record with internal audio", path }];
+---
+<Base title={title} description={description} og="guide-internal-audio" crumbs={crumbs} type="article" schema={[article({ title, description, path, datePublished: "2026-10-12" })]}>
+  <PageHead title="How to record your Mac screen with internal audio" lede="On macOS 15 and later, Reelbird records the sound your Mac plays (system audio) together with your screen and microphone, with no virtual audio driver to install. It's free and open source. Here's how, start to finish." crumbs={crumbs} />
+  <div class="wrap">
+    <div class="prose body">
+      <h2 id="before">Before you start</h2>
+      <ul>
+        <li>A Mac on <strong>macOS 15 or later</strong>. System audio capture comes from Apple's ScreenCaptureKit, which records it on the same clock as the screen.</li>
+        <li>Reelbird installed. It's built from source in a few minutes: see <a href="/download/">Download</a>.</li>
+      </ul>
+
+      <h2 id="steps">Steps</h2>
+      <ol>
+        <li><strong>Open the picker.</strong> Press <kbd>⌥</kbd><kbd>⇧</kbd><kbd>R</kbd> in any app, or click the robin in the menu bar and choose a new recording.</li>
+        <li><strong>Choose what to record:</strong> a whole display, one window, or an area you drag out.</li>
+        <li><strong>Turn on System audio.</strong> Turn on Microphone too if you're narrating, and pick the microphone from the menu next to it. The level meter moves when it hears you.</li>
+        <li><strong>Allow Screen &amp; System Audio Recording</strong> the first time macOS asks, then choose <strong>Quit &amp; Reopen</strong> in Reelbird. The permission only applies after a restart.</li>
+        <li><strong>Start Recording.</strong> Return starts, Esc closes the picker. A short countdown runs; Return, Space or a click skips it.</li>
+        <li><strong>Stop</strong> with <kbd>⌥</kbd><kbd>⇧</kbd><kbd>R</kbd> or the Stop button. The take opens in the editor.</li>
+        <li><strong>Balance the sound</strong> in the Audio inspector (<kbd>⌘</kbd><kbd>6</kbd>): lower or mute system audio, leave ducking on so it dips while you speak, and let auto level set your voice.</li>
+        <li><strong>Export</strong> with <kbd>⌘</kbd><kbd>E</kbd> (MP4, HEVC, ProRes or GIF), or share a link.</li>
+      </ol>
+    </div>
+
+    <div class="shots">
+      <Shot src={pickerL} dark={pickerD} alt="The picker with Microphone, Camera, System audio and Share while recording switches." sizes="(min-width: 60rem) 520px, 100vw" widths={[520, 1040, 1560]} />
+      <Shot src={audioL} dark={audioD} alt="The editor's Audio inspector with system audio and ducking controls." sizes="(min-width: 60rem) 620px, 100vw" widths={[620, 1240, 1860]} />
+    </div>
+
+    <div class="prose body">
+      <h2 id="why-separate">Why separate tracks help</h2>
+      <p>Reelbird keeps system audio and your microphone as separate tracks. If a notification chimes or the music is too loud, you can turn system audio down or off after recording without touching your voice. Ducking lowers system audio by about 12 dB while you speak.</p>
+
+      <h2 id="terminal">From the terminal</h2>
+      <p>The command line tool records the same way. Run <code>reelbird sources</code> to see IDs, then record a display for a set time. When you record from a terminal, macOS asks for Screen Recording permission for the terminal app, not for Reelbird.</p>
+      <Code code={"reelbird sources\nreelbird record --display 1 --duration 30"} />
+
+      <h2 id="caveats">Caveats</h2>
+      <ul>
+        <li>Some protected video, such as content from streaming services, may record as black or silent. That's macOS, not Reelbird.</li>
+        <li>Bluetooth headsets switch to a low-quality mode while their microphone is in use. For narration, a wired or built-in microphone sounds better.</li>
+        <li>macOS asks every so often to confirm apps that record the screen. Choose to keep allowing Reelbird.</li>
+        <li>If the recording bar warns that the microphone is silent, check that the right input is selected and not muted.</li>
+      </ul>
+      <p class="muted">Published 12 October 2026.</p>
+    </div>
+
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/"><Icon name="download" />Get Reelbird — free</a>
+      <span class="muted">Build from source on macOS 15 or later. Mac only.</span>
+    </div>
+  </div>
+</Base>
+
+<style>
+  .body { padding-bottom: 1rem; }
+  .body h2:first-child { margin-top: 0; }
+  .shots { display: grid; grid-template-columns: 5fr 7fr; gap: 2rem; align-items: center; margin-block: 3rem; }
+  .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; padding-block: 3rem var(--section); font-size: var(--step--1); }
+  @media (max-width: 48rem) { .shots { grid-template-columns: minmax(0, 1fr); } }
+</style>
