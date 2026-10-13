@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SITE = "https://reelbird.shiptiffin.app";
+const SITE = "https://reelbird.app";
 
 // Writes dist/sitemap.xml from the pages the build produced: every index.html except 404 and
 // pages marked noindex. No dependency, and it can't miss a page.

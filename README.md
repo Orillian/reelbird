@@ -15,14 +15,14 @@
 </p>
 
 <p align="center">
-  <a href="https://reelbird.shiptiffin.app">Website</a> ·
+  <a href="https://reelbird.app">Website</a> ·
   <a href="#download">Download</a> ·
   <a href="#how-it-compares">Compare</a> ·
   <a href="#command-line">CLI</a> ·
   <a href="#mcp-server">MCP</a> ·
   <a href="docs/SHARING.md">Sharing setup</a> ·
   <a href="#troubleshooting">Troubleshooting</a> ·
-  <a href="https://reelbird.shiptiffin.app/support/">Support</a>
+  <a href="https://reelbird.app/support/">Support</a>
 </p>
 
 <p align="center">
@@ -101,7 +101,7 @@ It's a native Swift app with no account, no telemetry and no Reelbird server: sh
 | Platforms | Mac | Mac, Windows, web, mobile | Mac | Mac, Windows (beta), Linux | Mac, Windows, Linux |
 | Notarised download | Yes | Yes | Yes | Yes | Yes |
 
-Checked 12 October 2026 on each vendor's own pages: [Loom pricing](https://www.loom.com/pricing), [Loom downloads](https://support.atlassian.com/loom/docs/download-your-loom-video/), [Screen Studio](https://screen.studio/), [Cap pricing](https://cap.so/pricing), [OpenScreen](https://github.com/getopenscreen/openscreen). Loom is the better team tool and runs everywhere; Screen Studio has the more mature editor; Cap and OpenScreen run on Windows and Linux. More detail, plus CleanShot X, Tella and Screenity, at [reelbird.shiptiffin.app/compare](https://reelbird.shiptiffin.app/compare/).
+Checked 12 October 2026 on each vendor's own pages: [Loom pricing](https://www.loom.com/pricing), [Loom downloads](https://support.atlassian.com/loom/docs/download-your-loom-video/), [Screen Studio](https://screen.studio/), [Cap pricing](https://cap.so/pricing), [OpenScreen](https://github.com/getopenscreen/openscreen). Loom is the better team tool and runs everywhere; Screen Studio has the more mature editor; Cap and OpenScreen run on Windows and Linux. More detail, plus CleanShot X, Tella and Screenity, at [reelbird.app/compare](https://reelbird.app/compare/).
 
 ## Download
 
@@ -359,6 +359,6 @@ Bug reports, fixes and features are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) 
 
 ## Support Reelbird
 
-Reelbird is free and always will be. If it saves you time or a subscription, you can [support the project](https://reelbird.shiptiffin.app/support/), once or monthly. Stars, bug reports and pull requests help too.
+Reelbird is free and always will be. If it saves you time or a subscription, you can [support the project](https://reelbird.app/support/), once or monthly. Stars, bug reports and pull requests help too.
 
 <sub>The Reelbird website is hosted on <a href="https://shiptiffin.com">ShipTiffin</a>, which puts all your apps on one server you own. It's open source too: <a href="https://github.com/shiptiffin/tiffin">shiptiffin/tiffin</a>.</sub>

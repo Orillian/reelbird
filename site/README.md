@@ -1,4 +1,4 @@
-# reelbird.shiptiffin.app
+# reelbird.app
 
 The Reelbird website: a static [Astro](https://astro.build) site with no UI framework and a few
 small inline scripts (theme toggle, copy buttons, video loading).

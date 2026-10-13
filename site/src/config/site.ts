@@ -3,7 +3,7 @@
  * video URL and the prebuilt-download switch. Change them here and rebuild.
  */
 
-export const SITE_URL = "https://reelbird.shiptiffin.app";
+export const SITE_URL = "https://reelbird.app";
 export const SITE_NAME = "Reelbird";
 export const GITHUB_URL = "https://github.com/btahir/reelbird";
 export const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues`;

@@ -563,7 +563,7 @@ actor ProgressLog {
         #expect(html.contains(#"<meta name="robots" content="noindex, nofollow">"#))
         #expect(html.contains("A 2:14 screen recording."))
         #expect(html.contains("aspect-ratio:1920 / 1080"))
-        #expect(html.contains(#"<a href="https://reelbird.shiptiffin.app" rel="noopener">"#))   // "Made with Reelbird" goes to the website
+        #expect(html.contains(#"<a href="https://reelbird.app" rel="noopener">"#))   // "Made with Reelbird" goes to the website
         #expect(!html.contains("github.com"))
         #expect(html.contains("hls.js@\(ViewerPage.hlsVersion)/dist/hls.light.min.js"))
         #expect(html.contains("sha384-"))
