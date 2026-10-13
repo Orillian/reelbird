@@ -265,7 +265,7 @@ struct SharePanel: View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             if !model.shareConfigured {
                 Text("Share with a link").font(.system(size: 14, weight: .semibold))
-                Text("Links upload to your own storage bucket. Cloudflare R2 is free to start and takes about five minutes to set up.")
+                Text("Links upload to your own storage bucket. Cloudflare R2 is free to start and takes about ten minutes to set up, once.")
                     .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Button("Set Up Sharing…") {
                     model.showShare = false
