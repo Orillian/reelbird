@@ -16,7 +16,7 @@ func memoryFootprint() -> Int64 {
     return kr == KERN_SUCCESS ? Int64(info.phys_footprint) : 0
 }
 
-/// Opt-in soak: `RB_SOAK=1 scripts/test.sh --filter soak` (run it through research/heavy.sh).
+/// Opt-in soak: `RB_SOAK=1 scripts/test.sh --filter soak` (it is CPU and disk heavy).
 /// Records `RB_SOAK_MINUTES` (default 60) of 1080p30 media with microphone, system audio and the
 /// share stream as fast as the encoders allow, sampling memory throughout, then checks that memory
 /// stayed flat and that consolidation produced full-length, playable files.
