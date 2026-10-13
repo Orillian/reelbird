@@ -125,26 +125,50 @@ final class PeakLimiter {
     }
 }
 
-/// Gain and limiting for one audio track, run inside an `MTAudioProcessingTap`. The same processor
+/// Gain, ducking and limiting for one audio track, run inside an `MTAudioProcessingTap`. The same processor
 /// type runs in the editor's preview (on the `AVPlayerItem`'s audio mix) and in export (on the
-/// `AVAssetReaderAudioMixOutput`'s audio mix), so both sound the same. `gain` may change at any time
-/// from any thread; the change ramps over one buffer, so live edits don't click.
+/// `AVAssetReaderAudioMixOutput`'s audio mix), so both sound the same. `gain` and `duck` may change at any time
+/// from any thread; a gain change ramps over one buffer, so live edits don't click.
 final class AudioTrackProcessor: @unchecked Sendable {
+    /// One track of an audio mix.
+    struct Lane {
+        var kind: TrackKind
+        var track: AVAssetTrack
+        var gain: Float
+        /// The raw microphone next to the voice stem ("Hear original" in preview).
+        var isOriginal = false
+    }
+
     let kind: TrackKind
+    let isOriginal: Bool
     private let targetGain: Synchronization.Atomic<UInt32>
     private let sourceTimeBits = Synchronization.Atomic<UInt64>(Double.nan.bitPattern)
+    private let duckState = Mutex<DuckCurve?>(nil)
     // Below: touched only by MediaToolbox's prepare/process/unprepare, which it serialises.
     private var limiter: PeakLimiter?
     private var appliedGain: Float
     private var interleaved = false
     private var isFloat = true
+    private var sampleRate = 48_000.0
+    /// Frames processed since `prepare`: the clock when a buffer comes without a time.
+    private var framesSincePrepare = 0
     private var channelData: [UnsafeMutablePointer<Float>?] = []
 
-    init(kind: TrackKind, gain: Float) {
+    init(kind: TrackKind, gain: Float, isOriginal: Bool = false) {
         self.kind = kind
+        self.isOriginal = isOriginal
         targetGain = Synchronization.Atomic(gain.bitPattern)
         appliedGain = gain
     }
+
+    /// Ducking automation on the output timeline (system audio under the voice), or `nil` for none.
+    var duck: DuckCurve? {
+        get { duckState.withLock { $0 } }
+        set { duckState.withLock { $0 = newValue } }
+    }
+
+    /// Steps between duck-gain evaluations; the gain ramps linearly in between.
+    private static let duckStep = 32
 
     /// Linear gain applied before the limiter.
     var gain: Float {
@@ -161,6 +185,8 @@ final class AudioTrackProcessor: @unchecked Sendable {
         interleaved = format.mFormatFlags & kAudioFormatFlagIsNonInterleaved == 0
         limiter = isFloat ? PeakLimiter(channels: Int(format.mChannelsPerFrame), sampleRate: format.mSampleRate) : nil
         channelData = Array(repeating: nil, count: max(1, Int(format.mChannelsPerFrame)))
+        sampleRate = format.mSampleRate > 0 ? format.mSampleRate : 48_000
+        framesSincePrepare = 0
         appliedGain = gain
     }
 
@@ -172,19 +198,39 @@ final class AudioTrackProcessor: @unchecked Sendable {
         if t.start.isNumeric { sourceTimeBits.store(t.start.seconds.bitPattern, ordering: .relaxed) }
     }
 
-    /// Applies the gain (ramped from the last buffer's) and the limiter to `frames` frames in place.
-    func process(_ list: UnsafeMutablePointer<AudioBufferList>, frames: Int) {
+    /// Applies the gain (ramped from the last buffer's), the duck automation and the limiter to `frames` frames in
+    /// place. `time`: output time of the first frame (NaN = continue from the previous buffer).
+    func process(_ list: UnsafeMutablePointer<AudioBufferList>, frames: Int, time: Double = .nan) {
         guard frames > 0, let limiter else { return }
         let buffers = UnsafeMutableAudioBufferListPointer(list)
         let target = gain
         let start = appliedGain
         let step = (target - start) / Float(frames)
         let channels = limiter.channels
+        let t0 = time.isFinite ? time : Double(framesSincePrepare) / sampleRate
+        framesSincePrepare = time.isFinite ? Int((time * sampleRate).rounded()) + frames : framesSincePrepare + frames
+        // The duck curve, when it changes anything in this buffer. Never blocks the audio thread.
+        let curve = duckState.withLockIfAvailable { $0 } ?? nil
+        let duck = curve.flatMap { $0.isActive(from: t0, to: t0 + Double(frames) / sampleRate) ? $0 : nil }
+        let rate = sampleRate
+        func gainAt(_ f: Int, _ duckGain: Float) -> Float { (start + step * Float(f + 1)) * duckGain }
+        // Duck gain for frame f, linear between evaluations every `duckStep` frames.
+        var d0: Float = 1, d1: Float = 1, segment = -1
+        func duckGain(_ f: Int) -> Float {
+            guard let duck else { return 1 }
+            let k = f / Self.duckStep
+            if k != segment {
+                segment = k
+                d0 = duck.gain(at: t0 + Double(k * Self.duckStep) / rate)
+                d1 = duck.gain(at: t0 + Double((k + 1) * Self.duckStep) / rate)
+            }
+            return d0 + (d1 - d0) * Float(f - k * Self.duckStep) / Float(Self.duckStep)
+        }
         if interleaved {
             guard let data = buffers.first?.mData?.assumingMemoryBound(to: Float.self),
                   Int(buffers[0].mDataByteSize) >= frames * channels * 4 else { return }
             for f in 0..<frames {
-                let g = start + step * Float(f + 1)
+                let g = gainAt(f, duckGain(f))
                 for c in 0..<channels { data[f * channels + c] *= g }
             }
             limiter.process(frames: frames, stride: channels) { data + $0 }
@@ -194,9 +240,9 @@ final class AudioTrackProcessor: @unchecked Sendable {
                 guard let d = buffers[c].mData?.assumingMemoryBound(to: Float.self), Int(buffers[c].mDataByteSize) >= frames * 4 else { return }
                 channelData[c] = d
             }
-            for c in 0..<channels {
-                guard let d = channelData[c] else { return }
-                for f in 0..<frames { d[f] *= start + step * Float(f + 1) }
+            for f in 0..<frames {
+                let g = gainAt(f, duckGain(f))
+                for c in 0..<channels { channelData[c]![f] *= g }
             }
             limiter.process(frames: frames, stride: 1) { channelData[$0]! }
         }
@@ -228,7 +274,7 @@ final class AudioTrackProcessor: @unchecked Sendable {
                 guard MTAudioProcessingTapGetSourceAudio(tap, frames, list, flagsOut, &range, framesOut) == noErr else { return }
                 let processor = Unmanaged<AudioTrackProcessor>.fromOpaque(MTAudioProcessingTapGetStorage(tap)).takeUnretainedValue()
                 processor.noteSourceTime(range)
-                processor.process(list, frames: Int(framesOut.pointee))
+                processor.process(list, frames: Int(framesOut.pointee), time: range.start.isNumeric ? range.start.seconds : .nan)
             })
         var tap: MTAudioProcessingTap?
         let flags = forPlayback ? kMTAudioProcessingTapCreationFlag_PostEffects : kMTAudioProcessingTapCreationFlag_PreEffects
@@ -241,12 +287,12 @@ final class AudioTrackProcessor: @unchecked Sendable {
     }
 
     /// An audio mix that runs one processor per track. Track volumes stay at 1: gain happens in the tap.
-    static func mix(_ tracks: [(kind: TrackKind, track: AVAssetTrack, gain: Float)], forPlayback: Bool) -> (mix: AVAudioMix, processors: [AudioTrackProcessor]) {
+    static func mix(_ tracks: [Lane], forPlayback: Bool) -> (mix: AVAudioMix, processors: [AudioTrackProcessor]) {
         let mix = AVMutableAudioMix()
         var processors: [AudioTrackProcessor] = []
         mix.inputParameters = tracks.map { t in
             let p = AVMutableAudioMixInputParameters(track: t.track)
-            let processor = AudioTrackProcessor(kind: t.kind, gain: t.gain)
+            let processor = AudioTrackProcessor(kind: t.kind, gain: t.gain, isOriginal: t.isOriginal)
             if let tap = processor.makeTap(forPlayback: forPlayback) {
                 p.audioTapProcessor = tap
             } else {

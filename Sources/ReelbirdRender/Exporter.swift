@@ -21,12 +21,18 @@ public enum Exporter {
         let manifest = try bundle.readManifest()
         let plan = try RenderPlan(bundle: bundle, manifest: manifest, edit: edit)
         guard plan.duration > 0.02 else { throw RenderError.nothingToExport }
-        let sources = try await MediaSources.load(bundle: bundle, manifest: manifest)
+        let withAudio = options.format != .gif
+        if withAudio, edit.audio.enhance, !edit.audio.microphoneMuted {
+            // The enhanced voice for these settings (usually already rendered by the editor). If it can't be made, the
+            // export still goes ahead with the last stem or the raw microphone.
+            do { try await VoiceStem.ensure(bundle: bundle, settings: edit.audio) } catch is CancellationError { throw CancellationError() } catch {}
+        }
+        let sources = try await MediaSources.load(bundle: bundle, manifest: manifest, audio: edit.audio)
         guard sources.screen != nil else { throw RenderError.missingScreenTrack }
         let url = try destination(bundle: bundle, manifest: manifest, edit: edit, options: options)
         var analysis: AudioAnalysis?
-        if options.format != .gif, edit.audio.autoLevel, !edit.audio.microphoneMuted, sources.audio.contains(where: { $0.kind == .microphone }) {
-            analysis = await AudioAnalyzer.analysis(bundle: bundle)
+        if withAudio, !sources.audio.isEmpty {
+            analysis = await AudioAnalyzer.analysis(bundle: bundle, settings: edit.audio)
         }
         let job = try ExportJob(plan: plan, sources: sources, options: options, url: url, analysis: analysis, progress: progress)
         return try await withTaskCancellationHandler {

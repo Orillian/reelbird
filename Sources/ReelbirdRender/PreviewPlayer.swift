@@ -35,6 +35,13 @@ public final class PreviewPlayer: @unchecked Sendable {
     private var audioProcessors: [AudioTrackProcessor] = []
     /// The voice's measured loudness (auto level), once known.
     public private(set) var audioAnalysis: AudioAnalysis?
+    /// Play the raw microphone instead of the enhanced voice (press-and-hold "Hear original"). Loudness-matched.
+    @MainActor public var hearOriginal = false {
+        didSet { if hearOriginal != oldValue { applyAudioGains() } }
+    }
+    /// Bundle-relative file currently playing as the voice (the stem when in use).
+    public var voiceFile: String? { sources?.voiceFile }
+    private var voiceReload: Task<Void, Never>?
 
     /// Opens a bundle for preview. Media loads in the background (`onReady` fires when done).
     public init(bundle: ProjectBundle) throws {
@@ -51,7 +58,7 @@ public final class PreviewPlayer: @unchecked Sendable {
             do {
                 let manifest = self.manifest
                 async let loadedEvents = Task.detached(priority: .userInitiated) { try bundle.readEvents() }.value
-                let s = try await MediaSources.load(bundle: bundle, manifest: manifest)
+                let s = try await MediaSources.load(bundle: bundle, manifest: manifest, audio: self.state.plan.edit.audio)
                 let ev = try await loadedEvents
                 self.events = ev
                 let current = self.state.plan
@@ -60,8 +67,8 @@ public final class PreviewPlayer: @unchecked Sendable {
                 self.sources = s
                 try self.rebuildItems(keepingSourceTime: nil)
                 self.onReady?(nil)
-                if s.audio.contains(where: { $0.kind == .microphone }) {
-                    let analysis = await AudioAnalyzer.analysis(bundle: bundle)
+                if !s.audio.isEmpty {
+                    let analysis = await AudioAnalyzer.analysis(bundle: bundle, settings: self.state.plan.edit.audio)
                     self.audioAnalysis = analysis
                     self.applyAudioGains()
                 }
@@ -73,6 +80,7 @@ public final class PreviewPlayer: @unchecked Sendable {
 
     deinit {
         loadTask?.cancel()
+        voiceReload?.cancel()
         if let timeObserver { mainPlayer.removeTimeObserver(timeObserver) }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         mainPlayer.pause()
@@ -115,6 +123,7 @@ public final class PreviewPlayer: @unchecked Sendable {
         } else if plan.edit.audio != old.edit.audio {
             applyAudioGains()
         }
+        if plan.edit.audio.enhance != old.edit.audio.enhance { voiceStemDidChange() }
         loop.wake()
         notifyTime()
     }
@@ -191,16 +200,59 @@ public final class PreviewPlayer: @unchecked Sendable {
         onTimeChange?(currentTime)
     }
 
-    /// Sets each track's gain (auto level + boost, or 0 when muted) on the running taps. Takes effect within
-    /// one audio buffer, without touching playback.
+    /// Call when the voice stem was rendered (or enhance turned on or off): reloads the voice when the file that
+    /// should play changed, re-measures it, and swaps it in at the same playhead, resuming if it was playing.
+    @MainActor
+    public func voiceStemDidChange() {
+        voiceReload?.cancel()
+        voiceReload = Task { @MainActor [weak self] in
+            guard let self, self.sources != nil else { return }
+            let settings = self.state.plan.edit.audio
+            guard let s = try? await MediaSources.load(bundle: self.bundle, manifest: self.manifest, audio: settings),
+                  !Task.isCancelled else { return }
+            let analysis = await AudioAnalyzer.analysis(bundle: self.bundle, settings: settings)
+            guard !Task.isCancelled else { return }
+            self.audioAnalysis = analysis
+            if s.voiceFile != self.sources?.voiceFile || (s.originalVoice == nil) != (self.sources?.originalVoice == nil) {
+                let wasPlaying = self.state.isPlaying
+                let sourceTime = self.state.plan.timeline.sourceTime(forOutput: self.currentTime)
+                self.sources = s
+                try? self.rebuildItems(keepingSourceTime: sourceTime)
+                if wasPlaying { self.play() }
+            }
+            self.applyAudioGains()
+        }
+    }
+
+    /// Sets each track's gain (auto level + boost, or 0 when muted) and the system audio's ducking on the running
+    /// taps. Takes effect within one audio buffer, without touching playback.
     @MainActor
     private func applyAudioGains() {
         let settings = state.plan.edit.audio
-        for p in audioProcessors { p.gain = settings.linearGain(for: p.kind, analysis: audioAnalysis) }
+        let duck = sources?.duckCurve(timeline: state.plan.timeline, settings: settings, analysis: audioAnalysis)
+        let hasOriginal = audioProcessors.contains { $0.isOriginal }
+        for p in audioProcessors {
+            if p.kind == .microphone && hasOriginal {
+                // Stem and raw microphone are both in the item; exactly one is heard.
+                if p.isOriginal {
+                    p.gain = hearOriginal ? settings.linearGainForOriginalVoice(analysis: audioAnalysis) : 0
+                } else {
+                    p.gain = hearOriginal ? 0 : settings.linearGain(for: .microphone, analysis: audioAnalysis)
+                }
+            } else {
+                p.gain = settings.linearGain(for: p.kind, analysis: audioAnalysis)
+            }
+            if p.kind == .systemAudio { p.duck = duck }
+        }
     }
 
-    /// Linear gain the preview currently applies to `kind` (tests).
-    func audioGain(for kind: TrackKind) -> Float? { audioProcessors.first { $0.kind == kind }?.gain }
+    /// The system audio's duck automation in the running preview (tests).
+    func duckCurve() -> DuckCurve? { audioProcessors.first { $0.kind == .systemAudio }?.duck }
+
+    /// Linear gain the preview currently applies to `kind` (tests). `original`: the raw microphone lane.
+    func audioGain(for kind: TrackKind, original: Bool = false) -> Float? {
+        audioProcessors.first { $0.kind == kind && $0.isOriginal == original }?.gain
+    }
 
     var currentItemForTesting: AVPlayerItem? { mainPlayer.currentItem }
 
@@ -211,7 +263,7 @@ public final class PreviewPlayer: @unchecked Sendable {
         let plan = state.plan
         if state.isPlaying { mainPlayer.pause(); cameraPlayer?.pause(); state.isPlaying = false }
         // Every audio track stays in the composition (mutes are a gain of 0), so audio edits never rebuild the item.
-        let comp = try sources.composition(timeline: plan.timeline, camera: false, audio: AudioSettings())
+        let comp = try sources.composition(timeline: plan.timeline, camera: false, audio: AudioSettings(), originalVoice: true)
         let item = AVPlayerItem(asset: comp.asset)
         let attrs = MediaSources.decodeSettings
         let screenOut = AVPlayerItemVideoOutput(pixelBufferAttributes: attrs)

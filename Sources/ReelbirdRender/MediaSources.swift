@@ -21,15 +21,22 @@ final class MediaSources: @unchecked Sendable {
 
     let screen: Track?
     let camera: Track?
+    /// The voice (`.microphone`: the voice stem when in use, else the raw track) and system audio.
     let audio: [Track]
+    /// The raw microphone when `audio` carries the voice stem instead (preview's "Hear original").
+    let originalVoice: Track?
+    /// Bundle-relative file playing as the voice.
+    let voiceFile: String?
 
-    private init(screen: Track?, camera: Track?, audio: [Track]) {
-        self.screen = screen; self.camera = camera; self.audio = audio
+    private init(screen: Track?, camera: Track?, audio: [Track], originalVoice: Track?, voiceFile: String?) {
+        self.screen = screen; self.camera = camera; self.audio = audio; self.originalVoice = originalVoice; self.voiceFile = voiceFile
     }
 
-    static func load(bundle: ProjectBundle, manifest: ProjectManifest) async throws -> MediaSources {
-        func load(_ kind: TrackKind, _ type: AVMediaType) async throws -> Track? {
-            guard let info = manifest.track(kind), let url = bundle.mediaURL(for: kind, in: manifest),
+    /// Loads the media. With `audio` settings that turn enhance on and a rendered voice stem, the stem stands in for
+    /// the microphone (same timing: it is sample-aligned with the raw track) and the raw track is kept aside.
+    static func load(bundle: ProjectBundle, manifest: ProjectManifest, audio settings: AudioSettings? = nil) async throws -> MediaSources {
+        func load(_ kind: TrackKind, _ type: AVMediaType, file: String? = nil) async throws -> Track? {
+            guard let info = manifest.track(kind), let url = file.map(bundle.resolve) ?? bundle.mediaURL(for: kind, in: manifest),
                   FileManager.default.fileExists(atPath: url.path) else { return nil }
             let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
             do {
@@ -46,25 +53,51 @@ final class MediaSources: @unchecked Sendable {
         let screen = try await load(.screen, .video)
         let camera = try await load(.camera, .video)
         var audio: [Track] = []
-        // Extension point: a processed voice stem (rendered after Stop) would replace the raw microphone here, and
-        // `AudioAnalyzer.voiceFile` would return the same file so loudness is measured on what plays.
-        for k in [TrackKind.microphone, .systemAudio] { if let t = try await load(k, .audio) { audio.append(t) } }
-        return MediaSources(screen: screen, camera: camera, audio: audio)
+        var original: Track?
+        let raw = manifest.track(.microphone)?.file
+        let voice = settings.flatMap { bundle.voiceFile(manifest: manifest, settings: $0) } ?? raw
+        if let voice, voice != raw, let stem = try? await load(.microphone, .audio, file: voice) {
+            audio.append(stem)
+            original = try await load(.microphone, .audio)
+        } else if let t = try await load(.microphone, .audio) {
+            audio.append(t)
+        }
+        if let t = try await load(.systemAudio, .audio) { audio.append(t) }
+        let playing = original == nil ? (audio.contains { $0.kind == .microphone } ? raw : nil) : voice
+        return MediaSources(screen: screen, camera: camera, audio: audio, originalVoice: original, voiceFile: playing)
+    }
+
+    /// The system-audio duck automation for `timeline`: speech ranges of the voice (`analysis`) on the output timeline.
+    /// `nil` when ducking is off, the voice is muted or absent, or system audio is silent.
+    func duckCurve(timeline: EditTimeline, settings: AudioSettings, analysis: AudioAnalysis?) -> DuckCurve? {
+        guard settings.duckSystemAudio, !settings.microphoneMuted, !settings.systemMuted,
+              let voice = audio.first(where: { $0.kind == .microphone }), audio.contains(where: { $0.kind == .systemAudio }),
+              let speech = analysis?.microphone?.speech, !speech.isEmpty,
+              analysis?.systemAudio.map({ $0.integratedLUFS != nil }) ?? true else { return nil }
+        let offset = voice.startTime
+        let curve = DuckCurve(recordingRanges: speech.map { TimeRange(start: $0.start + offset, end: $0.end + offset) }, timeline: timeline)
+        return curve.ranges.isEmpty ? nil : curve
     }
 
     struct Composition: @unchecked Sendable {
         let asset: AVMutableComposition
         let screen: AVMutableCompositionTrack?
         let camera: AVMutableCompositionTrack?
-        /// Audio tracks with their linear gain (mutes already removed).
-        let audio: [(kind: TrackKind, track: AVMutableCompositionTrack, gain: Float)]
+        /// Audio tracks with their linear gain (mutes already removed). `isOriginal`: the raw microphone next to the
+        /// voice stem (preview only; silent unless "Hear original" is held).
+        let audio: [(kind: TrackKind, track: AVMutableCompositionTrack, gain: Float, isOriginal: Bool)]
         let duration: Double
+        /// Ducking for the system audio track, when on.
+        var duck: DuckCurve?
 
-        /// An audio mix that applies each track's gain and limiter in an `AudioTrackProcessor` tap.
+        /// An audio mix that applies each track's gain (and the system audio's ducking) and limiter in an
+        /// `AudioTrackProcessor` tap.
         func audioMix(forPlayback: Bool) -> (mix: AVAudioMix, processors: [AudioTrackProcessor])? {
             guard !audio.isEmpty else { return nil }
-            return AudioTrackProcessor.mix(audio.map { (kind: $0.kind, track: $0.track as AVAssetTrack, gain: $0.gain) },
-                                           forPlayback: forPlayback)
+            let m = AudioTrackProcessor.mix(audio.map { AudioTrackProcessor.Lane(kind: $0.kind, track: $0.track, gain: $0.gain, isOriginal: $0.isOriginal) },
+                                            forPlayback: forPlayback)
+            for p in m.processors where p.kind == .systemAudio { p.duck = duck }
+            return m
         }
     }
 
@@ -72,9 +105,10 @@ final class MediaSources: @unchecked Sendable {
     static func time(_ s: Double) -> CMTime { CMTime(seconds: s, preferredTimescale: timescale) }
 
     /// A composition of the kept ranges, back to back. `video` / `camera` / `audio` choose the tracks.
-    /// `analysis` supplies the voice's measured loudness for auto level.
+    /// `analysis` supplies the voice's measured loudness for auto level and its speech for ducking.
+    /// `originalVoice` adds the raw microphone (at gain 0) when the voice is the stem.
     func composition(timeline: EditTimeline, video: Bool = true, camera wantCamera: Bool, audio settings: AudioSettings?,
-                     analysis: AudioAnalysis? = nil) throws -> Composition {
+                     analysis: AudioAnalysis? = nil, originalVoice: Bool = false) throws -> Composition {
         let comp = AVMutableComposition()
         func add(_ src: Track, type: AVMediaType) throws -> AVMutableCompositionTrack? {
             guard let ct = comp.addMutableTrack(withMediaType: type, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
@@ -103,15 +137,19 @@ final class MediaSources: @unchecked Sendable {
         }
         let screenTrack = try video ? screen.flatMap { try add($0, type: .video) } : nil
         let cameraTrack = try wantCamera ? camera.flatMap { try add($0, type: .video) } : nil
-        var audioTracks: [(TrackKind, AVMutableCompositionTrack, Float)] = []
+        var audioTracks: [(kind: TrackKind, track: AVMutableCompositionTrack, gain: Float, isOriginal: Bool)] = []
         if let settings {
             for a in audio {
                 guard settings.gainDB(for: a.kind, analysis: analysis) != nil, let t = try add(a, type: .audio) else { continue }
-                audioTracks.append((a.kind, t, settings.linearGain(for: a.kind, analysis: analysis)))
+                audioTracks.append((a.kind, t, settings.linearGain(for: a.kind, analysis: analysis), false))
+            }
+            if originalVoice, let o = self.originalVoice, let t = try add(o, type: .audio) {
+                audioTracks.append((.microphone, t, 0, true))
             }
         }
-        return Composition(asset: comp, screen: screenTrack, camera: cameraTrack,
-                           audio: audioTracks.map { (kind: $0.0, track: $0.1, gain: $0.2) }, duration: timeline.duration)
+        var result = Composition(asset: comp, screen: screenTrack, camera: cameraTrack, audio: audioTracks, duration: timeline.duration)
+        if let settings { result.duck = duckCurve(timeline: timeline, settings: settings, analysis: analysis) }
+        return result
     }
 
     /// Decoder output settings: NV12 in IOSurface-backed buffers the GPU can read without copying.

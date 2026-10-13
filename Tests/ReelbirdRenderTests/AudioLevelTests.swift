@@ -209,7 +209,10 @@ private func bundle(microphone samples: [Float], seconds: Double) async throws -
     // Export with auto level on: the voice lands near −16 LUFS and peaks stay under −1 dBFS.
     let dest = FileManager.default.temporaryDirectory.appendingPathComponent("rb-level-\(UUID().uuidString).mp4")
     defer { try? FileManager.default.removeItem(at: dest) }
-    _ = try await Exporter.export(bundle: b, edit: try b.readEdit(), options: ExportOptions(format: .mp4H264, destination: dest)) { _ in }
+    // Enhance off: this test is about auto level on the raw voice (VoiceStemTests cover the enhanced path).
+    var plain = try b.readEdit()
+    plain.audio.enhance = false
+    _ = try await Exporter.export(bundle: b, edit: plain, options: ExportOptions(format: .mp4H264, destination: dest)) { _ in }
     let on = measure(try await decodeStereo(dest))
     let onLUFS = try #require(on.lufs)
     print(String(format: "EXPORT auto level: %.2f LUFS, peak %.2f dBFS", onLUFS, on.peakDB))
@@ -217,7 +220,7 @@ private func bundle(microphone samples: [Float], seconds: Double) async throws -
     #expect(on.peakDB <= -0.9, "export peak \(on.peakDB) dBFS")
 
     // Auto level off: the recording's own (quiet) level.
-    var edit = try b.readEdit()
+    var edit = plain
     edit.audio.autoLevel = false
     try FileManager.default.removeItem(at: dest)
     _ = try await Exporter.export(bundle: b, edit: edit, options: ExportOptions(format: .mp4H264, destination: dest)) { _ in }

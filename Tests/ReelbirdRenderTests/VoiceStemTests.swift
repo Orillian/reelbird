@@ -135,3 +135,180 @@ private func bandPass(_ x: [Float]) -> [Float] {
     print("CLICK mix 0.5: raw peak at \(rp), stem peak at \(sp)")
     #expect(abs(rp - sp) <= 1)
 }
+
+// MARK: - Voice activity and ducking
+
+@Test func voiceActivityFindsThePhrases() throws {
+    let take = try VoiceFixture.take(seconds: 30, speechDB: -24, snrDB: 15)
+    // 10 ms frame levels at 48 kHz (the analyzer works at 16 kHz; the detector only sees levels).
+    let frame = 480
+    var levels: [Float] = []
+    var hp = Biquad.highPass(frequency: 100, q: 0.7071, sampleRate: 48_000)
+    for f in 0..<(take.noisy.count / frame) {
+        var s = 0.0
+        for i in (f * frame)..<((f + 1) * frame) { let y = hp.run(Double(take.noisy[i])); s += y * y }
+        levels.append(Float(10 * log10(s / Double(frame) + 1e-12)))
+    }
+    let speech = VoiceActivity.detect(frameDB: levels)
+    func covered(_ t: Double) -> Bool { speech.contains { $0.contains(t) } }
+    var inPhrase = 0, hit = 0, inPause = 0, falseHit = 0
+    var t = 0.0
+    while t < 30 {
+        if take.phrases.contains(where: { $0.contains(t) }) { inPhrase += 1; if covered(t) { hit += 1 } }
+        else if !take.phrases.contains(where: { t > $0.start - 0.3 && t < $0.end + 0.5 }) { inPause += 1; if covered(t) { falseHit += 1 } }
+        t += 0.01
+    }
+    let recall = Double(hit) / Double(max(1, inPhrase)), falseRate = Double(falseHit) / Double(max(1, inPause))
+    print(String(format: "VAD: %d ranges, recall %.1f%%, speech found in pauses %.1f%%", speech.count, recall * 100, falseRate * 100))
+    #expect(recall > 0.85)
+    #expect(falseRate < 0.1)
+}
+
+@Test func duckCurveRampsAroundSpeechAndFollowsTheEdit() {
+    let curve = DuckCurve(outputRanges: [TimeRange(start: 2, end: 4), TimeRange(start: 4.2, end: 5)])
+    #expect(curve.ranges.count == 2)
+    func db(_ t: Double) -> Double { 20 * log10(Double(curve.gain(at: t))) }
+    #expect(abs(db(1.9)) < 1e-4)
+    #expect(abs(db(1.99) + 6) < 0.01)          // halfway through the 20 ms attack, which ends at the onset
+    #expect(abs(db(3) + 12) < 1e-4)
+    #expect(db(4.1) < -9.5)                     // a short gap stays mostly ducked
+    #expect(abs(db(5.3) + 6) < 0.01)            // halfway through the 600 ms release
+    #expect(abs(db(5.61)) < 1e-4)
+    // Mapping through a cut: speech at 10–12 s on the recording, 9–11 s cut out of a 0–20 s recording.
+    let timeline = EditTimeline(duration: 20, trim: nil, cuts: [TimeRange(start: 9, end: 11)])
+    let mapped = DuckCurve(recordingRanges: [TimeRange(start: 10, end: 12)], timeline: timeline)
+    #expect(mapped.ranges == [TimeRange(start: 9, end: 10)])
+}
+
+@Test func trackProcessorDucksOnTheOutputClock() {
+    let rate = 48_000.0
+    let p = AudioTrackProcessor(kind: .systemAudio, gain: 1)
+    p.prepare(format: AudioStreamBasicDescription(mSampleRate: rate, mFormatID: kAudioFormatLinearPCM,
+                                                  mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagIsNonInterleaved,
+                                                  mBytesPerPacket: 4, mFramesPerPacket: 1, mBytesPerFrame: 4, mChannelsPerFrame: 1,
+                                                  mBitsPerChannel: 32, mReserved: 0))
+    p.duck = DuckCurve(outputRanges: [TimeRange(start: 1, end: 2)])
+    let frames = 1_024
+    let data = UnsafeMutablePointer<Float>.allocate(capacity: frames)
+    defer { data.deallocate() }
+    let list = AudioBufferList.allocate(maximumBuffers: 1)
+    defer { free(list.unsafeMutablePointer) }
+    func level(at t: Double) -> Double {
+        for i in 0..<frames { data[i] = 0.1 }
+        list[0] = AudioBuffer(mNumberChannels: 1, mDataByteSize: UInt32(frames * 4), mData: data)
+        p.process(list.unsafeMutablePointer, frames: frames, time: t)
+        return 20 * log10(Double(data[frames - 1]) / 0.1)
+    }
+    _ = level(at: 0.5)
+    #expect(abs(level(at: 0.5)) < 0.01)
+    _ = level(at: 1.5)
+    #expect(abs(level(at: 1.5) + 12) < 0.05)
+    _ = level(at: 3)
+    #expect(abs(level(at: 3)) < 0.01)
+}
+
+/// Level (dB) of a sine at `frequency` in `x[range]` (Hann-windowed Goertzel, amplitude-calibrated).
+private func toneDB(_ x: [Float], frequency: Double, range: Range<Int>, rate: Double = 48_000) -> Double {
+    let n = range.count
+    let w = 2 * Double.pi * frequency / rate
+    var s1 = 0.0, s2 = 0.0, wsum = 0.0
+    for (k, i) in range.enumerated() {
+        let win = 0.5 - 0.5 * cos(2 * .pi * Double(k) / Double(n - 1))
+        wsum += win
+        let s0 = Double(x[i]) * win + 2 * cos(w) * s1 - s2
+        s2 = s1; s1 = s0
+    }
+    let power = s1 * s1 + s2 * s2 - 2 * cos(w) * s1 * s2
+    return 20 * log10(2 * power.squareRoot() / wsum + 1e-12)
+}
+
+private func stereoToMono(_ s: [Float]) -> [Float] { stride(from: 0, to: s.count - 1, by: 2).map { (s[$0] + s[$0 + 1]) / 2 } }
+
+@Test func exportDucksSystemAudioUnderTheVoiceAndLandsOnTarget() async throws {
+    let seconds = 20.0
+    let take = try VoiceFixture.take(seconds: seconds, speechDB: -30, snrDB: 20)
+    // System audio: a 55 Hz tone (below the voice's high-pass) at −20 dBFS throughout.
+    let tone = (0..<Int(seconds * 48_000)).map { Float(0.1 * sin(2 * Double.pi * 55 * Double($0) / 48_000)) }
+    let b = try await VoiceFixture.bundle(microphone: take.noisy, seconds: seconds, systemAudio: tone)
+    defer { try? FileManager.default.removeItem(at: b.url) }
+    let dest = FileManager.default.temporaryDirectory.appendingPathComponent("rb-duck-\(UUID().uuidString).mp4")
+    defer { try? FileManager.default.removeItem(at: dest) }
+
+    var edit = try b.readEdit()
+    edit.audio.systemMuted = true
+    // Voice alone, enhanced: loudness on target, peaks under the ceiling.
+    _ = try await Exporter.export(bundle: b, edit: edit, options: ExportOptions(format: .mp4H264, destination: dest)) { _ in }
+    #expect(VoiceStem.status(bundle: b, settings: edit.audio) == .ready, "export renders the stem first")
+    let voiceOnly = try await VoiceFixture.decodeStereo(dest)
+    var meter = LoudnessMeter(sampleRate: 48_000, channels: 2)
+    meter.process(voiceOnly)
+    let lufs = try #require(meter.integratedLUFS)
+    let peak = 20 * log10(Double(voiceOnly.reduce(Float(0)) { max($0, abs($1)) }))
+    print(String(format: "EXPORT enhanced voice: %.2f LUFS, sample peak %.2f dBFS", lufs, peak))
+    #expect(abs(lufs - AutoLevel.targetLUFS) <= 1, "loudness \(lufs)")
+    #expect(peak <= -1.4, "peak \(peak) dBFS")
+
+    // With system audio: the tone dips ~12 dB while speaking and comes back in pauses.
+    func measureDuck(_ duck: Bool) async throws -> (speech: Double, pause: Double) {
+        var e = edit
+        e.audio.systemMuted = false
+        e.audio.duckSystemAudio = duck
+        try? FileManager.default.removeItem(at: dest)
+        _ = try await Exporter.export(bundle: b, edit: e, options: ExportOptions(format: .mp4H264, destination: dest)) { _ in }
+        let mono = stereoToMono(try await VoiceFixture.decodeStereo(dest))
+        var speech: [Double] = [], pause: [Double] = []
+        for (i, p) in take.phrases.enumerated() {
+            let mid = Int((p.start + p.end) / 2 * 48_000)
+            speech.append(toneDB(mono, frequency: 55, range: (mid - 4_800)..<(mid + 4_800)))
+            let next = i + 1 < take.phrases.count ? take.phrases[i + 1].start : seconds
+            if next - p.end > 1.2 {
+                let a = Int((p.end + 0.9) * 48_000), z = Int((next - 0.1) * 48_000)
+                if z - a > 9_600 { pause.append(toneDB(mono, frequency: 55, range: a..<z)) }
+            }
+        }
+        return (speech.reduce(0, +) / Double(speech.count), pause.reduce(0, +) / Double(max(1, pause.count)))
+    }
+    let on = try await measureDuck(true)
+    let off = try await measureDuck(false)
+    print(String(format: "DUCK on: tone %.1f dB in speech, %.1f dB in pauses (dip %.1f dB); off: %.1f / %.1f dB",
+                 on.speech, on.pause, on.pause - on.speech, off.speech, off.pause))
+    #expect(abs((on.pause - on.speech) - 12) <= 2, "duck depth \(on.pause - on.speech) dB")
+    #expect(abs(on.pause - off.pause) <= 1, "pauses recover: \(on.pause) vs \(off.pause)")
+    #expect(abs(off.speech - off.pause) <= 1, "no duck when off")
+}
+
+// MARK: - Preview
+
+@MainActor
+@Test func previewSwitchesToTheStemAndHearsTheOriginal() async throws {
+    let take = try VoiceFixture.take(seconds: 6)
+    let b = try await VoiceFixture.bundle(microphone: take.noisy, seconds: 6)
+    defer { try? FileManager.default.removeItem(at: b.url) }
+    let player = try PreviewPlayer(bundle: b)
+    let start = Date()
+    while player.audioAnalysis == nil, Date().timeIntervalSince(start) < 10 { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(player.voiceFile == "microphone/microphone.m4a", "raw microphone until the stem exists")
+    player.play()
+    try await Task.sleep(for: .milliseconds(300))
+
+    let info = try await VoiceStem.render(bundle: b, settings: AudioSettings())
+    player.voiceStemDidChange()
+    while player.voiceFile != info.file, Date().timeIntervalSince(start) < 15 { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(player.voiceFile == info.file)
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(player.isPlaying, "keeps playing across the switch")
+    #expect((player.audioGain(for: .microphone) ?? 0) > 0)
+    #expect(player.audioGain(for: .microphone, original: true) == 0)
+    player.hearOriginal = true
+    #expect(player.audioGain(for: .microphone) == 0)
+    #expect((player.audioGain(for: .microphone, original: true) ?? 0) > 0)
+    player.hearOriginal = false
+    player.pause()
+
+    // Enhance off: back to the raw microphone only.
+    var edit = try b.readEdit()
+    edit.audio.enhance = false
+    player.update(edit: edit)
+    while player.voiceFile != "microphone/microphone.m4a", Date().timeIntervalSince(start) < 20 { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(player.voiceFile == "microphone/microphone.m4a")
+}
