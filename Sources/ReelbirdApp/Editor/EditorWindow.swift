@@ -53,42 +53,41 @@ import SwiftUI
         keyMonitor = nil
     }
 
-    /// Single-key shortcuts (space, J/K/L, S, Z, arrows, delete) while no text field is editing.
-    /// The Timeline menu lists them without matching them (TimelineMenuDelegate).
+    /// The editor's keys while no text field is editing: plain keys (space, J/K/L, S, Z, C, M, R, 0–9, arrows, delete…)
+    /// run their command from the registry (`EditorCommands`), and ⌘C, ⌘V, ⌘A act on zooms when they can.
+    /// Other ⌘ shortcuts live in the menus. The Timeline menu lists single keys without matching them
+    /// (TimelineMenuDelegate). While the command menu is open, the arrows, Return and Esc drive it.
     private func installKeyMonitor() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, let w = self.window, w.isKeyWindow, w.attachedSheet == nil else { return event }
-            if w.firstResponder is NSTextView { return event }
-            // ⌘ shortcuts live in the menus (File, Timeline, View); this handles the single keys.
+            let model = self.model
             let mods = event.modifierFlags.intersection([.command, .option, .control])
-            guard mods.isEmpty else { return event }
-            if self.model.isCropping {
-                // Crop mode: Return keeps the crop, Esc cancels; editing keys wait until it's done.
+            if model.showCommandPalette {
+                guard mods.isEmpty else { return event }
                 switch event.keyCode {
-                case 36, 76: self.model.commitCrop(); return nil
-                case 53: self.model.cancelCrop(); return nil
-                case 49: self.model.togglePlay(); return nil
-                default: return ["s", "z"].contains(event.charactersIgnoringModifiers?.lowercased() ?? "") || [51, 117].contains(event.keyCode) ? nil : event
+                case 126: CommandMenu.move(-1, model: model, app: self.app); return nil   // up
+                case 125: CommandMenu.move(1, model: model, app: self.app); return nil    // down
+                case 36, 76: CommandMenu.runHighlighted(model: model, app: self.app); return nil
+                case 53: CommandMenu.close(model); return nil
+                default: return event                                                    // typing goes to the search field
                 }
             }
-            switch event.keyCode {
-            case 49: self.model.togglePlay(); return nil              // space
-            case 123: self.model.step(event.modifierFlags.contains(.shift) ? -1 : -1.0 / 30); return nil
-            case 124: self.model.step(event.modifierFlags.contains(.shift) ? 1 : 1.0 / 30); return nil
-            case 51, 117: self.model.deleteSelection(); return nil     // delete, forward delete
-            case 53: self.model.selection = nil; return nil            // esc
-            case 115: self.model.seek(source: 0); return nil           // home
-            case 119: self.model.seek(source: self.model.duration); return nil
-            default: break
+            if w.firstResponder is NSTextView { return event }
+            if model.showShortcuts, mods.isEmpty, event.keyCode == 53 { model.showShortcuts = false; return nil }
+            if model.isCropping {
+                guard mods.isEmpty else { return event }
+                // Crop mode: Return keeps the crop, Esc cancels; editing keys wait until it's done.
+                switch event.keyCode {
+                case 36, 76: model.commitCrop(); return nil
+                case 53: model.cancelCrop(); return nil
+                case 49: model.togglePlay(); return nil
+                default: return ["s", "z", "c", "m", "r", "b", "a", "x", "t", "h"].contains(event.charactersIgnoringModifiers?.lowercased() ?? "") || [51, 117].contains(event.keyCode) ? nil : event
+                }
             }
-            switch event.charactersIgnoringModifiers?.lowercased() {
-            case "j": self.model.shuttle("j"); return nil
-            case "k": self.model.shuttle("k"); return nil
-            case "l": self.model.shuttle("l"); return nil
-            case "s": self.model.splitAtPlayhead(); return nil
-            case "z": self.model.addZoomAtPlayhead(); return nil
-            default: return event
-            }
+            let commands = EditorCommands.all(model: model, app: self.app)
+            guard let command = EditorCommands.command(for: event, in: commands) else { return event }
+            if command.isEnabled { command.action() }
+            return nil
         }
     }
 }

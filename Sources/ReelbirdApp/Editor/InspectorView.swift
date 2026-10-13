@@ -32,6 +32,7 @@ struct InspectorView: View {
                     case .canvas: CanvasSection(model: model)
                     case .audio: AudioSection(model: model)
                     case .captions: CaptionsSection(model: model)
+                    case .overlays: OverlaysSection(model: model)
                     }
                 }
                 .padding(Theme.Space.l)
@@ -267,11 +268,17 @@ struct ZoomSection: View {
 
             if let r = model.selectedZoom {
                 Divider().padding(.vertical, 2)
-                SectionLabel(text: "Selected zoom")
-                FieldRow(label: "Depth") {
-                    ValueSlider(value: Binding(get: { r.scale }, set: { v in model.updateZoom(r.id, coalesce: "scale") { $0.scale = v } }),
-                                range: 1.1...3.5) { String(format: "%.1f×", $0) }
+                Toggle(isOn: Binding(get: { r.enabled }, set: { model.setZoomsEnabled($0, for: [r.id]) })) {
+                    SectionLabel(text: "Selected zoom")
                 }
+                .toggleStyle(.brand)
+                .help("Turn this zoom off without deleting it (0)")
+                .accessibilityLabel("Zoom on")
+                FieldRow(label: "Depth") {
+                    ValueSlider(value: Binding(get: { r.scale }, set: { v in model.updateZoom(r.id, coalesce: "scale") { $0.scale = v; $0.enabled = true } }),
+                                range: ZoomEditing.minDepth...ZoomEditing.maxDepth) { String(format: "%.1f×", $0) }
+                }
+                FieldRow(label: "Transition") { transitionPicker(Binding(get: { r.instant }, set: { model.setZoomsInstant($0 == true, for: [r.id]) })) }
                 FieldRow(label: "Focus") {
                     Picker("Focus", selection: Binding(get: { r.focus == nil }, set: { follow in
                         model.updateZoom(r.id, coalesce: "focus") { $0.focus = follow ? nil : (model.edit.crop?.center ?? .center) }
@@ -287,8 +294,47 @@ struct ZoomSection: View {
                 }
                 Button("Delete Zoom", role: .destructive) { model.deleteSelection() }
                     .buttonStyle(SecondaryButtonStyle())
+            } else if model.selectedZoomIDs.count > 1 {
+                multiSelection(model.selectedZooms)
             }
         }
+    }
+
+    /// Smooth (animated) or Instant (a cut). `nil` = a mix, when several zooms are selected.
+    private func transitionPicker(_ instant: Binding<Bool?>) -> some View {
+        PillTabs(selection: instant, items: [
+            .init(value: false, title: "Smooth", symbol: nil),
+            .init(value: true, title: "Instant", symbol: nil),
+        ], compact: true)
+        .help("Instant cuts straight in and out with no zoom animation (I)")
+    }
+
+    /// Several zooms selected: depth, transition and on/off for all of them at once.
+    @ViewBuilder private func multiSelection(_ zs: [ZoomRegion]) -> some View {
+        let ids = Set(zs.map(\.id))
+        Divider().padding(.vertical, 2)
+        Toggle(isOn: Binding(get: { zs.contains(where: \.enabled) }, set: { model.setZoomsEnabled($0, for: ids) })) {
+            SectionLabel(text: "\(zs.count) zooms selected")
+        }
+        .toggleStyle(.brand)
+        .help("Turn these zooms off without deleting them (0)")
+        .accessibilityLabel("Zooms on")
+        FieldRow(label: "Depth") {
+            ValueSlider(value: Binding(get: { zs.first?.scale ?? 1.8 }, set: { model.setZoomDepth($0, for: ids) }),
+                        range: ZoomEditing.minDepth...ZoomEditing.maxDepth) { v in
+                zs.allSatisfy({ abs($0.scale - (zs.first?.scale ?? 0)) < 0.01 }) ? String(format: "%.1f×", v) : "Mixed"
+            }
+        }
+        FieldRow(label: "Transition") {
+            transitionPicker(Binding(get: {
+                zs.allSatisfy(\.instant) ? true : zs.allSatisfy { !$0.instant } ? false : nil
+            }, set: { if let v = $0 { model.setZoomsInstant(v, for: ids) } }))
+        }
+        Text("Shift-click a zoom to add or remove it. Keys 1–9 set the depth of all of them, 0 turns them off.")
+            .font(.system(size: 11)).foregroundStyle(.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
+        Button("Delete \(zs.count) Zooms", role: .destructive) { model.deleteSelection() }
+            .buttonStyle(SecondaryButtonStyle())
     }
 
     private func modeHelp(_ m: ZoomSettings.Mode) -> String {
@@ -302,12 +348,15 @@ struct ZoomSection: View {
     private func summary(_ z: ZoomSettings) -> String {
         let auto = z.regions.filter { $0.source == .auto }.count
         let user = z.regions.count - auto
+        let off = z.regions.filter { !$0.enabled }.count
+        let base: String
         switch (auto, user) {
         case (0, 0): return "No zooms yet"
-        case (_, 0): return "\(auto) automatic zoom\(auto == 1 ? "" : "s")"
-        case (0, _): return "\(user) zoom\(user == 1 ? "" : "s") you added"
-        default: return "\(auto) automatic, \(user) adjusted by you"
+        case (_, 0): base = "\(auto) automatic zoom\(auto == 1 ? "" : "s")"
+        case (0, _): base = "\(user) zoom\(user == 1 ? "" : "s") you added"
+        default: base = "\(auto) automatic, \(user) adjusted by you"
         }
+        return off == 0 ? base : "\(base), \(off) turned off"
     }
 }
 
@@ -338,8 +387,75 @@ struct CameraSection: View {
                     if !model.edit.camera.moves.isEmpty { moves }
                     Toggle("Mirror", isOn: model.binding(\.camera.mirror, "Mirror Camera")).toggleStyle(.brand).font(.system(size: 12))
                     Toggle("Blur background", isOn: model.binding(\.camera.blurBackground, "Blur Background")).toggleStyle(.brand).font(.system(size: 12))
+                    Divider().padding(.vertical, 2)
+                    duringZooms
+                    Divider().padding(.vertical, 2)
+                    layouts
                 }
             }
+        }
+    }
+
+    /// The bubble during zooms: smaller, and out of the cursor's way.
+    @ViewBuilder private var duringZooms: some View {
+        let cam = model.edit.camera
+        SectionLabel(text: "During zooms")
+        Toggle("Shrink while zoomed", isOn: model.binding(\.camera.shrinkWhenZoomed, "Shrink Camera During Zooms"))
+            .toggleStyle(.brand).font(.system(size: 12))
+        if cam.shrinkWhenZoomed {
+            FieldRow(label: "Size") {
+                ValueSlider(value: model.binding(\.camera.sizeWhileZoomed, "Camera Size While Zoomed"),
+                            range: CameraPlacement.zoomedSizeRange) { "\(Int(($0 * 100).rounded()))%" }
+            }
+            .help("The camera's size while the screen is zoomed in, as a share of its size")
+        }
+        Toggle("Move out of the cursor's way", isOn: model.binding(\.camera.smartFraming, "Camera Smart Framing"))
+            .toggleStyle(.brand).font(.system(size: 12))
+        Text("When a zoom would put the cursor under the camera, it glides to a free corner and back.")
+            .font(.system(size: 11)).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Camera only, split or screen only for parts of the video (the Layouts lane).
+    @ViewBuilder private var layouts: some View {
+        let tall = model.canvasPixelSize.height > model.canvasPixelSize.width
+        SectionLabel(text: "Layouts")
+        if let s = model.selectedLayout {
+            PillTabs(selection: Binding(get: { s.kind }, set: { model.setLayoutKind(s.id, $0) }), items: [
+                .init(value: .fullCamera, title: LayoutSegment.Kind.fullCamera.label, symbol: LayoutSegment.Kind.fullCamera.symbol()),
+                .init(value: .split, title: LayoutSegment.Kind.split.label, symbol: LayoutSegment.Kind.split.symbol(tall: tall)),
+                .init(value: .screenOnly, title: LayoutSegment.Kind.screenOnly.label, symbol: LayoutSegment.Kind.screenOnly.symbol()),
+            ], compact: true)
+            Text(layoutHelp(s.kind, tall: tall)).font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            FieldRow(label: "Time") {
+                Text("\(TimeFormat.clock(s.range.start, tenths: true)) – \(TimeFormat.clock(s.range.end, tenths: true))")
+                    .font(.system(size: 12).monospacedDigit()).foregroundStyle(.secondary)
+            }
+            Button("Delete Layout", role: .destructive) { model.deleteLayout(s.id) }
+                .buttonStyle(SecondaryButtonStyle())
+        } else {
+            Text("Show only your camera, the two side by side, or only the screen for part of the video. Elsewhere the camera is the bubble.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: Theme.Space.s) {
+                Button { model.addLayoutAtPlayhead() } label: { Label("Add at Playhead", systemImage: "plus") }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .help("Add a layout at the playhead (C)")
+                let n = model.edit.layouts.count
+                if n > 0 {
+                    Text(n == 1 ? "1 layout" : "\(n) layouts").font(.system(size: 11)).foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    private func layoutHelp(_ k: LayoutSegment.Kind, tall: Bool) -> String {
+        switch k {
+        case .fullCamera: "Your camera fills the frame."
+        case .split: tall ? "The screen above, your camera below, on the background." : "The screen and your camera side by side, on the background."
+        case .screenOnly: "The camera steps away; only the screen shows."
+        case .overlay: "The camera bubble over the screen."
         }
     }
 
@@ -822,7 +938,7 @@ struct CaptionsSection: View {
                 Text("Shared links always offer captions as a track viewers can turn on.")
                     .font(.system(size: 11)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
             }
-            if model.storySupported { story }
+            if model.storySupported || !model.markers.isEmpty || !model.edit.chapters.isEmpty { story }
             if model.edit.captions.file != nil, let t = model.transcript {
                 Divider().padding(.vertical, 2)
                 SectionLabel(text: "Transcript")
@@ -851,46 +967,55 @@ struct CaptionsSection: View {
         .onAppear { model.checkCaptionsAvailability() }
     }
 
-    /// Title and chapters from Apple Intelligence (macOS 26+ only; hidden before that).
+    /// Title and chapters: suggested by Apple Intelligence (macOS 26+ only), or made from the recording's markers.
     @ViewBuilder private var story: some View {
         Divider().padding(.vertical, 2)
-        SectionLabel(text: "Title & chapters")
-        if let reason = model.storyUnavailableReason {
-            StatusLine(tone: .info, text: reason)
-        } else if model.transcript == nil {
-            Text("Generate captions first. Reelbird suggests a title and chapters from what you said, on this Mac.")
-                .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        } else {
-            switch model.storyState {
-            case .working:
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Reading your transcript…").font(.system(size: 12)).foregroundStyle(.secondary)
-                }
-            case .failed(let msg):
-                StatusLine(tone: .error, text: msg)
-                suggestButton
-            case .idle:
-                suggestButton
-            }
-            if !model.edit.chapters.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(model.edit.chapters.enumerated()), id: \.offset) { _, c in
-                        Button { model.seek(source: c.time) } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text(TimeFormat.clock(c.time)).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(.tertiary)
-                                    .frame(width: 30, alignment: .leading)
-                                Text(c.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Chapter at \(TimeFormat.clock(c.time)), \(c.title)")
+        SectionLabel(text: model.storySupported ? "Title & chapters" : "Chapters")
+        if model.storySupported {
+            if let reason = model.storyUnavailableReason {
+                StatusLine(tone: .info, text: reason)
+            } else if model.transcript == nil {
+                Text("Generate captions first. Reelbird suggests a title and chapters from what you said, on this Mac.")
+                    .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                switch model.storyState {
+                case .working:
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Reading your transcript…").font(.system(size: 12)).foregroundStyle(.secondary)
                     }
+                case .failed(let msg):
+                    StatusLine(tone: .error, text: msg)
+                    suggestButton
+                case .idle:
+                    suggestButton
                 }
-                Button("Clear Chapters") { model.clearChapters() }
-                    .buttonStyle(.link).font(.system(size: 12)).foregroundStyle(Theme.accentText)
             }
+        }
+        if !model.markers.isEmpty {
+            Button { model.useMarkersAsChapters() } label: {
+                Label("Use Markers as Chapters", systemImage: "flag")
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .help("Makes a chapter at each of the \(model.markers.count) marker\(model.markers.count == 1 ? "" : "s") on the timeline. Replaces the chapters; Undo brings them back.")
+        }
+        if !model.edit.chapters.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(model.edit.chapters.enumerated()), id: \.offset) { _, c in
+                    Button { model.seek(source: c.time) } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(TimeFormat.clock(c.time)).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(.tertiary)
+                                .frame(width: 30, alignment: .leading)
+                            Text(c.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Chapter at \(TimeFormat.clock(c.time)), \(c.title)")
+                }
+            }
+            Button("Clear Chapters") { model.clearChapters() }
+                .buttonStyle(.link).font(.system(size: 12)).foregroundStyle(Theme.accentText)
         }
     }
 

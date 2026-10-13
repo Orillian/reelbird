@@ -56,6 +56,8 @@ import ReelbirdCore
     func registerHotKeys() {
         HotKeyCenter.shared.register(.record, prefs.recordHotKey) { [weak self] in self?.toggleRecordingFromHotKey() }
         HotKeyCenter.shared.register(.pause, prefs.pauseHotKey) { [weak self] in self?.togglePauseFromHotKey() }
+        recording.syncMarkerHotKey()
+        recording.updateLayoutHotKey()
         onHotKeysChanged?()
     }
 

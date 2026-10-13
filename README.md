@@ -35,8 +35,8 @@ It's a native Swift app with no account, no telemetry and no Reelbird server: sh
 
 ## How it works
 
-1. **Record.** Pick a display, a window or an area, with camera, microphone and system audio if you want them. Press ⌥⇧R from any app.
-2. **Stop.** The link is already on your clipboard. Reelbird streamed the take to your bucket while you recorded, so it plays in any browser a moment later.
+1. **Record.** Pick a display, a window or an area, with camera, microphone and system audio if you want them. Press ⌥⇧R from any app. Press ⌥⇧M to drop a marker at a moment you want to find again.
+2. **Stop.** The link is already on your clipboard. Reelbird streamed the take to your bucket while you recorded, so it plays in any browser a moment later. A small card in the bottom-left corner offers **Copy video** (an MP4 to paste into Slack, Messages or Finder), **Save** and **Edit**.
 3. **Polish it later.** Open the same take. Reelbird has planned zooms on your clicks and typing, smoothed the cursor and levelled your voice. Trim, add captions, pick a background, then choose **Update link**. Everyone you sent the link to now sees the polished version.
 
 <table>
@@ -56,17 +56,27 @@ It's a native Swift app with no account, no telemetry and no Reelbird server: sh
 
 **The camera goes where you put it.** Drag the camera bubble while you record and the video follows: it starts where the bubble was and glides each time you moved it. In the editor, drag it anywhere on the preview (it snaps to the edges and centre lines), pick a corner, delete single moves or keep it in one place. Circle, rounded square or a 3:4 portrait tile.
 
+**The camera makes room for zooms.** While the screen is zoomed in, the bubble shrinks (to 70% by default) on the same curve as the zoom, and if the zoomed cursor would pass under it, it glides to the nearest free corner and back. Both can be turned off in the Camera panel.
+
+**Camera layouts.** For any part of the video, show only the camera, the screen and camera side by side (stacked on a 9:16 canvas), or only the screen, with a short spring between layouts. Add them on the Layouts lane of the timeline (press C), or switch while you record with ⌥⇧L: bubble, camera only, screen only. The editor starts with the layouts you switched to.
+
+**Blur what shouldn't be seen.** Press B and drag over an email, a key or a customer's name: it is blurred (or pixelated) for as long as you want, on its own bar in the Overlays lane. **Find Sensitive Info** reads the text on screen on your Mac and suggests blurs for emails, API keys and tokens, card numbers and phone numbers (plus any words you add), following the text when it scrolls; keep each one, or Keep All. Blurs are anchored to the screen, so they stay on the content through zoom, crop and any aspect, and every strength leaves text unreadable: each cell keeps one averaged colour, so what was under it can't be recovered. Nothing is uploaded to find them.
+
+**Arrows, boxes, labels and highlights.** Draw them on the preview, pick a colour, trim them on the timeline.
+
 **Keeps your take if the app quits.** Every track is written to disk in 2-second segments from the first frame. If Reelbird crashes or quits mid-recording, the take is recovered the next time Reelbird opens, minus at most the last two seconds.
 
 **Warns you while it matters.** If the microphone is recording silence, capture stalls, audio drifts, the disk is filling up or uploads fall behind, you see it during the recording, not after.
 
 **Auto-zoom and a smooth cursor.** Reelbird logs clicks, typing, scrolls and pointer movement next to the video, then plans zooms that follow them. One slider sets how much it zooms, from subtle to punchy, and you can add, move or delete zooms on the timeline. The cursor is redrawn from that log, so it glides instead of jittering, and you can resize or hide it after the fact. Preview and export use the same Metal renderer, so the export looks exactly like the preview.
 
+**Speed up the slow parts.** Play any part at 0.25× to 8× from the speed lane (R changes the speed of the selected part). Voices keep their pitch up to 2×; faster parts are silent unless you keep their sound. **Speed Up Typing** finds stretches of typing and of waiting with nothing happening, and offers to speed them all up in one click; each one stays on the timeline to change or remove.
+
 **Audio that sounds finished.** **Auto level** brings your voice to a steady −16 LUFS with a true-peak limiter. **Enhance voice** removes background noise and evens out your voice on your Mac, with a strength control and a blend back to the original; the raw microphone track is never changed. **Lower under voice** turns system audio down while you talk.
 
 **Instant share links to your own bucket.** With **Share while recording** on, Reelbird uploads a 1080p stream as you record and copies the link the moment you stop. After editing, **Update link** replaces the video and keeps the URL. Setup is in [docs/SHARING.md](docs/SHARING.md).
 
-**Captions on your Mac.** Captions come from Apple's on-device speech recognition. Burn them into the export, or let viewers turn them on from the share page. **Cut Long Silences** removes the pauses in one go. From the command line, `reelbird suggest` writes a title and chapters with Apple's on-device model on Macs with Apple Intelligence. No API keys.
+**Captions on your Mac.** Captions come from Apple's on-device speech recognition. Burn them into the export, or let viewers turn them on from the share page. **Cut Long Silences** removes the pauses in one go. From the command line, `reelbird suggest` writes a title and chapters with Apple's on-device model on Macs with Apple Intelligence. No API keys. Markers you drop while recording show as flags on the timeline, and **Use Markers as Chapters** turns them into the chapter list on the share page.
 
 **Clean frames.** Backgrounds, padding, rounded corners, aspect ratios for every platform, and **Hide Browser Toolbar** to crop the tabs and bookmarks bar off a browser window.
 
@@ -158,12 +168,16 @@ The script creates a self-signed certificate named "Reelbird Local Signing" in y
 
 ## Keyboard shortcuts
 
-These two work in every app. Change them in **Settings… → General**.
+These work in every app. Change them in **Settings… → General**; Reelbird refuses keys another of its shortcuts or another app already uses.
 
 | Shortcut | Action |
 |---|---|
 | ⌥⇧R | New recording; while recording, stop |
 | ⌥⇧P | Pause or resume |
+| ⌥⇧M | Add a marker (only while recording, so the keys type normally the rest of the time) |
+| ⌥⇧L | While recording with the camera: switch the camera layout (bubble, camera only, screen only) |
+
+After you stop, the quick actions card closes by itself after about 12 seconds unless the pointer is on it; × closes it sooner. It never takes keyboard focus, so you can paste the link straight away. **Settings… → General → After recording** chooses between the card (the default), opening the editor, or nothing.
 
 While picking what to record, Return starts and Esc closes the picker. During the countdown, Return, Space or a click skips it and Esc cancels. When selecting an area, Return records and Esc cancels.
 
@@ -177,9 +191,21 @@ In the editor:
 | Home / End | Jump to start or end |
 | S | Split at the playhead |
 | Z | Add a zoom at the playhead |
-| Delete | Cut the selected part, delete the selected zoom, or restore a cut |
-| Esc | Clear the selection |
-| ⌘1 to ⌘7 | Background, Cursor, Zoom, Camera, Canvas, Audio, Captions |
+| M | Add a marker at the playhead (click a flag to jump to it, double-click to rename, right-click to delete) |
+| C | Add a camera layout at the playhead (or select the one there) |
+| R | Speed: 2× for the selected part (or 3 seconds from the playhead); on a speed segment, the next speed |
+| B | Blur an area: drag on the preview |
+| A / X / T / H | Draw an arrow, a box, a text label or a highlight |
+| 1 to 9 | Zoom depth of the selected zoom, or the one under the pointer (1 = 1.25×, 9 = 3.5×) |
+| 0 | Turn that zoom off without deleting it, or back on |
+| I | Make that zoom instant: it cuts in and out with no animation |
+| Delete | Cut the selected part, delete the selected zooms, layout, speed or overlay, or restore a cut |
+| Esc | Put down the drawing tool, or clear the selection |
+| ⌘C / ⌘V | Copy the selected zooms / paste them at the playhead |
+| ⌘A | Select every zoom (shift-click or drag a box on the zoom lane to select some) |
+| ⌘K | Command menu: search every command and setting |
+| ⌘/ | Show every editor shortcut |
+| ⌘1 to ⌘8 | Background, Cursor, Zoom, Camera, Canvas, Audio, Captions, Overlays |
 | ⌘= / ⌘− | Zoom the timeline in or out |
 | ⌘E | Export |
 | ⌘Z / ⇧⌘Z | Undo / redo |
@@ -202,9 +228,22 @@ reelbird record --window 1234 --share          # a window by ID from `sources`; 
 reelbird list                                  # recent recordings
 reelbird edit latest --set zoom.intensity=0.7 --trim 0:05-end
 reelbird edit latest --set camera.x=0.5 --set camera.y=1 --clear-camera-moves   # camera bottom centre, in one place
+reelbird edit latest --speed 0:12-0:20@2       # play 12–20 s at 2× (1 = normal speed again)
+reelbird speedup latest --apply                # speed up typing and idle stretches
+reelbird edit latest --layout camera@0:00-0:04 --layout split@0:30-0:45         # camera layouts for parts of the video
+reelbird edit latest --set camera.sizeWhileZoomed=0.6 --set camera.smartFraming=false
+reelbird edit latest --set zoom.regions.auto-3.enabled=false   # turn one zoom off (ids are in `edit latest --json`)
+reelbird edit latest --set zoom.regions.*.instant=true         # every zoom cuts in and out, no animation
+reelbird blur latest --rect 0.1,0.2,0.3,0.05 --from 0:05 --to 0:12   # blur an area (0–1 of the screen, or pixels)
+reelbird redact latest --auto                  # find emails, keys, card and phone numbers on screen (masked list)
+reelbird redact latest --auto --keep-all       # ...and blur them all (or --keep ID)
+reelbird annotate latest --add arrow --arrow 0.8,0.8,0.55,0.45 --from 3 --to 6
+reelbird annotate latest                       # list overlays; --remove ID or --clear
 reelbird export latest --format mp4 --height 1080
 reelbird captions latest                       # captions.vtt, made on this Mac
 reelbird enhance latest --strength medium      # clean up the voice; the raw mic is kept
+reelbird markers latest                        # markers dropped while recording
+reelbird markers latest --as-chapters          # make them the chapters on the share page
 reelbird share latest                          # upload and print the link
 reelbird share latest --polished               # render the edit, same link
 reelbird help record
@@ -218,7 +257,7 @@ When you record from a terminal, macOS asks for Screen Recording permission for 
 
 ## MCP server
 
-`reelbird mcp` runs an MCP server over stdio. Agents get tools to list sources, start and stop recordings, list and inspect projects, edit (including crop and camera placement), export, caption, enhance the voice, find silences, suggest chapters, and share or unshare.
+`reelbird mcp` runs an MCP server over stdio. Agents get tools to list sources, start and stop recordings, drop and list markers (`add_marker`, `list_markers`), list and inspect projects, edit (including crop, camera placement, camera layouts and speed), blur regions, find and blur sensitive info, add and remove overlays, export, caption, enhance the voice, find silences, speed up typing, suggest chapters, and share or unshare.
 
 **Claude Code**
 
@@ -298,6 +337,8 @@ Then turn on **Share while recording** in the picker, and the link is on your cl
 ## Privacy
 
 - Recordings, edits, captions and transcripts stay on your Mac, in `~/Movies/Reelbird` unless you choose another folder.
+- Find Sensitive Info reads the screen with Apple's on-device text recognition. Findings stay on your Mac; the command line and MCP show only masked previews (`sk-p…F2`, `•••• 4242`).
+- A link shared while recording plays that raw take until you **Update link**, so update it after adding blurs. The editor reminds you.
 - Captions and titles are made on-device by Apple's frameworks. No API keys and no cloud services. (On macOS 26, macOS downloads Apple's speech model the first time you make captions.)
 - Nothing is uploaded unless you share. Shares go only to the bucket you configured, signed with your own keys. The secret key lives in your macOS Keychain.
 - No analytics, no telemetry, no crash reporting, no update checks. The app never contacts a Reelbird server, because there isn't one.
@@ -307,7 +348,6 @@ Then turn on **Share while recording** in the picker, and the link is on your cl
 
 - **Joining clips.** The project format can already append other takes; the editor doesn't have a UI for it yet.
 - **Focus-follow zoom.** Zooms that follow the text field you're typing in. Today zooms follow clicks.
-- **Annotations.** Arrows, boxes, text and blur. The renderer draws them; the editor can't add them yet.
 - **Titles and chapters in the app.** Available from the CLI and MCP today.
 - **A signed, notarised download**, so there is no approval step.
 - **Windows and Linux are not planned.** Reelbird is built on Apple frameworks from top to bottom.

@@ -149,7 +149,10 @@ struct ControlBarView: View {
     var phase: RecordingController.Phase? = nil
     /// Snapshot override for the meter's dBFS reading.
     var levels: MicLevelReading? = nil
+    /// Snapshot override for the "Marker N" flash.
+    var marker: RecordingController.MarkerFlash? = nil
     @Environment(\.isSnapshot) private var snapshot
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Start over and discard both delete the take, so each asks once, inline, above the bar.
     private enum Confirmation { case discard, startOver }
     @ViewState private var confirming: Confirmation?
@@ -157,6 +160,7 @@ struct ControlBarView: View {
     private var st: RecorderStatus { status ?? controller?.status ?? RecorderStatus() }
     private var ph: RecordingController.Phase { phase ?? controller?.phase ?? .recording }
     private var warnings: [HealthWarning] { status == nil ? (controller?.visibleWarnings ?? []) : st.warnings }
+    private var flash: RecordingController.MarkerFlash? { marker ?? controller?.markerFlash }
     private var meterLevels: MicLevelReading {
         levels ?? controller?.micLevels
             ?? MicLevelReading(peakDB: MicLevelReading.floorDB + st.microphoneLevel * 60 + 10, rmsDB: MicLevelReading.floorDB + st.microphoneLevel * 60)
@@ -170,12 +174,32 @@ struct ControlBarView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             if let confirming { confirmation(confirming).transition(.opacity) }
+            if let flash {
+                markerChip(flash)
+                    .id(flash.id)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.85, anchor: .bottom).combined(with: .opacity))
+            }
             bar
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 10)
         .animation(Theme.gentle, value: warnings)
         .animation(Theme.snappy, value: confirming)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.72), value: flash)
+    }
+
+    /// "Marker 3 · 1:24", just above the bar for a moment after a marker drops.
+    private func markerChip(_ m: RecordingController.MarkerFlash) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "flag.fill").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.ink)
+            Text(m.title).font(.system(size: 12, weight: .semibold))
+            Text(TimeFormat.clock(m.elapsed)).font(.system(size: 12).monospacedDigit()).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 6)
+        .floatingSurface(cornerRadius: 10, snapshot: snapshot)
+        .fixedSize()
+        .accessibilityElement(children: .combine)
     }
 
     private var bar: some View {
@@ -230,6 +254,11 @@ struct ControlBarView: View {
             .buttonStyle(IconButtonStyle(size: 30, active: ph == .paused))
             .help(ph == .paused ? "Resume (\(prefs.pauseHotKey.display))" : "Pause (\(prefs.pauseHotKey.display))")
             .accessibilityLabel(ph == .paused ? "Resume" : "Pause")
+
+            Button { controller?.addMarker() } label: { Image(systemName: "flag") }
+                .buttonStyle(IconButtonStyle(size: 30))
+                .help("Add a marker (\(prefs.markerHotKey.display))")
+                .accessibilityLabel("Add marker")
 
             Button { confirming = .startOver } label: { Image(systemName: "arrow.counterclockwise") }
                 .buttonStyle(IconButtonStyle(size: 30))

@@ -3,7 +3,8 @@ import ReelbirdCore
 import SwiftUI
 
 /// The editor timeline on the recording (source) timeline: ruler, filmstrip with trim handles,
-/// waveform, zoom lane, cuts (hatched), split points and the playhead.
+/// waveform, zoom lane, the camera layouts lane (recordings with a camera), speed lane, overlays lane, cuts (hatched), split
+/// points and the playhead.
 struct TimelineView: View {
     @Bindable var model: EditorModel
 
@@ -13,7 +14,16 @@ struct TimelineView: View {
     static let videoHeight: CGFloat = 50
     static let audioHeight: CGFloat = 34
     static let zoomHeight: CGFloat = 28
+    static let layoutHeight: CGFloat = 26
+    static let speedHeight: CGFloat = 24
+    static let overlayHeight: CGFloat = 28
     static let laneGap: CGFloat = 8
+
+    /// The timeline's height: the base lanes plus the speed lane, and the layouts lane with a camera.
+    static func height(layouts: Bool) -> CGFloat {
+        let base = 188 + speedHeight + laneGap + overlayHeight + laneGap
+        return layouts ? base + layoutHeight + laneGap : base
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -38,6 +48,9 @@ struct TimelineView: View {
             laneIcon("film", height: Self.videoHeight, label: "Video")
             laneIcon("waveform", height: Self.audioHeight, label: "Audio")
             laneIcon("plus.magnifyingglass", height: Self.zoomHeight, label: "Zooms")
+            if model.hasCamera { laneIcon("person.crop.rectangle", height: Self.layoutHeight, label: "Camera layouts") }
+            laneIcon("gauge.with.dots.needle.67percent", height: Self.speedHeight, label: "Speed")
+            laneIcon("square.on.square.dashed", height: Self.overlayHeight, label: "Overlays")
             Spacer(minLength: 0)
         }
         .frame(width: Self.gutter)
@@ -66,11 +79,18 @@ struct TimeScale {
 struct TimelineContent: View {
     @Bindable var model: EditorModel
     let scale: TimeScale
+    /// The zoom selection a box selection adds to (shift held when it started).
+    @ViewState private var marqueeBase: Set<String>?
 
     private var videoTop: CGFloat { TimelineView.rulerHeight + 6 }
     private var audioTop: CGFloat { videoTop + TimelineView.videoHeight + TimelineView.laneGap }
     private var zoomTop: CGFloat { audioTop + TimelineView.audioHeight + TimelineView.laneGap }
-    private var lanesBottom: CGFloat { zoomTop + TimelineView.zoomHeight }
+    private var layoutTop: CGFloat { zoomTop + TimelineView.zoomHeight + TimelineView.laneGap }
+    private var speedTop: CGFloat {
+        (model.hasCamera ? layoutTop + TimelineView.layoutHeight : zoomTop + TimelineView.zoomHeight) + TimelineView.laneGap
+    }
+    private var overlayTop: CGFloat { speedTop + TimelineView.speedHeight + TimelineView.laneGap }
+    private var lanesBottom: CGFloat { overlayTop + TimelineView.overlayHeight }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -83,10 +103,14 @@ struct TimelineContent: View {
             videoLane
             audioLane
             zoomLane
+            if model.hasCamera { layoutLane }
+            SpeedLane(model: model, scale: scale).offset(y: speedTop)
+            OverlaysLane(model: model, scale: scale).offset(y: overlayTop)
             cutsOverlay
             trimOverlay
             splitMarks
             cameraMoveMarks
+            markerFlags
             segmentSelection
             Playhead(model: model, scale: scale, height: lanesBottom + 6)
         }
@@ -168,14 +192,25 @@ struct TimelineContent: View {
 
     private var zoomLane: some View {
         ZStack(alignment: .topLeading) {
+            // Empty lane: click to move the playhead (and clear the selection), drag a box to select zooms.
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(Color.primary.opacity(0.03))
                 .frame(width: scale.x(model.duration) - scale.x(0), height: TimelineView.zoomHeight)
+                .contentShape(Rectangle())
                 .offset(x: scale.x(0))
-                .allowsHitTesting(false)
+                .gesture(marqueeGesture)
             ForEach(model.edit.zoom.regions) { r in
                 ZoomRegionView(model: model, region: r, scale: scale,
                                dimmed: model.edit.zoom.mode == .off || (model.edit.zoom.mode == .manual && r.source == .auto))
+            }
+            if let m = model.zoomMarquee {
+                let x0 = scale.x(min(m.start, m.end)), x1 = scale.x(max(m.start, m.end))
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Theme.ink.opacity(0.08))
+                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(Theme.ink.opacity(0.55), lineWidth: 1))
+                    .frame(width: max(1, x1 - x0), height: TimelineView.zoomHeight + 4)
+                    .offset(x: x0, y: -2)
+                    .allowsHitTesting(false)
             }
             if model.edit.zoom.regions.isEmpty {
                 Text(model.edit.zoom.mode == .off ? "Zoom is off" : "Press Z to add a zoom at the playhead")
@@ -187,6 +222,50 @@ struct TimelineContent: View {
             }
         }
         .offset(y: zoomTop)
+    }
+
+    /// Box select on the zoom lane (with shift: adds to the selection). A plain click scrubs like the rest of the timeline.
+    private var marqueeGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named("timeline"))
+            .onChanged { v in
+                if abs(v.translation.width) < 3 && model.zoomMarquee == nil {
+                    if model.isPlaying { model.pause() }
+                    model.seek(source: scale.t(v.location.x))
+                    return
+                }
+                let base = marqueeBase ?? (NSEvent.modifierFlags.contains(.shift) ? model.selectedZoomIDs : [])
+                marqueeBase = base
+                model.boxSelectZooms(TimeRange(start: scale.t(v.startLocation.x), end: scale.t(v.location.x)), adding: base)
+            }
+            .onEnded { _ in
+                if model.zoomMarquee == nil { model.selection = nil }
+                marqueeBase = nil
+                model.endZoomMarquee()
+            }
+    }
+
+    /// Camera layouts: Camera, Split and Screen segments; the bubble everywhere else.
+    private var layoutLane: some View {
+        let tall = model.canvasPixelSize.height > model.canvasPixelSize.width
+        return ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.primary.opacity(0.03))
+                .frame(width: scale.x(model.duration) - scale.x(0), height: TimelineView.layoutHeight)
+                .offset(x: scale.x(0))
+                .allowsHitTesting(false)
+            ForEach(model.edit.layouts) { s in
+                LayoutSegmentView(model: model, segment: s, scale: scale, tall: tall, dimmed: !model.edit.camera.visible)
+            }
+            if model.edit.layouts.isEmpty {
+                Text("Press C to change the camera layout at the playhead")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .frame(height: TimelineView.layoutHeight)
+                    .offset(x: scale.x(0) + 10)
+                    .allowsHitTesting(false)
+            }
+        }
+        .offset(y: layoutTop)
     }
 
     // MARK: Overlays
@@ -260,6 +339,15 @@ struct TimelineContent: View {
                 .accessibilityLabel("Camera move")
                 .offset(x: scale.x(move.t) - 8, y: videoTop - 15)
             }
+        }
+    }
+
+    /// Markers dropped while recording (or added with M): small flags on the ruler. Click to go there,
+    /// double-click to rename, right-click for more.
+    private var markerFlags: some View {
+        ForEach(model.markers) { m in
+            MarkerFlagView(model: model, marker: m, height: videoTop)
+                .offset(x: scale.x(m.t) - MarkerFlagView.stemX)
         }
     }
 
@@ -379,7 +467,9 @@ struct PlayheadKnob: Shape {
     }
 }
 
-/// One zoom region: drag to move, drag the edges to resize, click to select.
+/// One zoom region: drag to move, drag the edges to resize, click to select (shift-click adds to the
+/// selection). While the pointer is over it, 0–9 set its depth and I makes it instant. A zoom turned off is
+/// dimmed with a dashed outline; an instant one shows a bolt.
 struct ZoomRegionView: View {
     @Bindable var model: EditorModel
     let region: ZoomRegion
@@ -387,23 +477,39 @@ struct ZoomRegionView: View {
     let dimmed: Bool
     @ViewState private var origin: TimeRange?
 
-    private var selected: Bool { model.selection == .zoom(region.id) }
+    private var selected: Bool { model.selectedZoomIDs.contains(region.id) }
 
     var body: some View {
         let x0 = scale.x(region.range.start), x1 = scale.x(region.range.end)
         let w = max(10, x1 - x0)
         let user = region.source == .user
+        let on = region.enabled
+        let fill: Color = !on ? Color.primary.opacity(0.05) : user ? Theme.ink.opacity(0.82) : Theme.neutralMark.opacity(0.28)
+        let text: Color = on && user ? Theme.panel : Color.primary.opacity(on ? 0.7 : 0.5)
         ZStack {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(user ? Theme.ink.opacity(0.82) : Theme.neutralMark.opacity(0.28))
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(selected ? Theme.accent : Color.primary.opacity(user ? 0 : 0.18), lineWidth: selected ? 2 : 1)
+            RoundedRectangle(cornerRadius: 6, style: .continuous).fill(fill)
+            if on {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(selected ? Theme.accent : Color.primary.opacity(user ? 0 : 0.18), lineWidth: selected ? 2 : 1)
+            } else {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(selected ? Theme.accent : Color.primary.opacity(0.35),
+                                  style: StrokeStyle(lineWidth: selected ? 2 : 1, dash: selected ? [] : [3, 2.5]))
+            }
             if w > 44 {
                 HStack(spacing: 4) {
-                    Image(systemName: region.focus == nil ? "cursorarrow" : "scope").font(.system(size: 9, weight: .semibold))
-                    Text(String(format: "%.1f×", region.scale)).font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                    if on {
+                        Image(systemName: region.focus == nil ? "cursorarrow" : "scope").font(.system(size: 9, weight: .semibold))
+                        Text(String(format: "%.1f×", region.scale)).font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                        if region.instant && w > 66 {
+                            Image(systemName: "bolt.fill").font(.system(size: 8.5, weight: .semibold)).accessibilityHidden(true)
+                        }
+                    } else {
+                        Image(systemName: "eye.slash").font(.system(size: 9, weight: .semibold))
+                        Text("Off").font(.system(size: 10.5, weight: .semibold))
+                    }
                 }
-                .foregroundStyle(user ? Theme.panel : Color.primary.opacity(0.7))
+                .foregroundStyle(text)
             }
             HStack {
                 edge(leading: true)
@@ -414,7 +520,10 @@ struct ZoomRegionView: View {
         .frame(width: w, height: TimelineView.zoomHeight)
         .opacity(dimmed ? 0.4 : 1)
         .offset(x: x0)
-        .onTapGesture { model.selection = .zoom(region.id); model.section = .zoom }
+        .onHover { h in
+            if h { model.hoveredZoomID = region.id } else if model.hoveredZoomID == region.id { model.hoveredZoomID = nil }
+        }
+        .onTapGesture { model.clickZoom(region.id, extend: NSEvent.modifierFlags.contains(.shift)) }
         .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .named("timeline"))
             .onChanged { v in
                 let o = origin ?? region.range
@@ -422,14 +531,172 @@ struct ZoomRegionView: View {
                 let dt = Double(v.translation.width / scale.pps)
                 let d = o.duration
                 let start = min(max(0, o.start + dt), model.duration - d)
-                model.selection = .zoom(region.id)
+                if !selected { model.selection = .zoom(region.id) }
                 model.updateZoom(region.id, coalesce: "move") { $0.range = TimeRange(start: start, end: start + d) }
             }
             .onEnded { _ in origin = nil })
-        .help(user ? "Zoom you added. Drag to move, drag edges to resize, Delete to remove." :
-                "Automatic zoom from your clicks. Drag to adjust it.")
+        .help(help(user: user))
         .accessibilityElement()
-        .accessibilityLabel("\(user ? "Zoom" : "Automatic zoom"), \(String(format: "%.1f", region.scale)) times, at \(TimeFormat.clock(region.range.start))")
+        .accessibilityLabel(accessibilityText(user: user))
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    private func help(user: Bool) -> String {
+        let keys = "Shift-click to select several. 0–9 set the depth (0 turns it off), I makes it instant."
+        if !region.enabled { return "Zoom turned off: it stays here but doesn't play. Press 0 to turn it back on." }
+        return (user ? "Zoom you added. Drag to move, drag edges to resize, Delete to remove. " :
+                    "Automatic zoom from your clicks. Drag to adjust it. ") + keys
+    }
+
+    private func accessibilityText(user: Bool) -> String {
+        var parts = ["\(user ? "Zoom" : "Automatic zoom"), \(String(format: "%.1f", region.scale)) times, at \(TimeFormat.clock(region.range.start))"]
+        if !region.enabled { parts.append("off") }
+        if region.instant { parts.append("instant") }
+        return parts.joined(separator: ", ")
+    }
+
+    private func edge(leading: Bool) -> some View {
+        Color.clear
+            .frame(width: 7)
+            .contentShape(Rectangle())
+            .onHover { h in (h ? NSCursor.resizeLeftRight : NSCursor.arrow).set() }
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("timeline"))
+                .onChanged { v in
+                    let t = scale.t(v.location.x)
+                    if !selected { model.selection = .zoom(region.id) }
+                    model.updateZoom(region.id, coalesce: leading ? "start" : "end") { r in
+                        if leading { r.range.start = min(t, r.range.end - 0.3) } else { r.range.end = max(t, r.range.start + 0.3) }
+                    }
+                })
+    }
+}
+
+/// One marker on the ruler: a stem with a small pennant. The pennant is the hit target.
+struct MarkerFlagView: View {
+    @Bindable var model: EditorModel
+    let marker: Marker
+    /// From the top of the ruler to the top of the video lane.
+    let height: CGFloat
+    static let stemX: CGFloat = 4
+    @ViewState private var renaming = false
+    @ViewState private var draft = ""
+    @ViewState private var hovering = false
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Rectangle().fill(Theme.ink.opacity(0.7))
+                .frame(width: 1.5, height: height - 2)
+                .offset(x: Self.stemX - 0.75, y: 2)
+            Pennant()
+                .fill(Theme.ink.opacity(hovering ? 1 : 0.85))
+                .frame(width: 10, height: 8)
+                .offset(x: Self.stemX, y: 2)
+        }
+        .frame(width: 18, height: height, alignment: .topLeading)
+        .contentShape(Rectangle().size(width: 18, height: 14))
+        .onHover { hovering = $0 }
+        .onTapGesture(count: 2) { startRename() }
+        .onTapGesture { model.seek(source: marker.t) }
+        .contextMenu {
+            Button("Go to \(marker.title)") { model.seek(source: marker.t) }
+            Button("Rename…") { startRename() }
+            Button("Delete Marker") { model.deleteMarker(marker.id) }
+            Divider()
+            Button("Use Markers as Chapters") { model.useMarkersAsChapters() }
+        }
+        .popover(isPresented: $renaming, arrowEdge: .bottom) {
+            HStack(spacing: 8) {
+                TextField("Marker name", text: $draft)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 180)
+                    .onSubmit { commit() }
+                Button("Delete") { renaming = false; model.deleteMarker(marker.id) }
+                    .buttonStyle(SecondaryButtonStyle(small: true))
+            }
+            .padding(10)
+        }
+        .help("\(marker.title) at \(TimeFormat.clock(model.timeline.outputTime(forSource: marker.t) ?? marker.t)). Double-click to rename.")
+        .accessibilityElement()
+        .accessibilityLabel("Marker, \(marker.title)")
+        .accessibilityValue(TimeFormat.clock(marker.t))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { model.seek(source: marker.t) }
+        .accessibilityAction(named: "Rename") { startRename() }
+        .accessibilityAction(named: "Delete") { model.deleteMarker(marker.id) }
+    }
+
+    private func startRename() {
+        draft = marker.title
+        renaming = true
+    }
+
+    private func commit() {
+        model.renameMarker(marker.id, to: draft)
+        renaming = false
+    }
+}
+
+/// A flag's pennant: a rectangle with a notch cut into its free end.
+struct Pennant: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX - r.width * 0.3, y: r.midY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.minX, y: r.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// One camera layout segment: drag to move, drag the edges to resize, click to select (Delete removes it).
+struct LayoutSegmentView: View {
+    @Bindable var model: EditorModel
+    let segment: LayoutSegment
+    let scale: TimeScale
+    let tall: Bool
+    let dimmed: Bool
+    @ViewState private var origin: TimeRange?
+
+    private var selected: Bool { model.selection == .layout(segment.id) }
+
+    var body: some View {
+        let x0 = scale.x(segment.range.start), x1 = scale.x(segment.range.end)
+        let w = max(10, x1 - x0)
+        ZStack {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Theme.ink.opacity(0.82))
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(selected ? Theme.accent : .clear, lineWidth: 2)
+            if w > 30 {
+                HStack(spacing: 4) {
+                    Image(systemName: segment.kind.symbol(tall: tall)).font(.system(size: 9.5, weight: .semibold))
+                    if w > 70 { Text(segment.kind.label).font(.system(size: 10.5, weight: .semibold)) }
+                }
+                .foregroundStyle(Theme.panel)
+            }
+            HStack {
+                edge(leading: true)
+                Spacer(minLength: 0)
+                edge(leading: false)
+            }
+        }
+        .frame(width: w, height: TimelineView.layoutHeight)
+        .opacity(dimmed ? 0.4 : 1)
+        .offset(x: x0)
+        .onTapGesture { model.selection = .layout(segment.id); model.section = .camera }
+        .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .named("timeline"))
+            .onChanged { v in
+                let o = origin ?? segment.range
+                origin = o
+                model.selection = .layout(segment.id)
+                model.moveLayout(segment.id, to: o.start + Double(v.translation.width / scale.pps))
+            }
+            .onEnded { _ in origin = nil })
+        .help("\(segment.kind.label) layout. Drag to move, drag the edges to resize, Delete to remove.")
+        .accessibilityElement()
+        .accessibilityLabel("\(segment.kind.label) layout from \(TimeFormat.clock(segment.range.start)) to \(TimeFormat.clock(segment.range.end))")
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
     }
 
@@ -441,9 +708,9 @@ struct ZoomRegionView: View {
             .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("timeline"))
                 .onChanged { v in
                     let t = scale.t(v.location.x)
-                    model.selection = .zoom(region.id)
-                    model.updateZoom(region.id, coalesce: leading ? "start" : "end") { r in
-                        if leading { r.range.start = min(t, r.range.end - 0.3) } else { r.range.end = max(t, r.range.start + 0.3) }
+                    model.selection = .layout(segment.id)
+                    model.updateLayout(segment.id, coalesce: leading ? "start" : "end") { s in
+                        if leading { s.range.start = t } else { s.range.end = t }
                     }
                 })
     }

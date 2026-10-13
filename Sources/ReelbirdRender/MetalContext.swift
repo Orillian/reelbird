@@ -154,23 +154,38 @@ final class TextCache {
                 blue: CGFloat((v >> 8) & 0xff) / 255, alpha: CGFloat(v & 0xff) / 255)
     }
 
-    private static func render(_ key: Key, context: MetalContext, queue: any MTLCommandQueue) -> Entry? {
-        let size = CGFloat(max(4, key.fontSize))
-        let nsWeight: NSFont.Weight = key.weight >= 600 ? .semibold : (key.weight >= 500 ? .medium : .regular)
+    /// The laid-out text, its padding and the label's whole size in pixels.
+    private static func layout(text: String, fontSize: Int, weight: Int, color: UInt32, pill: Bool, maxWidth: Int)
+        -> (setter: CTFramesetter, fit: CGSize, padX: CGFloat, padY: CGFloat, w: Int, h: Int) {
+        let size = CGFloat(max(4, fontSize))
+        let nsWeight: NSFont.Weight = weight >= 600 ? .semibold : (weight >= 500 ? .medium : .regular)
         let font = NSFont.systemFont(ofSize: size, weight: nsWeight) as CTFont
         let attrs: [NSAttributedString.Key: Any] = [
             NSAttributedString.Key(kCTFontAttributeName as String): font,
-            NSAttributedString.Key(kCTForegroundColorAttributeName as String): rgba(key.color),
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): rgba(color),
         ]
-        let str = NSAttributedString(string: key.text, attributes: attrs)
+        let str = NSAttributedString(string: text, attributes: attrs)
         let setter = CTFramesetterCreateWithAttributedString(str)
-        let padX = key.pill != 0 ? size * 0.75 : size * 0.15
-        let padY = key.pill != 0 ? size * 0.45 : size * 0.15
-        let maxW = key.maxWidth > 0 ? CGFloat(key.maxWidth) - 2 * padX : CGFloat.greatestFiniteMagnitude
+        let padX = pill ? size * 0.75 : size * 0.15
+        let padY = pill ? size * 0.45 : size * 0.15
+        let maxW = maxWidth > 0 ? CGFloat(maxWidth) - 2 * padX : CGFloat.greatestFiniteMagnitude
         let fit = CTFramesetterSuggestFrameSizeWithConstraints(setter, CFRange(location: 0, length: 0), nil,
                                                                CGSize(width: maxW, height: .greatestFiniteMagnitude), nil)
         let w = Int((fit.width + 2 * padX).rounded(.up)) + 2
         let h = Int((fit.height + 2 * padY).rounded(.up)) + 2
+        return (setter, fit, padX, padY, w, h)
+    }
+
+    /// Pixel size of a label as `texture` would draw it.
+    static func labelSize(text: String, fontSize: Double, weight: Int, pill: Bool, maxWidth: Int) -> (width: Int, height: Int) {
+        let l = layout(text: text, fontSize: Int(fontSize.rounded()), weight: weight, color: 0xFFFFFFFF, pill: pill, maxWidth: maxWidth)
+        return (l.w, l.h)
+    }
+
+    private static func render(_ key: Key, context: MetalContext, queue: any MTLCommandQueue) -> Entry? {
+        let size = CGFloat(max(4, key.fontSize))
+        let (setter, fit, padX, padY, w, h) = layout(text: key.text, fontSize: key.fontSize, weight: key.weight, color: key.color,
+                                                     pill: key.pill != 0, maxWidth: key.maxWidth)
         guard w > 0, h > 0, w < 16384, h < 16384,
               let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!,

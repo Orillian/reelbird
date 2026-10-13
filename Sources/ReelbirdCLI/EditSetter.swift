@@ -4,6 +4,8 @@ import ReelbirdCore
 /// Applies dotted-key assignments (`zoom.intensity=0.7`, `background.colors=#112233,#445566`,
 /// `chapters.0.title=Intro`) to an `EditDocument` through a JSON round trip, so every field of the
 /// document is settable without per-field code, and the document's own decoder validates the result.
+/// In a list, an item can also be named by its `id` (`zoom.regions.auto-3.enabled=false`), and `*` sets
+/// every item (`zoom.regions.*.instant=true`).
 enum EditSetter {
     enum Value: Sendable {
         /// Text from the command line: parsed as JSON when it is valid JSON, otherwise taken as a string.
@@ -29,14 +31,17 @@ enum EditSetter {
         var doc = try JSONValue.encode(edit)
         var applied: [(path: [String], value: JSONValue)] = []
         for a in assignments {
-            let path = a.path.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
-            guard !path.isEmpty, !path.contains(where: \.isEmpty) else {
+            let written = a.path.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+            guard !written.isEmpty, !written.contains(where: \.isEmpty) else {
                 throw CLIError.usage("Invalid edit key '\(a.path)'.")
             }
-            let current = value(at: path, in: doc)
-            let v = try coerce(a.value, current: current, key: a.path)
-            doc = try setting(v, at: path[...], in: doc, fullPath: a.path)
-            applied.append((path, v))
+            for path in try expand(written[...], in: doc, fullPath: a.path) {
+                let key = path.joined(separator: ".")
+                let current = value(at: path, in: doc)
+                let v = try coerce(a.value, current: current, key: key)
+                doc = try setting(v, at: path[...], in: doc, fullPath: a.path)
+                applied.append((path, v))
+            }
         }
         let result: EditDocument
         do { result = try doc.decode(EditDocument.self) } catch let e as DecodingError {
@@ -81,6 +86,31 @@ enum EditSetter {
     }
 
     // MARK: - Internals
+
+    /// Resolves list items named by `id` to their index and expands `*` to every item, so the rest of the
+    /// setter works on plain index paths. A name that isn't a number and matches no item's `id` is an error.
+    static func expand(_ path: ArraySlice<String>, in v: JSONValue?, fullPath: String, done: [String] = []) throws -> [[String]] {
+        guard let k = path.first else { return [done] }
+        let rest = path.dropFirst()
+        guard case .array(let a)? = v else {
+            let child: JSONValue? = if case .object(let o)? = v { o[k] } else { nil }
+            return try expand(rest, in: child, fullPath: fullPath, done: done + [k])
+        }
+        if k == "*" {
+            return try a.indices.flatMap { try expand(rest, in: a[$0], fullPath: fullPath, done: done + [String($0)]) }
+        }
+        if let i = Int(k) { return try expand(rest, in: a.indices.contains(i) ? a[i] : nil, fullPath: fullPath, done: done + [k]) }
+        guard let i = a.firstIndex(where: { item in
+            if case .object(let o) = item, o["id"]?.stringValue == k { return true }
+            return false
+        }) else {
+            let ids = a.compactMap { item -> String? in if case .object(let o) = item { return o["id"]?.stringValue } else { return nil } }
+            let list = done.joined(separator: ".")
+            throw CLIError("'\(fullPath)': no item in \(list) has the id '\(k)'.", code: .dataError,
+                           hint: ids.isEmpty ? "\(list) is empty." : "IDs in \(list): \(ids.prefix(12).joined(separator: ", "))\(ids.count > 12 ? ", …" : "").")
+        }
+        return try expand(rest, in: a[i], fullPath: fullPath, done: done + [String(i)])
+    }
 
     static func value(at path: [String], in v: JSONValue) -> JSONValue? {
         var cur = v

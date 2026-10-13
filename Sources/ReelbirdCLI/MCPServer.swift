@@ -30,7 +30,7 @@ final class MCPServer: Sendable {
     static let serverInfo: JSONValue = ["name": "reelbird", "title": "Reelbird", "version": .string(ReelbirdInfo.version)]
     static let instructions = """
     Reelbird records the Mac screen into .reelbird projects and edits them non-destructively. \
-    Typical flow: list_sources → start_recording (returns session_id) → stop_recording → set_edit / generate_captions / suggest_story → export or share. \
+    Typical flow: list_sources → start_recording (returns session_id) → add_marker at key moments → stop_recording → set_edit / generate_captions / suggest_story → find_sensitive_info (blur secrets before sharing) → export or share. \
     A project argument is a .reelbird path, a name from list_projects, or "latest".
     """
 
@@ -217,6 +217,17 @@ final class MCPServer: Sendable {
             return try await startRecording(a)
         case "stop_recording":
             return try await stopRecording(a)
+        case "add_marker":
+            let id = try a.requiredString("session_id")
+            guard let session = await state.session(id) else {
+                throw CLIError("No running recording with session_id \(id). Start one with start_recording.")
+            }
+            guard let marker = await session.control.addMarker(label: try a.string("label")) else {
+                throw CLIError("Recording \(id) isn't running, so no marker was added.")
+            }
+            return Operations.markerAdded(marker, session: id)
+        case "list_markers":
+            return try ops.markers(try a.requiredString("project"), asChapters: try a.bool("as_chapters") ?? false)
         case "list_projects":
             return ops.list(limit: try a.int("limit"))
         case "project_info":
@@ -234,11 +245,27 @@ final class MCPServer: Sendable {
                 }
                 cuts = items.compactMap(\.stringValue)
             }
+            var layouts: [String] = []
+            if let l = a.raw["layouts"] {
+                guard case .array(let items) = l, items.allSatisfy({ $0.stringValue != nil }) else {
+                    throw CLIError.usage("'layouts' must be a list of \"KIND@START-END\" strings, e.g. [\"split@0:05-0:12\"].")
+                }
+                layouts = items.compactMap(\.stringValue)
+            }
+            var speeds: [String] = []
+            if let s = a.raw["speed"] {
+                guard case .array(let items) = s, items.allSatisfy({ $0.stringValue != nil }) else {
+                    throw CLIError.usage("'speed' must be a list of \"START-END@RATE\" strings.")
+                }
+                speeds = items.compactMap(\.stringValue)
+            }
             let project = try a.requiredString("project")
             let crop: Operations.CropChange? = try a.bool("crop_toolbar") == true ? .set(try await ops.toolbarCrop(project)) : nil
             return try ops.edit(project, sets: sets, trim: try a.string("trim"), cuts: cuts,
                                 clearCuts: try a.bool("clear_cuts") ?? false, crop: crop,
-                                clearCameraMoves: try a.bool("clear_camera_moves") ?? false)
+                                clearCameraMoves: try a.bool("clear_camera_moves") ?? false,
+                                layouts: layouts, clearLayouts: try a.bool("clear_layouts") ?? false,
+                                speeds: speeds, clearSpeed: try a.bool("clear_speed") ?? false)
         case "export":
             var req = ExportRequest()
             if let f = try a.string("format") {
@@ -266,13 +293,22 @@ final class MCPServer: Sendable {
             if let mix, !(0...1).contains(mix) { throw CLIError.usage("mix must be between 0 and 1.") }
             return try await ops.enhance(try a.requiredString("project"), strength: strength, mix: mix, progress: progress)
         case "detect_silences":
-            return try ops.silences(try a.requiredString("project"), thresholdDB: try a.double("threshold_db") ?? -45,
+            return try await ops.silences(try a.requiredString("project"), thresholdDB: try a.double("threshold_db") ?? -45,
                                     minDuration: try a.double("min_duration") ?? 1.2, padding: 0.15, apply: try a.bool("apply") ?? false)
+        case "suggest_speedups":
+            for key in ["typing_rate", "idle_rate"] {
+                if let r = try a.double(key), !(SpeedSegment.minRate...SpeedSegment.maxRate).contains(r) {
+                    throw CLIError.usage("\(key) must be between 0.25 and 8.")
+                }
+            }
+            return try await ops.speedup(try a.requiredString("project"), apply: try a.bool("apply") ?? false,
+                                   typingRate: try a.double("typing_rate"), idleRate: try a.double("idle_rate"))
         case "share":
             return try await ops.share(try a.requiredString("project"), polished: try a.bool("polished") ?? false, progress: progress)
         case "unshare":
             return try await ops.unshare(try a.requiredString("project"))
         default:
+            if let report = try await runPrivacyTool(name, a, progress: progress) { return report }
             throw CLIError("Unknown tool \(name).")
         }
     }
@@ -363,6 +399,7 @@ actor MCPState {
     func setLegacyVersion(_ v: String) { legacyVersion = v }
     func add(_ id: String, _ s: Session) { sessions[id] = s }
     func take(_ id: String) -> Session? { sessions.removeValue(forKey: id) }
+    func session(_ id: String) -> Session? { sessions[id] }
     func finish(_ id: String, _ r: Result<Report, CLIError>) { finished[id] = r }
     func takeFinished(_ id: String) -> Result<Report, CLIError>? { finished.removeValue(forKey: id) }
     func takeAllSessions() -> [(String, Session)] {

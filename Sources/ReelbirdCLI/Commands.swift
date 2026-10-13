@@ -33,10 +33,14 @@ enum CLI {
             .value("trim", "START-END", "Keep only this range (seconds or m:ss; END may be 'end'); 'none' clears"),
             .value("cut", "START-END", "Remove a range", repeatable: true),
             .flag("clear-cuts", "Remove all cuts first"),
+            .value("speed", "START-END@RATE", "Play a range faster or slower, 0.25–8 (1 = normal speed), e.g. 0:12-0:20@2", repeatable: true),
+            .flag("clear-speed", "Remove all speed changes first"),
             .flag("clear-camera-moves", "Keep the camera bubble in one place: drop its recorded moves"),
+            .value("layout", "KIND@START-END", "Camera layout for a range: camera, split, screen or bubble (e.g. split@0:05-0:12)", repeatable: true),
+            .flag("clear-layouts", "Remove all camera layouts first (the bubble throughout)"),
             .flag("crop-toolbar", "Hide the browser toolbar (tabs, address and bookmarks bars), detected from the video"),
             .flag("no-crop", "Show the whole screen again"),
-        ], discussion: "PROJECT is a .reelbird path, a name from `reelbird list`, or \"latest\". Crop by hand with --set crop.y=0.08 (normalized to the screen video; x, y, width, height). Place the camera with --set camera.x=0.5 camera.y=1 (0 = against the left/top edge, 1 = right/bottom, 0.5 = centred) or --set camera.corner=topLeft (a fixed corner; drops moves)."),
+        ], discussion: "PROJECT is a .reelbird path, a name from `reelbird list`, or \"latest\". Crop by hand with --set crop.y=0.08 (normalized to the screen video; x, y, width, height). Place the camera with --set camera.x=0.5 camera.y=1 (0 = against the left/top edge, 1 = right/bottom, 0.5 = centred) or --set camera.corner=topLeft (a fixed corner; drops moves). During zooms the bubble shrinks to --set camera.sizeWhileZoomed=0.7 of its size (0.4-1; camera.shrinkWhenZoomed=false keeps its size) and moves out of the cursor's way (camera.smartFraming=false keeps it in place). --layout camera@0:05-0:12 shows only the camera, split puts the screen and camera side by side (stacked on 9:16), screen hides the camera and bubble goes back to the bubble; a layout replaces what it overlaps. Name a zoom by its id (see --json) to turn it off or make it cut in and out without animating: --set zoom.regions.auto-3.enabled=false, --set zoom.regions.auto-3.instant=true; zoom.regions.*.KEY sets every zoom. Sound above 2× is muted; keep it with --set speed.keepFastAudio=true."),
         CommandSpec(name: "export", summary: "Render the edited video to a file.", positionals: ["PROJECT"], options: [
             .value("format", "mp4|hevc|prores|gif", "Output format (default mp4, H.264)"),
             .value("height", "PIXELS", "Output height, e.g. 1080 (default: source)"),
@@ -59,12 +63,24 @@ enum CLI {
             .flag("dry-run", "Print suggestions without saving them"),
             .value("locale", "ID", "Spoken language if a transcript has to be made first"),
         ]),
+        CommandSpec(name: "markers", summary: "List the markers dropped while recording; --as-chapters makes them the chapters.",
+                    positionals: ["PROJECT"], options: [
+            .flag("as-chapters", "Replace the chapters with the markers (saved to edit.json)"),
+        ], discussion: "Drop markers with the marker shortcut (default ⌥⇧M) or the flag on the control bar while recording, or with MCP add_marker. Times are on the recording; outputTime is where each lands in the edited video."),
         CommandSpec(name: "silences", summary: "Find silent stretches; --apply cuts them.", positionals: ["PROJECT"], options: [
             .value("threshold", "DB", "Silence level in dBFS (default -45)"),
             .value("min", "SECONDS", "Shortest silence to report (default 1.2)"),
             .value("padding", "SECONDS", "Air kept next to speech when cutting (default 0.15)"),
             .flag("apply", "Add cuts for the silences to edit.json"),
         ]),
+        CommandSpec(name: "speedup", summary: "Find typing and idle stretches to speed up; --apply adds them.", positionals: ["PROJECT"], options: [
+            .flag("apply", "Add a speed segment for each to edit.json"),
+            .value("typing-rate", "RATE", "Speed for typing with no talking over it (default 4; 2 while talking)"),
+            .value("idle-rate", "RATE", "Speed for stretches with no input and no sound (default 8)"),
+        ], discussion: "Typing comes from key presses (record with --keystrokes); idle stretches need 4 s with no input and no voice."),
+        PrivacyCLI.blurSpec,
+        PrivacyCLI.redactSpec,
+        PrivacyCLI.annotateSpec,
         CommandSpec(name: "share", summary: "Publish the project's link (or print it if already shared).", positionals: ["PROJECT"], options: [
             .flag("polished", "Render the current edit and replace the quick version (same link)"),
         ]),
@@ -160,7 +176,8 @@ enum CLI {
             if a.has("crop-toolbar") { crop = .set(try await ops.toolbarCrop(project)) }
             if a.has("no-crop") { crop = .clear }
             return try ops.edit(project, sets: sets, trim: a.value("trim"), cuts: a.all("cut"), clearCuts: a.has("clear-cuts"), crop: crop,
-                                clearCameraMoves: a.has("clear-camera-moves"))
+                                clearCameraMoves: a.has("clear-camera-moves"), layouts: a.all("layout"), clearLayouts: a.has("clear-layouts"),
+                                speeds: a.all("speed"), clearSpeed: a.has("clear-speed"))
         case "export":
             var req = ExportRequest()
             if let f = a.value("format") {
@@ -198,11 +215,24 @@ enum CLI {
             return try await ops.captions(project, locale: a.value("locale"), srt: a.has("srt"), progress: { bar.update($0) })
         case "suggest":
             return try await ops.suggest(project, apply: !a.has("dry-run"), locale: a.value("locale"))
+        case "markers":
+            return try ops.markers(project, asChapters: a.has("as-chapters"))
         case "silences":
             let min = try a.double("min") ?? 1.2
             let padding = try a.double("padding") ?? 0.15
             guard min > 0, padding >= 0 else { throw CLIError.usage("--min must be positive and --padding 0 or more.") }
-            return try ops.silences(project, thresholdDB: try a.double("threshold") ?? -45, minDuration: min, padding: padding, apply: a.has("apply"))
+            return try await ops.silences(project, thresholdDB: try a.double("threshold") ?? -45, minDuration: min, padding: padding, apply: a.has("apply"))
+        case "speedup":
+            func rate(_ key: String) throws -> Double? {
+                guard let v = a.value(key) else { return nil }
+                guard let r = SpeedSegment.parseRate(v), (SpeedSegment.minRate...SpeedSegment.maxRate).contains(r) else {
+                    throw CLIError.usage("--\(key) must be a speed between 0.25 and 8.")
+                }
+                return r
+            }
+            return try await ops.speedup(project, apply: a.has("apply"), typingRate: try rate("typing-rate"), idleRate: try rate("idle-rate"))
+        case "blur", "redact", "annotate":
+            return try await PrivacyCLI.run(spec.name, a, ops: ops, project: project)
         case "share":
             let bar = ProgressLine("Uploading…")
             defer { bar.finish() }

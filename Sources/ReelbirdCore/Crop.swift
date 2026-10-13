@@ -120,7 +120,8 @@ extension AutoZoomPlanner {
     /// `merged(existing:events:duration:intensity:)` inside a crop (see `plan(events:duration:intensity:crop:)`).
     public static func merged(existing: [ZoomRegion], events: [InputEvent], duration: Double, intensity: Double,
                               crop: NormRect?) -> [ZoomRegion] {
-        let user = existing.filter { $0.source == .user }
+        // A zoom turned off stays off (and keeps automatic zooms away from that moment), like a zoom you made.
+        let user = existing.filter { $0.source == .user || !$0.enabled }
         let auto = plan(events: events, duration: duration, intensity: intensity, crop: crop)
             .filter { a in !user.contains { $0.range.overlaps(a.range) } }
         return (user + auto).sorted { $0.range.start < $1.range.start }

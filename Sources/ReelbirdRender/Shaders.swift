@@ -40,7 +40,7 @@ struct SpriteUniforms {
     float4 yuv2;
     float4 yuvOffset;   // y offset, c offset, y scale, isYUV
     float4 camera;      // for screen-sampling modes: source uv = xy + p * zw (p in canvas px)
-    float4 card;        // unused
+    float4 card;        // privacy blur: cell size (uv)
     int4 mode;
 };
 
@@ -221,6 +221,20 @@ static inline float4 sampleTex(texture2d<float> t0, texture2d<float> t1, sampler
     return t0.sample(s, uv);
 }
 
+/// Mean colour of the screen cell starting at `origin` (uv), from n × n bilinear taps spread over it, clamped to
+/// the visible screen (`u.params2`).
+static inline float3 cellMean(texture2d<float> t0, texture2d<float> t1, sampler s, float2 origin, float2 cell, int n,
+                              constant SpriteUniforms& u) {
+    float3 acc = float3(0);
+    for (int j = 0; j < n; j++) {
+        for (int i = 0; i < n; i++) {
+            float2 uv = origin + (float2(i, j) + 0.5) / float(n) * cell;
+            acc += sampleTex(t0, t1, s, clamp(uv, u.params2.xy, u.params2.zw), u).rgb;
+        }
+    }
+    return acc / float(n * n);
+}
+
 fragment float4 sprite_fragment(VOut in [[stage_in]],
                                 constant SpriteUniforms& u [[buffer(0)]],
                                 texture2d<float> tex0 [[texture(0)]],
@@ -290,7 +304,7 @@ fragment float4 sprite_fragment(VOut in [[stage_in]],
     }
     if (mode == 5) {
         // Camera bubble. params: half size, radius, border width; params2: border rgba (premultiplied);
-        // mode.y: corner exponent (2 = circular corners, 4 = continuous "squircle" corners).
+        // mode.y: corner exponent (2 = circular corners, 4 = continuous "squircle" corners); color.a: opacity.
         float d = sdRoundRectP(centred, u.params.xy, u.params.z, float(u.mode.y));
         float a = saturate(0.5 - d);
         if (a <= 0) { return float4(0); }
@@ -301,24 +315,40 @@ fragment float4 sprite_fragment(VOut in [[stage_in]],
             c.rgb = mix(c.rgb, u.params2.rgb, saturate(0.5 - bd) * u.params2.a);
         }
         c.a = 1;
-        return c * a;
+        return c * (a * u.color.a);
     }
-    if (mode == 6) {
-        // Privacy pixelation of the screen inside a rounded rect. params: half size, radius, cell (uv).
+    if (mode == 6 || mode == 10) {
+        // Privacy blur of the screen inside a rounded rect. Cells are anchored to the screen texture, so they hold
+        // still through zoom and pan, and each cell is reduced to one average colour: nothing under it survives.
+        // 6 = pixelate (flat cells); 10 = blur (a quadratic B-spline through the 3 × 3 nearest cell averages).
+        // params: half size, corner radius; card.xy: cell size (uv); params2: uv clamp (the crop).
         float d = sdRoundRect(centred, u.params.xy, u.params.z);
         float a = saturate(0.5 - d);
         if (a <= 0) { return float4(0); }
         float2 p = u.rect.xy + lp;
         float2 uv = u.camera.xy + p * u.camera.zw;
-        float2 cell = float2(u.params.w, u.params.w * u.params2.x);
-        float2 cuv = (floor(uv / cell) + 0.5) * cell;
-        float4 acc = float4(0);
-        for (int j = -1; j <= 1; j++) {
-            for (int i = -1; i <= 1; i++) {
-                acc += sampleTex(tex0, tex1, lin, cuv + float2(i, j) * cell * 0.33, u);
+        float2 cell = max(u.card.xy, float2(1e-5));
+        float3 col;
+        if (mode == 6) {
+            col = cellMean(tex0, tex1, lin, floor(uv / cell) * cell, cell, 4, u);
+        } else {
+            float2 g = uv / cell - 0.5;
+            float2 i0 = floor(g + 0.5);
+            float2 f = g - i0;
+            float2 w0 = 0.5 * (0.5 - f) * (0.5 - f), w1 = 0.75 - f * f, w2 = 0.5 * (0.5 + f) * (0.5 + f);
+            float wx[3] = { w0.x, w1.x, w2.x };
+            float wy[3] = { w0.y, w1.y, w2.y };
+            col = float3(0);
+            for (int j = 0; j < 3; j++) {
+                for (int i = 0; i < 3; i++) {
+                    float2 ci = i0 + float2(i - 1, j - 1);
+                    col += cellMean(tex0, tex1, lin, ci * cell, cell, 3, u) * (wx[i] * wy[j]);
+                }
             }
+            // A little grain keeps large smooth areas from banding.
+            col += (hash12(p) - 0.5) * (1.5 / 255.0);
         }
-        return float4((acc / 9).rgb, 1) * a;
+        return float4(saturate(col), 1) * a * u.color.a;
     }
     if (mode == 7) {
         // Arrow from params.xy to params.zw (quad-local px). params2: thickness, head length.

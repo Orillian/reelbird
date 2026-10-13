@@ -23,6 +23,8 @@ import SwiftUI
     /// The toolbar is showing, and on which side of the bubble.
     var toolbarVisible = false
     var toolbarAbove = true
+    /// The live layout: the bubble hides for screen only and wears a badge for camera only.
+    var liveLayout: LayoutSegment.Kind = .overlay
 
     init(shape: CameraLayout.Shape, size: CameraBubbleSize) {
         self.shape = shape
@@ -434,13 +436,24 @@ enum BubbleLayout {
         }
     }
 
+    // MARK: Live layout
+
+    /// Shows the live layout on the bubble: hidden for screen only (it keeps its place, so the take still logs
+    /// where it is, and comes back there), a "Camera only" badge for the full-frame camera.
+    func setLiveLayout(_ layout: LayoutSegment.Kind) {
+        guard let model, model.liveLayout != layout else { return }
+        withAnimation(reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.34, dampingFraction: 0.82)) { model.liveLayout = layout }
+        panel?.ignoresMouseEvents = layout == .screenOnly
+        updateToolbar()
+    }
+
     // MARK: Toolbar
 
     /// Shows the toolbar while the pointer is over the bubble or the toolbar (not while dragging); hides it a
     /// moment after the pointer leaves both, so crossing the gap between them doesn't flicker.
     private func updateToolbar() {
         guard let model else { return }
-        let wanted = (pinsToolbar || model.hovering || model.toolbarHovering) && !model.lifted
+        let wanted = (pinsToolbar || model.hovering || model.toolbarHovering) && !model.lifted && model.liveLayout != .screenOnly
         toolbarTask?.cancel()
         if wanted {
             showToolbar()
@@ -558,6 +571,23 @@ enum BubbleLayout {
 
 // MARK: Views
 
+/// On the live bubble while the layout is "camera only": the video shows the camera full frame.
+struct LiveLayoutBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "person.crop.rectangle").font(.system(size: 9, weight: .semibold))
+            Text("Camera only").font(.system(size: 10.5, weight: .semibold))
+        }
+        .foregroundStyle(Theme.paper)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(Theme.inkFixed.opacity(0.86)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
+        .fixedSize()
+        .accessibilityLabel("Camera only")
+    }
+}
+
 struct CameraBubbleActions {
     var shape: (CameraLayout.Shape) -> Void = { _ in }
     var size: (CameraBubbleSize) -> Void = { _ in }
@@ -604,6 +634,20 @@ struct CameraBubbleView: View {
             }
             .allowsHitTesting(false)
         }
+        .overlay(alignment: .bottom) {
+            if model.liveLayout == .fullCamera {
+                GeometryReader { geo in
+                    LiveLayoutBadge()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .padding(.bottom, geo.size.height * 0.1)
+                }
+                .allowsHitTesting(false)
+                .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .bottom)))
+            }
+        }
+        // Screen only: the bubble steps away (shrinking a little as it fades).
+        .opacity(model.liveLayout == .screenOnly ? 0 : 1)
+        .scaleEffect(model.liveLayout == .screenOnly && !reduceMotion ? 0.8 : 1)
         // Appearing it grows from 86% (the panel fades in alongside), picked up it rises 2.5%.
         .scaleEffect(reduceMotion ? 1 : (0.86 + 0.14 * model.presence) * (lifted ? 1.025 : 1))
         .padding(CameraBubbleController.padding)

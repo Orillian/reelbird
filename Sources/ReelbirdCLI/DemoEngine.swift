@@ -61,6 +61,7 @@ private final class DemoRecording: RecordingControl, @unchecked Sendable {
     private let lock = NSLock()
     private var result: ProjectBundle?
     private var ticker: Task<Void, Never>?
+    private var markers = 0
 
     init(options: RecordingOptions, bundleURL: URL) throws {
         bundle = try ProjectBundle.create(at: bundleURL)
@@ -105,5 +106,17 @@ private final class DemoRecording: RecordingControl, @unchecked Sendable {
         ticker?.cancel()
         continuation.finish()
         try? FileManager.default.removeItem(at: bundle.url)
+    }
+
+    func addMarker(label: String?) async -> RecordedMarker? {
+        lock.withLock {
+            guard result == nil, let log = try? EventLogWriter(url: bundle.eventsURL) else { return nil }
+            defer { log.close() }
+            markers += 1
+            let t = (Date().timeIntervalSince(started) * 1000).rounded() / 1000
+            let m = RecordedMarker(number: markers, t: t, label: Markers.label(label, number: markers))
+            log.append(.marker(t, label: (label ?? "").trimmingCharacters(in: .whitespaces).isEmpty ? nil : m.label))
+            return m
+        }
     }
 }

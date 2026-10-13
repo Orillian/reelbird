@@ -10,6 +10,8 @@ import ReelbirdCore
     private(set) var phase: Phase = .idle
     private(set) var status = RecorderStatus()
     private(set) var countdownValue = 3
+    /// The live camera layout, which the layout shortcut cycles while recording with the camera on.
+    private(set) var liveLayout: LayoutSegment.Kind = .overlay
     /// Live microphone peak/RMS for the control bar meter's target zone.
     private(set) var micLevels = MicLevelReading()
     /// Warnings closed with ×, by episode (`HealthWarning.kind` + `since`): a condition that ends and
@@ -32,6 +34,10 @@ import ReelbirdCore
     /// The app that owns the window being recorded, brought forward when capture starts.
     @ObservationIgnored private var recordedAppName: String?
     @ObservationIgnored private var pausedForSleep = false
+    /// The post-stop quick actions card, while it shows.
+    @ObservationIgnored private(set) var quickShare: QuickSharePanel?
+    /// The marker just dropped, for the control bar's flash (cleared after a moment).
+    private(set) var markerFlash: MarkerFlash?
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
 
     init(app: AppModel) {
@@ -78,6 +84,7 @@ import ReelbirdCore
 
     func showPicker() {
         guard phase == .idle || phase == .picking else { return }
+        quickShare?.close()
         if phase == .idle, let front = NSWorkspace.shared.frontmostApplication,
            front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             previousApp = front
@@ -192,11 +199,63 @@ import ReelbirdCore
             return
         }
         syncCameraBubble()
+        liveLayout = .overlay
+        cameraBubble.setLiveLayout(.overlay)
         cameraBubble.reportPlace()
         if options.countdown > 0 {
             runCountdown(from: options.countdown)
         } else {
             beginCapture()
+        }
+        updateLayoutHotKey()
+    }
+
+    // MARK: Camera layout
+
+    /// The layouts the shortcut cycles through while recording, in order.
+    static let liveLayouts: [LayoutSegment.Kind] = [.overlay, .fullCamera, .screenOnly]
+
+    /// Whether the layout shortcut applies now: a take with the camera on, counting down or recording.
+    var canSwitchLayout: Bool { session != nil && isActive && lastOptions?.cameraID != nil }
+
+    /// Registers the layout shortcut only while it applies, so it never takes the keys from other apps.
+    func updateLayoutHotKey() {
+        if canSwitchLayout {
+            HotKeyCenter.shared.register(.layout, app.prefs.layoutHotKey) { [weak self] in self?.cycleCameraLayout() }
+        } else {
+            HotKeyCenter.shared.unregister(.layout)
+        }
+    }
+
+    /// Bubble → camera only → screen only → bubble.
+    func cycleCameraLayout() {
+        guard canSwitchLayout else { return }
+        let i = Self.liveLayouts.firstIndex(of: liveLayout) ?? 0
+        setCameraLayout(Self.liveLayouts[(i + 1) % Self.liveLayouts.count])
+    }
+
+    /// Switches the live layout: logged with the take (the editor starts with matching layout segments), shown
+    /// on the live bubble, and confirmed with a short toast.
+    func setCameraLayout(_ layout: LayoutSegment.Kind) {
+        guard canSwitchLayout, layout != liveLayout else { return }
+        liveLayout = layout
+        session?.updateCameraLayout(layout, atHostTime: nil)
+        cameraBubble.setLiveLayout(layout)
+        let next = Self.liveLayouts[((Self.liveLayouts.firstIndex(of: layout) ?? 0) + 1) % Self.liveLayouts.count]
+        let hint = "\(app.prefs.layoutHotKey.display) switches to \(Self.layoutName(next).lowercased())."
+        switch layout {
+        case .fullCamera: Toast.show(title: "Camera only", detail: "The video shows your camera full frame. \(hint)", symbol: "person.crop.rectangle", duration: 2.5)
+        case .screenOnly: Toast.show(title: "Screen only", detail: "The camera is hidden in the video. \(hint)", symbol: "macwindow", duration: 2.5)
+        case .overlay, .split: Toast.show(title: "Camera bubble", detail: "Your camera is back in its bubble. \(hint)", symbol: "person.crop.circle", duration: 2.5)
+        }
+    }
+
+    static func layoutName(_ k: LayoutSegment.Kind) -> String {
+        switch k {
+        case .overlay: "Camera bubble"
+        case .fullCamera: "Camera only"
+        case .screenOnly: "Screen only"
+        case .split: "Split"
         }
     }
 
@@ -228,6 +287,7 @@ import ReelbirdCore
         countdown?.dismiss(); countdown = nil
         Task { await session?.discard(); session = nil }
         phase = .picking
+        HotKeyCenter.shared.unregister(.layout)
         pickerPanel?.present()
         picker.startMeters()
     }
@@ -237,6 +297,7 @@ import ReelbirdCore
         guard let session else { return }
         phase = .recording
         showControlBar()
+        syncMarkerHotKey()
         handFocusBack()
         Task {
             do {
@@ -315,14 +376,21 @@ import ReelbirdCore
         countdownTask?.cancel()
         countdown?.dismiss(); countdown = nil
         phase = .finishing
+        updateLayoutHotKey()
         let shareURL = status.shareURL
+        // Quitting saves the take and shows nothing; otherwise the person's choice in Settings.
+        let after: AfterRecording = openEditor ? app.prefs.afterRecording : .nothing
         if let shareURL {
             // The link is ready before the last segments land: copy it the instant we stop.
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(shareURL, forType: .string)
-            let backlog = max(status.uploadBacklog, 1)
-            Toast.show(title: "Link copied", detail: "Still uploading \(backlog) segment\(backlog == 1 ? "" : "s")…", symbol: "link")
+            if after != .quickActions {
+                let backlog = max(status.uploadBacklog, 1)
+                Toast.show(title: "Link copied", detail: "Still uploading \(backlog) segment\(backlog == 1 ? "" : "s")…", symbol: "link")
+            }
         }
+        // The card comes up at once (saving…) with the link already copied; the rest fills in when the take is saved.
+        let card = after == .quickActions ? showQuickShare(shareURL: shareURL) : nil
         Task {
             do {
                 let bundle = try await session.stop()
@@ -330,15 +398,90 @@ import ReelbirdCore
                 let issues = await session.trackIssues
                 self.teardown()
                 self.app.library.reload()
-                let editor = openEditor && self.app.prefs.openEditorAfterRecording
-                if editor { self.app.open(bundle: bundle) }
+                if after == .openEditor { self.app.open(bundle: bundle) }
+                await card?.takeFinished(bundle)
                 if silentTake && openEditor { self.promptSilentTake(bundle) }
                 if !issues.isEmpty { Self.reportTrackIssues(issues) }
             } catch {
                 self.teardown()
+                card?.takeFailed()
+                self.quickShare?.close()
                 self.app.present(error, title: "The recording couldn't be finished. Its segments are kept and will be recovered next launch.")
             }
             completion?()
+        }
+    }
+
+    // MARK: Quick actions
+
+    /// Shows the post-stop card in the bottom-left corner and returns its model.
+    private func showQuickShare(shareURL: String?) -> QuickShareModel {
+        quickShare?.close()
+        var cursor = CursorSettings()
+        cursor.visible = app.prefs.showCursorDefault
+        cursor.clickEffect = app.prefs.clickEffectDefault
+        let model = QuickShareModel(services: app.services, shareURL: shareURL, shareConfigured: app.shareConfigured, cursorDefaults: cursor)
+        let panel = QuickSharePanel(model: model)
+        model.onEdit = { [weak self, weak panel] bundle in
+            panel?.close()
+            self?.app.open(bundle: bundle)
+        }
+        model.onShare = { [weak self, weak panel] bundle in
+            panel?.close()
+            self?.openShare(bundle)
+        }
+        model.onSetUpSharing = { [weak self, weak panel] in
+            panel?.close()
+            self?.app.openSettings(.sharing)
+        }
+        panel.onClosed = { [weak self, weak panel] in
+            if let self, self.quickShare === panel { self.quickShare = nil }
+        }
+        quickShare = panel
+        panel.present()
+        return model
+    }
+
+    /// Opens the editor with its Share popover.
+    private func openShare(_ bundle: ProjectBundle) {
+        app.open(bundle: bundle)
+        let key = bundle.url.standardizedFileURL
+        let editor = NSApp.windows.lazy.compactMap { $0.windowController as? EditorWindowController }
+            .first { $0.model.bundle.url.standardizedFileURL == key }
+        editor?.model.showShare = true
+    }
+
+    // MARK: Markers
+
+    struct MarkerFlash: Equatable {
+        var number: Int
+        var title: String
+        /// When it was dropped, on the take's clock (pauses left out), for the flash.
+        var elapsed: Double
+        var id = UUID()
+    }
+
+    /// The marker shortcut and the control bar's flag: drop a marker now and flash "Marker N" on the bar.
+    func addMarker() {
+        guard let session, phase == .recording || phase == .paused else { Beep.play(); return }
+        let elapsed = status.elapsed
+        Task {
+            guard let m = await session.addMarker(label: nil) else { Beep.play(); return }
+            let flash = MarkerFlash(number: m.number, title: m.label, elapsed: elapsed)
+            markerFlash = flash
+            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                                 userInfo: [.announcement: "\(m.label) added", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+            try? await Task.sleep(for: .seconds(1.6))
+            if markerFlash?.id == flash.id { markerFlash = nil }
+        }
+    }
+
+    /// The marker shortcut is held only while a take runs, so the rest of the time it types in other apps.
+    func syncMarkerHotKey() {
+        if phase == .recording || phase == .paused {
+            HotKeyCenter.shared.register(.marker, app.prefs.markerHotKey) { [weak self] in self?.addMarker() }
+        } else {
+            HotKeyCenter.shared.unregister(.marker)
         }
     }
 
@@ -472,7 +615,12 @@ import ReelbirdCore
         recordedAppName = nil
         previousApp = nil
         cameraBubble.onPlace = nil
+        liveLayout = .overlay
+        cameraBubble.setLiveLayout(.overlay)
         cameraBubble.hide()
+        markerFlash = nil
+        syncMarkerHotKey()
+        updateLayoutHotKey()
     }
 }
 

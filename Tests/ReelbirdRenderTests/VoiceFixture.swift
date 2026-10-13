@@ -35,7 +35,12 @@ enum VoiceFixture {
         var clips: [[Float]] = []
     }
 
-    static func speechClips() throws -> [[Float]] {
+    /// Runs `say` (a subprocess) and reads its files, so it runs off the cooperative pool (see BlockingWork).
+    static func speechClips() async throws -> [[Float]] {
+        try await BlockingWork.run("test.say") { _ in try speechClipsBlocking() }
+    }
+
+    private static func speechClipsBlocking() throws -> [[Float]] {
         cache.lock.lock(); defer { cache.lock.unlock() }
         if !cache.clips.isEmpty { return cache.clips }
         var clips: [[Float]] = []
@@ -74,8 +79,8 @@ enum VoiceFixture {
     /// A take of about `seconds`: 2 s lead-in, then sentences separated by 1.6 s pauses. Speech sits at
     /// `speechDB` RMS (active frames), pink noise `snrDB` below it, and keyboard clicks (8 ms decaying bursts,
     /// about 3 a second, peaking near the speech level) throughout.
-    static func take(seconds: Double, speechDB: Double = -24, snrDB: Double = 20, clicks: Bool = true) throws -> Take {
-        let clips = try speechClips()
+    static func take(seconds: Double, speechDB: Double = -24, snrDB: Double = 20, clicks: Bool = true) async throws -> Take {
+        let clips = try await speechClips()
         let n = Int(seconds * rate)
         var clean = [Float](repeating: 0, count: n)
         var phrases: [TimeRange] = []
@@ -158,22 +163,25 @@ enum VoiceFixture {
     static func decodeMono(_ url: URL) async throws -> [Float] {
         let asset = AVURLAsset(url: url)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else { return [] }
-        let reader = try AVAssetReader(asset: asset)
-        let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
-            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
-        ])
-        reader.add(out)
-        reader.startReading()
-        var samples: [Float] = []
-        while let sb = out.copyNextSampleBuffer() {
-            guard let bb = CMSampleBufferGetDataBuffer(sb) else { continue }
-            let n = CMBlockBufferGetDataLength(bb) / 4
-            var chunk = [Float](repeating: 0, count: n)
-            chunk.withUnsafeMutableBytes { _ = CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: n * 4, destination: $0.baseAddress!) }
-            samples += chunk
+        // Blocking decode: off the cooperative pool (see BlockingWork).
+        return try await BlockingWork.run("test.decode") { _ in
+            let reader = try AVAssetReader(asset: asset)
+            let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
+                AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 1,
+                AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
+            ])
+            reader.add(out)
+            reader.startReading()
+            var samples: [Float] = []
+            while let sb = out.copyNextSampleBuffer() {
+                guard let bb = CMSampleBufferGetDataBuffer(sb) else { continue }
+                let n = CMBlockBufferGetDataLength(bb) / 4
+                var chunk = [Float](repeating: 0, count: n)
+                chunk.withUnsafeMutableBytes { _ = CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: n * 4, destination: $0.baseAddress!) }
+                samples += chunk
+            }
+            return samples
         }
-        return samples
     }
 
     /// A synthetic bundle (small screen video) whose microphone track holds `samples` (AAC, like a real take).
@@ -200,21 +208,24 @@ extension VoiceFixture {
     static func decodeStereo(_ url: URL) async throws -> [Float] {
         let asset = AVURLAsset(url: url)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else { return [] }
-        let reader = try AVAssetReader(asset: asset)
-        let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
-            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2,
-            AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
-        ])
-        reader.add(out)
-        reader.startReading()
-        var samples: [Float] = []
-        while let sb = out.copyNextSampleBuffer() {
-            guard let bb = CMSampleBufferGetDataBuffer(sb) else { continue }
-            let n = CMBlockBufferGetDataLength(bb) / 4
-            var chunk = [Float](repeating: 0, count: n)
-            chunk.withUnsafeMutableBytes { _ = CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: n * 4, destination: $0.baseAddress!) }
-            samples += chunk
+        // Blocking decode: off the cooperative pool (see BlockingWork).
+        return try await BlockingWork.run("test.decode") { _ in
+            let reader = try AVAssetReader(asset: asset)
+            let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
+                AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2,
+                AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
+            ])
+            reader.add(out)
+            reader.startReading()
+            var samples: [Float] = []
+            while let sb = out.copyNextSampleBuffer() {
+                guard let bb = CMSampleBufferGetDataBuffer(sb) else { continue }
+                let n = CMBlockBufferGetDataLength(bb) / 4
+                var chunk = [Float](repeating: 0, count: n)
+                chunk.withUnsafeMutableBytes { _ = CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: n * 4, destination: $0.baseAddress!) }
+                samples += chunk
+            }
+            return samples
         }
-        return samples
     }
 }

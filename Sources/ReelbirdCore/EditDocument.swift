@@ -10,6 +10,8 @@ public struct EditDocument: Codable, Hashable, Sendable {
     public var trim: TimeRange?
     /// Ranges removed from the output (pauses are added here automatically).
     public var cuts: [TimeRange] = []
+    /// Stretches played faster or slower (recording time). Older files have none.
+    public var speed = SpeedSettings()
     /// Extra clips appended after this recording, in order (other `.reelbird` bundles, relative or absolute paths).
     public var appended: [String] = []
     /// The visible part of the screen video, normalized to it (top-left origin). `nil` = the whole screen.
@@ -19,11 +21,17 @@ public struct EditDocument: Codable, Hashable, Sendable {
     public var cursor = CursorSettings()
     public var background = BackgroundSettings()
     public var camera = CameraLayout()
+    /// How the screen and camera share the frame over time (recording timeline, sorted, no overlaps). Outside
+    /// every segment the camera is the overlay bubble. Empty = the overlay throughout.
+    public var layouts: [LayoutSegment] = []
     public var canvas = CanvasSettings()
     public var audio = AudioSettings()
     public var captions = CaptionSettings()
     public var annotations: [Annotation] = []
     public var chapters: [Chapter] = []
+    /// Markers on the recording timeline, once renamed, deleted or added in the editor. `nil` = the ones
+    /// logged while recording (`marker` events); read them with `Markers.resolve(edit:events:)`.
+    public var markers: [Marker]?
     public var title: String?
 
     public init() {}
@@ -34,17 +42,23 @@ public struct EditDocument: Codable, Hashable, Sendable {
         formatVersion = try c.decodeIfPresent(Int.self, forKey: .formatVersion) ?? d.formatVersion
         trim = try c.decodeIfPresent(TimeRange.self, forKey: .trim)
         cuts = try c.decodeIfPresent([TimeRange].self, forKey: .cuts) ?? d.cuts
+        // A speed block this version can't read leaves the edit at normal speed instead of failing to open.
+        speed = (try? c.decodeIfPresent(SpeedSettings.self, forKey: .speed)) ?? d.speed
         appended = try c.decodeIfPresent([String].self, forKey: .appended) ?? d.appended
         crop = (try? c.decodeIfPresent(LenientCrop.self, forKey: .crop))??.rect
         zoom = try c.decodeIfPresent(ZoomSettings.self, forKey: .zoom) ?? d.zoom
         cursor = try c.decodeIfPresent(CursorSettings.self, forKey: .cursor) ?? d.cursor
         background = try c.decodeIfPresent(BackgroundSettings.self, forKey: .background) ?? d.background
         camera = try c.decodeIfPresent(CameraLayout.self, forKey: .camera) ?? d.camera
+        // A segment this version can't read (a newer layout kind) is skipped, not the whole document.
+        layouts = LayoutSegment.normalized((try? c.decodeIfPresent([Lenient<LayoutSegment>].self, forKey: .layouts))??
+            .compactMap(\.value) ?? d.layouts)
         canvas = try c.decodeIfPresent(CanvasSettings.self, forKey: .canvas) ?? d.canvas
         audio = try c.decodeIfPresent(AudioSettings.self, forKey: .audio) ?? d.audio
         captions = try c.decodeIfPresent(CaptionSettings.self, forKey: .captions) ?? d.captions
         annotations = try c.decodeIfPresent([Annotation].self, forKey: .annotations) ?? d.annotations
         chapters = try c.decodeIfPresent([Chapter].self, forKey: .chapters) ?? d.chapters
+        markers = try? c.decodeIfPresent([Marker].self, forKey: .markers)
         title = try c.decodeIfPresent(String.self, forKey: .title)
     }
 
@@ -65,6 +79,8 @@ public struct EditDocument: Codable, Hashable, Sendable {
             let screen = manifest.track(.screen)?.pixelSize ?? manifest.capture.pixelSize
             CameraPlacement.apply(events: events, screen: screen, crop: e.crop, duration: manifest.duration,
                                   sizeScale: CameraPlacement.cardScale(source: screen, background: e.background), to: &e.camera)
+            // Layouts switched with the layout shortcut while recording.
+            e.layouts = LayoutSegment.segments(fromLive: events, duration: manifest.duration)
         }
         return e
     }
@@ -97,9 +113,26 @@ public struct ZoomRegion: Codable, Hashable, Sendable, Identifiable {
     /// Fixed focus point. `nil` = follow the (smoothed) cursor.
     public var focus: NormPoint?
     public var source: Source
+    /// `false` = turned off: kept in the edit (dimmed on the timeline) but never rendered. Absent in older files = on.
+    public var enabled: Bool
+    /// `true` = cut straight in and out (no zoom animation). Absent in older files = animated.
+    public var instant: Bool
     public init(id: String = ShortID.make(length: 6), range: TimeRange, scale: Double,
-                focus: NormPoint? = nil, source: Source = .user) {
+                focus: NormPoint? = nil, source: Source = .user, enabled: Bool = true, instant: Bool = false) {
         self.id = id; self.range = range; self.scale = scale; self.focus = focus; self.source = source
+        self.enabled = enabled; self.instant = instant
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? ShortID.make(length: 6)
+        range = try c.decode(TimeRange.self, forKey: .range)
+        scale = try c.decodeIfPresent(Double.self, forKey: .scale) ?? 1.8
+        focus = try c.decodeIfPresent(NormPoint.self, forKey: .focus)
+        // An unknown source (from a newer version) reads as a zoom you made, so it is never replanned away.
+        source = (try? c.decodeIfPresent(Source.self, forKey: .source)) ?? .user
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        instant = try c.decodeIfPresent(Bool.self, forKey: .instant) ?? false
     }
 }
 
@@ -208,6 +241,13 @@ public struct CameraLayout: Codable, Hashable, Sendable {
     public var mirror = true
     /// Blur the camera background (Vision person segmentation).
     public var blurBackground = false
+    /// While the screen is zoomed in, the bubble shrinks to `sizeWhileZoomed` of its size, on the zoom's own curve.
+    public var shrinkWhenZoomed = true
+    /// The bubble's size during a zoom, as a share of `size` (`CameraPlacement.zoomedSizeRange`).
+    public var sizeWhileZoomed: Double = 0.7
+    /// During a zoom, the bubble glides to the nearest free corner when the cursor or the zoom's focus would pass
+    /// under it, and back after the zoom.
+    public var smartFraming = true
 
     public init() {}
     public init(from decoder: any Decoder) throws {
@@ -223,6 +263,11 @@ public struct CameraLayout: Codable, Hashable, Sendable {
         moves = CameraPlacement.normalized(try c.decodeIfPresent([Move].self, forKey: .moves) ?? d.moves)
         mirror = try c.decodeIfPresent(Bool.self, forKey: .mirror) ?? d.mirror
         blurBackground = try c.decodeIfPresent(Bool.self, forKey: .blurBackground) ?? d.blurBackground
+        shrinkWhenZoomed = try c.decodeIfPresent(Bool.self, forKey: .shrinkWhenZoomed) ?? d.shrinkWhenZoomed
+        let zoomed = try c.decodeIfPresent(Double.self, forKey: .sizeWhileZoomed) ?? d.sizeWhileZoomed
+        let r = CameraPlacement.zoomedSizeRange
+        sizeWhileZoomed = zoomed.isFinite ? min(r.upperBound, max(r.lowerBound, zoomed)) : d.sizeWhileZoomed
+        smartFraming = try c.decodeIfPresent(Bool.self, forKey: .smartFraming) ?? d.smartFraming
     }
 
     /// Where the bubble starts (before any move).
@@ -347,18 +392,63 @@ public struct CaptionSettings: Codable, Hashable, Sendable {
     }
 }
 
+/// An overlay drawn on the screen video for part of the recording: a privacy blur, an arrow, a box, a text label
+/// or a highlight. Everything is in full-screen coordinates (see `CropSpace`), so it stays on the content it
+/// marks through zoom, crop, padding and aspect. Optional keys are left out of the JSON; see `Annotations.swift`.
 public struct Annotation: Codable, Hashable, Sendable, Identifiable {
-    public enum Kind: String, Codable, Hashable, Sendable { case arrow, box, text, highlight, blur }
+    public enum Kind: String, Codable, Hashable, Sendable, CaseIterable { case arrow, box, text, highlight, blur }
+    /// How a blur hides what's under it.
+    public enum BlurStyle: String, Codable, Hashable, Sendable, CaseIterable { case blur, pixelate }
+    /// Where the area is at recording time `t` (auto-detected text that moves).
+    public struct Key: Codable, Hashable, Sendable {
+        public var t: Double
+        public var rect: NormRect
+        public init(t: Double, rect: NormRect) { self.t = t; self.rect = rect }
+    }
+
     public var id: String
     public var kind: Kind
+    /// On the recording timeline.
     public var range: TimeRange
-    /// Area in normalized screen coordinates. Arrows go from top-left to bottom-right of `rect`.
+    /// Area in normalized screen coordinates. With `keys`, the area they cover over the whole range.
     public var rect: NormRect
     public var text: String?
     public var color: RGBA
+    /// Blur only: `blur` (default) or `pixelate`.
+    public var style: BlurStyle?
+    /// Blur only: 0...1 (default 0.5). Every strength leaves text unreadable; higher is coarser.
+    public var strength: Double?
+    /// Text only: letter size as a fraction of the screen video's height. `nil` = 0.7 × `rect.height` (older files).
+    public var fontSize: Double?
+    /// Arrow only: where it starts and where its head points. `nil` = from `rect`'s top-left to its bottom-right.
+    public var tail: NormPoint?
+    public var head: NormPoint?
+    /// Where the area is over time, sorted by `t` (from Find Sensitive Info). Between two keys the area covers
+    /// both, so moving text stays hidden. `nil` = `rect` for the whole range.
+    public var keys: [Key]?
+    /// What Find Sensitive Info found here (`email`, `apiKey`, `card`, `phone`, `custom`); `nil` = added by hand.
+    public var detected: String?
+
     public init(id: String = ShortID.make(length: 6), kind: Kind, range: TimeRange, rect: NormRect,
-                text: String? = nil, color: RGBA = RGBA(hex: "#FF5A36")!) {
+                text: String? = nil, color: RGBA = Annotation.defaultColor) {
         self.id = id; self.kind = kind; self.range = range; self.rect = rect; self.text = text; self.color = color
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? ShortID.make(length: 6)
+        kind = try c.decode(Kind.self, forKey: .kind)
+        range = try c.decode(TimeRange.self, forKey: .range)
+        rect = try c.decode(NormRect.self, forKey: .rect)
+        text = try c.decodeIfPresent(String.self, forKey: .text)
+        color = (try? c.decodeIfPresent(RGBA.self, forKey: .color)) ?? Annotation.defaultColor
+        style = try? c.decodeIfPresent(BlurStyle.self, forKey: .style)
+        strength = try c.decodeIfPresent(Double.self, forKey: .strength).map { min(1, max(0, $0.isFinite ? $0 : 0.5)) }
+        fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize).flatMap { $0.isFinite && $0 > 0 ? min(0.5, $0) : nil }
+        tail = try c.decodeIfPresent(NormPoint.self, forKey: .tail)
+        head = try c.decodeIfPresent(NormPoint.self, forKey: .head)
+        keys = try c.decodeIfPresent([Key].self, forKey: .keys).map { $0.sorted { $0.t < $1.t } }.flatMap { $0.isEmpty ? nil : $0 }
+        detected = try c.decodeIfPresent(String.self, forKey: .detected)
     }
 }
 

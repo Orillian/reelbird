@@ -89,19 +89,27 @@ final class MediaSources: @unchecked Sendable {
         let duration: Double
         /// Ducking for the system audio track, when on.
         var duck: DuckCurve?
+        /// Output ranges whose sound is left out (speed over 2×); the sound fades out and back in around them.
+        var silent: [TimeRange] = []
 
         /// An audio mix that applies each track's gain (and the system audio's ducking) and limiter in an
         /// `AudioTrackProcessor` tap.
         func audioMix(forPlayback: Bool) -> (mix: AVAudioMix, processors: [AudioTrackProcessor])? {
             guard !audio.isEmpty else { return nil }
             let m = AudioTrackProcessor.mix(audio.map { AudioTrackProcessor.Lane(kind: $0.kind, track: $0.track, gain: $0.gain, isOriginal: $0.isOriginal) },
-                                            forPlayback: forPlayback)
+                                            forPlayback: forPlayback, silent: silent)
             for p in m.processors where p.kind == .systemAudio { p.duck = duck }
             return m
         }
     }
 
     static let timescale: CMTimeScale = 90_000
+    /// How sped-up or slowed-down sound keeps its pitch, in preview and export alike. Measured on a synthetic voice
+    /// against an ideal re-synthesis at the new speed (`SpeedAudioExperiment`): at 0.5×, 1.5× and 2×, the speeds
+    /// whose sound plays by default, spectral averaged 4.8 dB log-spectrum error to time-domain's 5.1 dB and kept
+    /// the voice within 15 ms of the picture (time-domain ran up to 43 ms early at 0.5×). Pitch held within 11
+    /// cents with both; cost is the same (a few ms per second of audio).
+    static let timePitch: AVAudioTimePitchAlgorithm = .spectral
     static func time(_ s: Double) -> CMTime { CMTime(seconds: s, preferredTimescale: timescale) }
 
     /// A composition of the kept ranges, back to back. `video` / `camera` / `audio` choose the tracks.
@@ -114,23 +122,30 @@ final class MediaSources: @unchecked Sendable {
             guard let ct = comp.addMutableTrack(withMediaType: type, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
             let fileStart = src.fileRange.start.seconds
             let fileDur = src.fileRange.duration.seconds
-            var out = 0.0
             var inserted = false
-            for r in timeline.kept {
-                let a = max(r.start, src.startTime), b = min(r.end, src.startTime + fileDur)
-                if b - a > 1e-4 {
-                    let at = out + (a - r.start)
-                    let end = ct.timeRange.end.seconds.isFinite ? ct.timeRange.end.seconds : 0
-                    if at - end > 1e-4 {
-                        ct.insertEmptyTimeRange(CMTimeRange(start: Self.time(end), end: Self.time(at)))
-                    }
-                    let range = CMTimeRange(start: Self.time(fileStart + (a - src.startTime)), duration: Self.time(b - a))
-                    do { try ct.insertTimeRange(range, of: src.track, at: Self.time(at)) } catch {
-                        throw RenderError.unreadableMedia("\(src.kind.rawValue): \(error.localizedDescription)")
-                    }
-                    inserted = true
+            // Each piece of the timeline goes in at its output place, then is scaled to its speed. Video and audio
+            // tracks get identical edits, so they stay in sync. Sound in silent (too fast) pieces is left out.
+            for p in timeline.pieces where type != .audio || p.audible {
+                let a = max(p.source.start, src.startTime), b = min(p.source.end, src.startTime + fileDur)
+                guard b - a > 1e-4 else { continue }
+                var at = Self.time(p.outputStart + (a - p.source.start) / p.rate)
+                let end = ct.timeRange.end.isNumeric ? ct.timeRange.end : .zero
+                if (at - end).seconds > 1e-4 {
+                    ct.insertEmptyTimeRange(CMTimeRange(start: end, end: at))
+                } else {
+                    at = end // rounding: continue exactly where the last piece ended
                 }
-                out += r.duration
+                let length = Self.time(b - a)
+                let range = CMTimeRange(start: Self.time(fileStart + (a - src.startTime)), duration: length)
+                do { try ct.insertTimeRange(range, of: src.track, at: at) } catch {
+                    throw RenderError.unreadableMedia("\(src.kind.rawValue): \(error.localizedDescription)")
+                }
+                if p.rate != 1 {
+                    // Scaled to end at its absolute output time, so tick rounding never adds up over many pieces.
+                    let target = Self.time(p.outputStart + (b - p.source.start) / p.rate) - at
+                    ct.scaleTimeRange(CMTimeRange(start: at, duration: length), toDuration: target)
+                }
+                inserted = true
             }
             if !inserted { comp.removeTrack(ct); return nil }
             return ct
@@ -148,6 +163,7 @@ final class MediaSources: @unchecked Sendable {
             }
         }
         var result = Composition(asset: comp, screen: screenTrack, camera: cameraTrack, audio: audioTracks, duration: timeline.duration)
+        result.silent = timeline.pieces.filter { !$0.audible }.map(\.output)
         if let settings { result.duck = duckCurve(timeline: timeline, settings: settings, analysis: analysis) }
         return result
     }

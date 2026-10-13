@@ -162,7 +162,7 @@ private enum AnalyzerTranscription {
                 if let f = try? AVAudioFile(forReading: url) {
                     file = f
                 } else {
-                    let pcm = try AudioDecoding.decodeToTemporaryPCM(url)
+                    let pcm = try await AudioDecoding.decodeToTemporaryPCM(url)
                     temporary = pcm
                     file = try AVAudioFile(forReading: pcm)
                 }

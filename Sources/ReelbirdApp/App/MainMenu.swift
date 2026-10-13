@@ -6,7 +6,7 @@ import AppKit
 @MainActor enum MainMenu {
     /// Tags for items whose title or state changes with context.
     enum Tag: Int {
-        case openRecent = 100, recordToggle, pauseToggle, discard, gridLayout, listLayout, playPause
+        case openRecent = 100, recordToggle, pauseToggle, discard, gridLayout, listLayout, playPause, marker
         case inspectorBase = 200 // + section index
     }
 
@@ -70,24 +70,33 @@ import AppKit
         let timeline = NSMenu(title: "Timeline")
         timeline.delegate = timelineDelegate
         timelineDelegate.target = target
-        let play = item("Play", #selector(AppDelegate.togglePlay(_:)), key: " ", mods: [], target: target)
+        let play = item("Play", #selector(AppDelegate.togglePlay(_:)), shortcut: EditorKeys.playPause, target: target)
         play.tag = Tag.playPause.rawValue
         timeline.addItem(play)
-        timeline.addItem(item("Go to Start", #selector(AppDelegate.goToStart(_:)), key: String(UnicodeScalar(NSHomeFunctionKey)!), mods: [], target: target))
+        timeline.addItem(item("Go to Start", #selector(AppDelegate.goToStart(_:)), shortcut: EditorKeys.goToStart, target: target))
         timeline.addItem(.separator())
-        timeline.addItem(item("Split at Playhead", #selector(AppDelegate.splitAtPlayhead(_:)), key: "s", mods: [], target: target))
-        timeline.addItem(item("Add Zoom at Playhead", #selector(AppDelegate.addZoom(_:)), key: "z", mods: [], target: target))
-        timeline.addItem(item("Cut Selection", #selector(AppDelegate.deleteSelection(_:)), key: "\u{8}", mods: [], target: target))
+        timeline.addItem(item("Split at Playhead", #selector(AppDelegate.splitAtPlayhead(_:)), shortcut: EditorKeys.split, target: target))
+        timeline.addItem(item("Add Zoom at Playhead", #selector(AppDelegate.addZoom(_:)), shortcut: EditorKeys.addZoom, target: target))
+        timeline.addItem(item("Change Camera Layout at Playhead", #selector(AppDelegate.addLayout(_:)), shortcut: EditorKeys.addLayout, target: target))
+        timeline.addItem(item("Change Speed", #selector(AppDelegate.changeSpeed(_:)), shortcut: EditorKeys.changeSpeed, target: target))
+        timeline.addItem(item("Add Marker at Playhead", #selector(AppDelegate.addEditorMarker(_:)), shortcut: EditorKeys.addMarker, target: target))
+        timeline.addItem(item("Blur an Area", #selector(AppDelegate.addBlur(_:)), shortcut: EditorKeys.addBlur, target: target))
+        timeline.addItem(item("Cut Selection", #selector(AppDelegate.deleteSelection(_:)), shortcut: EditorKeys.deleteSelection, target: target))
         timeline.addItem(item("Cut Long Silences", #selector(AppDelegate.removeSilences(_:)), target: target))
+        timeline.addItem(item("Speed Up Typing", #selector(AppDelegate.speedUpTyping(_:)), target: target))
+        let keep = item("Keep Sound Above 2×", #selector(AppDelegate.toggleKeepFastAudio(_:)), target: target)
+        timeline.addItem(keep)
         timeline.addItem(.separator())
-        timeline.addItem(item("Zoom In Timeline", #selector(AppDelegate.zoomTimelineIn(_:)), key: "=", target: target))
-        timeline.addItem(item("Zoom Out Timeline", #selector(AppDelegate.zoomTimelineOut(_:)), key: "-", target: target))
+        timeline.addItem(item("Zoom In Timeline", #selector(AppDelegate.zoomTimelineIn(_:)), shortcut: EditorKeys.timelineZoomIn, target: target))
+        timeline.addItem(item("Zoom Out Timeline", #selector(AppDelegate.zoomTimelineOut(_:)), shortcut: EditorKeys.timelineZoomOut, target: target))
         add(timeline, title: "Timeline", to: main)
 
         // View
         let view = NSMenu(title: "View")
+        view.addItem(item("Command Menu…", #selector(AppDelegate.showCommandMenu(_:)), shortcut: EditorKeys.commandMenu, target: target))
+        view.addItem(.separator())
         for (i, s) in InspectorSection.allCases.enumerated() {
-            let it = item(s.title, #selector(AppDelegate.showInspectorSection(_:)), key: "\(i + 1)", target: target)
+            let it = item(s.title, #selector(AppDelegate.showInspectorSection(_:)), shortcut: EditorKeys.section(i), target: target)
             it.tag = Tag.inspectorBase.rawValue + i
             view.addItem(it)
         }
@@ -110,6 +119,9 @@ import AppKit
         let pause = item("Pause", #selector(AppDelegate.togglePauseRecording(_:)), target: target)
         pause.tag = Tag.pauseToggle.rawValue
         record.addItem(pause)
+        let marker = item("Add Marker", #selector(AppDelegate.addMarker(_:)), target: target)
+        marker.tag = Tag.marker.rawValue
+        record.addItem(marker)
         let discard = item("Discard Recording…", #selector(AppDelegate.discardRecording(_:)), target: target)
         discard.tag = Tag.discard.rawValue
         record.addItem(discard)
@@ -131,6 +143,8 @@ import AppKit
 
         // Help
         let help = NSMenu(title: "Help")
+        help.addItem(item("Keyboard Shortcuts", #selector(AppDelegate.showKeyboardShortcuts(_:)), shortcut: EditorKeys.shortcuts, target: target))
+        help.addItem(.separator())
         help.addItem(item("Welcome Tour", #selector(AppDelegate.showOnboarding(_:)), target: target))
         help.addItem(item("Reelbird Website", #selector(AppDelegate.openWebsite(_:)), target: target))
         help.addItem(item("Reelbird on GitHub", #selector(AppDelegate.openRepository(_:)), target: target))
@@ -154,6 +168,10 @@ import AppKit
             p.keyEquivalent = prefs.pauseHotKey.menuKeyEquivalent
             p.keyEquivalentModifierMask = prefs.pauseHotKey.menuModifiers
         }
+        if let m = record.item(withTag: Tag.marker.rawValue) {
+            m.keyEquivalent = prefs.markerHotKey.menuKeyEquivalent
+            m.keyEquivalentModifierMask = prefs.markerHotKey.menuModifiers
+        }
     }
 
     private static let timelineDelegate = TimelineMenuDelegate()
@@ -164,6 +182,11 @@ import AppKit
         if !key.isEmpty { i.keyEquivalentModifierMask = mods }
         i.target = target
         return i
+    }
+
+    /// A menu item showing an editor shortcut (`EditorKeys`), so the menu and the editor agree.
+    private static func item(_ title: String, _ action: Selector, shortcut: KeyShortcut, target: AnyObject? = nil) -> NSMenuItem {
+        item(title, action, key: shortcut.menuKeyEquivalent, mods: shortcut.menuModifierMask, target: target)
     }
 
     private static func add(_ menu: NSMenu, title: String, to main: NSMenu) {

@@ -58,19 +58,19 @@ func writePNG(_ img: CGImage, to url: URL) {
     if let k = keys.dropFirst(keys.count / 2).first { moments.append(("typing", k.t)) }
     if let s = events.first(where: { $0.type == .scroll }) { moments.append(("scroll", s.t + 0.3)) }
     for (name, t) in moments where t >= 0 && t < plan.duration {
-        let img = try Thumbnailer.render(plan: plan, sources: sources, at: t, maxWidth: 1728)
+        let img = try await Thumbnailer.render(plan: plan, sources: sources, at: t, maxWidth: 1728)
         writePNG(img, to: stills.appendingPathComponent(String(format: "%05.2f-%@.png", t, name)))
     }
     // Full source resolution at the busiest zoomed click, for judging cursor and text crispness.
     if let (_, t) = moments.first(where: { $0.0 == "click7-at" }) {
-        writePNG(try Thumbnailer.render(plan: plan, sources: sources, at: t, maxWidth: 2880), to: stills.appendingPathComponent("full-res-click7.png"))
+        writePNG(try await Thumbnailer.render(plan: plan, sources: sources, at: t, maxWidth: 2880), to: stills.appendingPathComponent("full-res-click7.png"))
     }
     for aspect in [CanvasSettings.Aspect.vertical, .square, .wide] {
         var e = edit
         e.canvas.aspect = aspect
         let p = try RenderPlan(bundle: bundle, manifest: manifest, edit: e)
         for (name, t) in moments where name.hasSuffix("-at") || name == "typing" {
-            let img = try Thumbnailer.render(plan: p, sources: sources, at: t, maxWidth: aspect == .vertical ? 1080 : 1440)
+            let img = try await Thumbnailer.render(plan: p, sources: sources, at: t, maxWidth: aspect == .vertical ? 1080 : 1440)
             writePNG(img, to: stills.appendingPathComponent(String(format: "%@-%05.2f-%@.png", aspect.rawValue.replacingOccurrences(of: ":", with: "x"), t, name)))
         }
     }

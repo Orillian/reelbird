@@ -29,9 +29,13 @@ import ReelbirdCore
     func voiceStemDidChange() {}
     /// Draws only; it never makes a sound.
     var isMuted: Bool { true }
+    func cameraBubble(atSource t: Double) -> (place: NormPoint, sizeScale: Double)? { nil }
+    func screenMapping(atSource t: Double, width: Double, height: Double) -> ScreenMapping? {
+        canvas.screenMapping(at: t, width: width, height: height)
+    }
 
     func update(edit: EditDocument) {
-        timeline = EditTimeline(duration: sourceDuration, trim: edit.trim, cuts: edit.cuts)
+        timeline = EditTimeline(duration: sourceDuration, trim: edit.trim, cuts: edit.cuts, speed: edit.speed)
         canvas.edit = edit
         canvas.sourceTime = timeline.sourceTime(forOutput: currentTime)
         canvas.needsDisplay = true
@@ -80,7 +84,7 @@ final class MockPreviewView: NSView {
     private let events: [InputEvent]
     private let moves: [InputEvent]
     private let clicks: [InputEvent]
-    private let sourceSize: PixelSize
+    let sourceSize: PixelSize
     private let hasCamera: Bool
     private let art: MockArt.Variant
     private var cachedScreen: (CGSize, CGImage)?
@@ -98,9 +102,9 @@ final class MockPreviewView: NSView {
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
 
-    private var crop: CropSpace { CropSpace(edit.crop) }
+    var crop: CropSpace { CropSpace(edit.crop) }
     /// Aspect of the visible (cropped) screen.
-    private var visibleAspect: Double { sourceSize.aspect * crop.rect.width / crop.rect.height }
+    var visibleAspect: Double { sourceSize.aspect * crop.rect.width / crop.rect.height }
 
     /// Output aspect for the edit's canvas setting.
     var outputAspect: Double {
@@ -174,13 +178,15 @@ final class MockPreviewView: NSView {
         let full = CGRect(x: screen.minX - crop.rect.x * screen.width / crop.rect.width,
                           y: screen.minY - crop.rect.y * screen.height / crop.rect.height,
                           width: screen.width / crop.rect.width, height: screen.height / crop.rect.height)
-        if let img = screenImage(size: full.size) {
+        let screenImg = screenImage(size: full.size)
+        if let img = screenImg {
             ctx.saveGState()
             ctx.translateBy(x: full.minX, y: full.maxY); ctx.scaleBy(x: 1, y: -1)
             ctx.draw(img, in: CGRect(origin: .zero, size: full.size))
             ctx.restoreGState()
         }
         ctx.restoreGState()
+        drawOverlays(ctx, full: full, screen: screen, short: short, image: screenImg)
 
         if edit.cursor.visible, let sp = cursorPosition(at: sourceTime) {
             let p = crop.toView(sp)
@@ -236,13 +242,14 @@ final class MockPreviewView: NSView {
         return NormPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f)
     }
 
-    private func zoomState(at t: Double) -> (Double, NormPoint) {
+    func zoomState(at t: Double) -> (Double, NormPoint) {
         guard edit.zoom.mode != .off else { return (1, .center) }
         let ease = 0.45
-        for r in edit.zoom.regions where t >= r.range.start - ease && t <= r.range.end + ease {
+        for r in edit.zoom.regions where r.enabled && t >= r.range.start - ease && t <= r.range.end + ease {
             if edit.zoom.mode == .manual && r.source == .auto { continue }
-            let fIn = min(1, max(0, (t - (r.range.start - ease)) / ease))
-            let fOut = min(1, max(0, ((r.range.end + ease) - t) / ease))
+            if r.instant && !r.range.contains(t) { continue }
+            let fIn = r.instant ? 1 : min(1, max(0, (t - (r.range.start - ease)) / ease))
+            let fOut = r.instant ? 1 : min(1, max(0, ((r.range.end + ease) - t) / ease))
             let f = min(fIn, fOut)
             let e = f * f * (3 - 2 * f)
             let focus = r.focus ?? cursorPosition(at: t) ?? .center
@@ -289,6 +296,22 @@ final class MockPreviewView: NSView {
 
     private func drawCamera(_ ctx: CGContext, _ frame: CGRect) {
         let cam = edit.camera
+        // Layouts, roughly: camera only fills the frame, screen only hides it (the renderer also springs between them).
+        switch LayoutTimeline(edit.layouts).state(at: sourceTime).kind {
+        case .screenOnly: return
+        case .fullCamera:
+            ctx.saveGState()
+            ctx.clip(to: frame)
+            ctx.translateBy(x: frame.minX, y: frame.minY)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
+            let v = MockCameraView(frame: CGRect(origin: .zero, size: frame.size))
+            v.draw(v.bounds)
+            NSGraphicsContext.restoreGraphicsState()
+            ctx.restoreGState()
+            return
+        case .overlay, .split: break
+        }
         let place = CameraPlacementPath(cam).position(at: sourceTime)
         let rect = CameraPlacement.frame(at: place, layout: cam, width: frame.width, height: frame.height)
             .offsetBy(dx: frame.minX, dy: frame.minY)

@@ -18,7 +18,7 @@ struct EditorView: View {
                     TransportBar(model: model)
                     Divider()
                     TimelineView(model: model)
-                        .frame(height: 188)
+                        .frame(height: TimelineView.height(layouts: model.hasCamera))
                 }
                 .background(Theme.stage)
                 Divider()
@@ -27,6 +27,7 @@ struct EditorView: View {
             }
         }
         .background(Theme.panel)
+        .overlay { EditorOverlayHost(model: model, app: app) }
         .ignoresSafeArea()
         .sheet(isPresented: $model.showExport) {
             ExportSheet(model: model, isPresented: $model.showExport)
@@ -163,7 +164,8 @@ struct PreviewStage: View {
             } else if let player = model.player {
                 PlayerHost(view: player.view)
                     .overlay {
-                        if model.isCropping { CropOverlay(model: model) } else if model.canDragCamera { CameraOverlay(model: model) }
+                        if model.isCropping { CropOverlay(model: model) } else if model.showsOverlayCanvas { OverlayCanvas(model: model) }
+                        else if model.canDragCamera { CameraOverlay(model: model) }
                     }
                     .padding(28)
                     .padding(.bottom, model.isCropping ? 44 : 0)
@@ -239,9 +241,22 @@ struct TransportBar: View {
             HStack(spacing: 4) {
                 ToolButton(symbol: "scissors", title: "Split", key: "S") { model.splitAtPlayhead() }
                 ToolButton(symbol: "plus.magnifyingglass", title: "Zoom", key: "Z") { model.addZoomAtPlayhead() }
+                if model.hasCamera {
+                    ToolButton(symbol: "person.crop.rectangle", title: "Layout", key: "C") { model.addLayoutAtPlayhead() }
+                }
+                ToolButton(symbol: "gauge.with.dots.needle.67percent", title: "Speed", key: EditorKeys.changeSpeed.display) { model.speedKey() }
+                if let s = model.selectedSpeed {
+                    SpeedRateChips(rate: s.rate) { model.setSpeedRate($0) }
+                        .transition(.opacity)
+                }
+                if model.selection == nil, !model.speedSuggestionsDismissed, case let s = model.speedSuggestions, !s.isEmpty {
+                    SpeedOffer(model: model, suggestions: s)
+                        .transition(.opacity)
+                }
+                ToolButton(symbol: "eye.slash", title: "Blur", key: EditorKeys.addBlur.display) { model.beginOverlayTool(.blur) }
                 if let sel = model.selection {
                     ToolButton(symbol: sel.isCut ? "arrow.uturn.backward" : "trash",
-                               title: sel.isCut ? "Restore" : sel.isZoom ? "Delete Zoom" : "Cut", key: "⌫") { model.deleteSelection() }
+                               title: sel.isCut ? "Restore" : sel.isZoom ? model.deleteZoomsTitle : sel.isLayout ? "Delete Layout" : sel.isSpeed ? "Remove Speed" : sel.isAnnotation ? "Delete Overlay" : "Cut", key: "⌫") { model.deleteSelection() }
                         .transition(.opacity)
                 }
             }
@@ -267,7 +282,43 @@ struct TransportBar: View {
 
 extension TimelineSelection {
     var isCut: Bool { if case .cut = self { true } else { false } }
-    var isZoom: Bool { if case .zoom = self { true } else { false } }
+    var isZoom: Bool {
+        switch self {
+        case .zoom, .zooms: true
+        default: false
+        }
+    }
+    var isLayout: Bool { if case .layout = self { true } else { false } }
+    var isAnnotation: Bool { if case .annotation = self { true } else { false } }
+    var isSpeed: Bool { if case .speed = self { true } else { false } }
+}
+
+/// The preset speeds for the selected speed segment, the current one filled.
+struct SpeedRateChips: View {
+    let rate: Double
+    let set: (Double) -> Void
+
+    var body: some View {
+        HStack(spacing: 1) {
+            ForEach(SpeedSegment.presets, id: \.self) { r in
+                let on = abs(r - rate) < 1e-9
+                Button { set(r) } label: {
+                    Text(SpeedSegment.label(r))
+                        .font(.system(size: 11.5, weight: on ? .semibold : .medium).monospacedDigit())
+                        .foregroundStyle(on ? Theme.panel : Color.primary.opacity(0.75))
+                        .padding(.horizontal, 7)
+                        .frame(height: 22)
+                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(on ? Theme.ink.opacity(0.85) : .clear))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Play this part at \(SpeedSegment.label(r))")
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(0.045)))
+    }
 }
 
 struct ToolButton: View {

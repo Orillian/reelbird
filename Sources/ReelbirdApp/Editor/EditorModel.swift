@@ -5,7 +5,7 @@ import ReelbirdCore
 import ReelbirdRender
 
 enum InspectorSection: String, CaseIterable, Identifiable {
-    case background, cursor, zoom, camera, canvas, audio, captions
+    case background, cursor, zoom, camera, canvas, audio, captions, overlays
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
     var symbol: String {
@@ -17,16 +17,25 @@ enum InspectorSection: String, CaseIterable, Identifiable {
         case .canvas: "aspectratio"
         case .audio: "waveform"
         case .captions: "captions.bubble"
+        case .overlays: "square.on.square.dashed"
         }
     }
 }
 
 enum TimelineSelection: Equatable {
     case zoom(String)
+    /// Two or more zooms (shift-click, box select, Select All). One zoom is always `.zoom`.
+    case zooms(Set<String>)
+    /// A camera layout segment, by id.
+    case layout(String)
+    /// An overlay (blur, arrow, box, text, highlight), by id.
+    case annotation(String)
     /// A segment between split points (source time).
     case segment(TimeRange)
     /// An existing cut, by its range.
     case cut(TimeRange)
+    /// A speed segment, by its ID.
+    case speed(String)
 }
 
 enum ExportState: Equatable {
@@ -66,7 +75,19 @@ enum CaptionState: Equatable {
     /// When the running export started, for the time-left estimate.
     private(set) var exportStartedAt: Date?
     var showExport = false
+    /// Export format picked from the command menu, applied when the export sheet opens.
+    var pendingExportFormat: ExportOptions.Format?
     var showShare = false
+    /// The command menu (⌘K), its search text, and the keyboard shortcut sheet (⌘/).
+    var showCommandPalette = false
+    var paletteQuery = ""
+    /// The highlighted row in the command menu (arrow keys move it, Return runs it).
+    var paletteHighlight = 0
+    var showShortcuts = false
+    /// The zoom under the pointer on the timeline: the 0–9 keys act on it.
+    var hoveredZoomID: String?
+    /// The box being dragged on the zoom lane (source times), while selecting zooms with it.
+    var zoomMarquee: TimeRange?
     var shareState: ShareState = .idle
     var captionState: CaptionState = .idle
     var storyState: CaptionState = .idle
@@ -94,12 +115,23 @@ enum CaptionState: Equatable {
     /// The camera bubble's place while it is being dragged on the preview, and the lines it snapped to.
     private(set) var cameraDraft: NormPoint?
     private(set) var cameraGuides: CameraPlacement.Guides = []
+    /// Silent stretches of the voice on the recording timeline, for "speed up" suggestions (see EditorModel+Speed).
+    /// `nil` until looked for; `.some(nil)` when there is no voice to look in.
+    var speedSilences: [TimeRange]??
+    /// The "speed up typing" offer was dismissed for this session.
+    var speedSuggestionsDismissed = false
+    @ObservationIgnored var speedSuggestionCache: (key: Int, value: [SpeedSuggestion])?
+    @ObservationIgnored var speedSilenceTask: Task<Void, Never>?
+    /// Snapshots show these instead of the computed suggestions.
+    @ObservationIgnored var speedSuggestionsForSnapshot: [SpeedSuggestion]?
 
     @ObservationIgnored let undoManager = UndoManager()
     /// Off in snapshots so scenes don't write into the shared demo bundle.
     @ObservationIgnored var autosaveEnabled = true
     private(set) var player: (any PreviewPlayerHandle)?
-    @ObservationIgnored private let services: Services
+    @ObservationIgnored let services: Services
+    /// Overlay tools, drafts and Find Sensitive Info (EditorModel+Overlays.swift).
+    let overlays: OverlayState
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var exportTask: Task<Void, Never>?
     @ObservationIgnored private var shareTask: Task<Void, Never>?
@@ -123,6 +155,7 @@ enum CaptionState: Equatable {
     init(bundle: ProjectBundle, services: Services, cursorDefaults: CursorSettings? = nil) throws {
         self.bundle = bundle
         self.services = services
+        overlays = OverlayState(ai: services.ai)
         let manifest = try bundle.readManifest()
         let events = (try? bundle.readEvents()) ?? []
         let fresh = !FileManager.default.fileExists(atPath: bundle.editURL.path)
@@ -177,6 +210,7 @@ enum CaptionState: Equatable {
 
     func loadTimelineMedia() {
         detectToolbar()
+        loadSpeedSilences()
         if hasMicrophone, audioAnalysis == nil, !isMeasuringVoice {
             isMeasuringVoice = true
             let settings = edit.audio
@@ -253,7 +287,12 @@ enum CaptionState: Equatable {
         let captionsChanged = doc.captions.file != edit.captions.file
         edit = doc
         if captionsChanged { transcript = doc.captions.file == nil ? nil : Self.loadTranscript(bundle: bundle, edit: doc) }
-        if case .zoom(let id) = selection, !doc.zoom.regions.contains(where: { $0.id == id }) { selection = nil }
+        if selection?.isZoom == true {
+            selectZooms(selectedZoomIDs.filter { id in doc.zoom.regions.contains { $0.id == id } })
+        }
+        if case .speed(let id) = selection, !doc.speed.segments.contains(where: { $0.id == id }) { selection = nil }
+        if case .layout(let id) = selection, !doc.layouts.contains(where: { $0.id == id }) { selection = nil }
+        if case .annotation(let id) = selection, !doc.annotations.contains(where: { $0.id == id }) { selection = nil }
         editDidChange()
     }
 
@@ -403,8 +442,8 @@ enum CaptionState: Equatable {
                               height: edit.canvas.outputHeight)
     }
 
-    /// Whether the bubble can be dragged on the preview now.
-    var canDragCamera: Bool { hasCamera && edit.camera.visible && !isCropping && player != nil }
+    /// Whether the bubble can be dragged on the preview now (it is the bubble at the playhead, not another layout).
+    var canDragCamera: Bool { hasCamera && edit.camera.visible && !isCropping && player != nil && isBubbleAtPlayhead }
 
     /// The bubble's place at the playhead (the drag in progress, if any).
     var cameraPosition: NormPoint { cameraDraft ?? edit.camera.path.position(at: playhead) }
@@ -412,7 +451,8 @@ enum CaptionState: Equatable {
     /// Starts dragging the bubble on the preview (playback pauses: the drag sets the place at the playhead).
     func beginCameraDrag() {
         if isPlaying { pause() }
-        cameraDraft = edit.camera.path.position(at: playhead)
+        // From where it shows: stepped aside during a zoom, if it is.
+        cameraDraft = player?.cameraBubble(atSource: playhead)?.place ?? edit.camera.path.position(at: playhead)
         cameraGuides = []
     }
 
@@ -543,6 +583,8 @@ enum CaptionState: Equatable {
         if let p = cameraDraft, !isCropping {
             var e = edit
             e.camera.setPosition(p, at: playhead)
+            // The bubble follows the pointer instead of stepping aside while it is dragged.
+            e.camera.smartFraming = false
             return e
         }
         guard isCropping else { return edit }
@@ -604,10 +646,19 @@ enum CaptionState: Equatable {
         case .zoom(let id):
             change("Delete Zoom") { $0.zoom.regions.removeAll { $0.id == id } }
             selection = nil
+        case .annotation(let id):
+            deleteAnnotation(id)
+        case .zooms(let ids):
+            change("Delete Zooms") { $0.zoom.regions.removeAll { ids.contains($0.id) } }
+            selection = nil
+        case .layout(let id):
+            deleteLayout(id)
         case .segment(let r):
             cut(r)
         case .cut(let r):
             restoreCut(r)
+        case .speed(let id):
+            deleteSpeed(id)
         case nil:
             break
         }
@@ -623,7 +674,7 @@ enum CaptionState: Equatable {
         let offset = manifest.track(.microphone)?.startTime ?? 0
         let duration = duration
         Task {
-            let silences = await Task.detached(priority: .userInitiated) { try? ai.silentRanges(audio: mic) }.value
+            let silences = try? await ai.silentRanges(audio: mic)
             guard let silences else {
                 Toast.show(title: "Couldn't read the microphone track", symbol: "exclamationmark.triangle.fill")
                 return

@@ -18,8 +18,12 @@ public struct InputEvent: Codable, Hashable, Sendable {
         case pause
         case resume
         /// The live camera bubble's place: logged when recording starts and whenever a drag (or resize) ends.
-        /// `x`, `y` is its centre and `rect` its frame, moved fully inside the captured area; `shape` its shape.
+        /// `x`, `y` is its centre and `rect` its frame, moved fully inside the captured area; `shape` its shape;
+        /// `layout` the live layout (logged again when the layout shortcut switches it).
         case camera
+        /// A marker dropped while recording (the marker shortcut, the control bar or MCP `add_marker`);
+        /// `label` is its name when one was given. Older versions skip these lines.
+        case marker
     }
 
     public var t: Double
@@ -38,13 +42,18 @@ public struct InputEvent: Codable, Hashable, Sendable {
     public var rect: NormRect?
     /// `CameraLayout.Shape` raw value for `camera` events.
     public var shape: String?
+    /// `LayoutSegment.Kind` raw value for `camera` events: `overlay`, `fullCamera` or `screenOnly` (absent in
+    /// older logs = `overlay`).
+    public var layout: String?
+    /// The name of a `marker` event, when one was given.
+    public var label: String?
 
     public init(t: Double, type: Kind, x: Double? = nil, y: Double? = nil, button: Int? = nil,
                 dx: Double? = nil, dy: Double? = nil, chars: String? = nil, mods: [String]? = nil,
-                image: String? = nil, rect: NormRect? = nil, shape: String? = nil) {
+                image: String? = nil, rect: NormRect? = nil, shape: String? = nil, layout: String? = nil, label: String? = nil) {
         self.t = t; self.type = type; self.x = x; self.y = y; self.button = button
         self.dx = dx; self.dy = dy; self.chars = chars; self.mods = mods; self.image = image; self.rect = rect
-        self.shape = shape
+        self.shape = shape; self.layout = layout; self.label = label
     }
 
     public var point: NormPoint? {
@@ -60,10 +69,13 @@ public struct InputEvent: Codable, Hashable, Sendable {
         InputEvent(t: t, type: .up, x: p.x, y: p.y, button: button)
     }
     /// The camera bubble at `frame` (normalized to the captured area).
-    public static func camera(_ t: Double, frame: NormRect, shape: CameraLayout.Shape? = nil) -> InputEvent {
+    public static func camera(_ t: Double, frame: NormRect, shape: CameraLayout.Shape? = nil,
+                              layout: LayoutSegment.Kind? = nil) -> InputEvent {
         let c = frame.center
-        return InputEvent(t: t, type: .camera, x: c.x, y: c.y, rect: frame, shape: shape?.rawValue)
+        return InputEvent(t: t, type: .camera, x: c.x, y: c.y, rect: frame, shape: shape?.rawValue, layout: layout?.rawValue)
     }
+    /// A marker, named `label` when given.
+    public static func marker(_ t: Double, label: String? = nil) -> InputEvent { InputEvent(t: t, type: .marker, label: label) }
 }
 
 /// Metadata for a cursor image in `cursors/<id>.png`.
@@ -190,12 +202,14 @@ enum FlatEventParser {
             i += 1
             skipSpace()
             switch key {
-            case "type", "chars", "image", "shape":
+            case "type", "chars", "image", "shape", "layout", "label":
                 guard let v = readString() else { return nil }
                 switch key {
                 case "type": guard let k = InputEvent.Kind(rawValue: v) else { return nil }; type = k
                 case "chars": e.chars = v
                 case "image": e.image = v
+                case "label": e.label = v
+                case "layout": e.layout = v
                 default: e.shape = v
                 }
             case "rect":

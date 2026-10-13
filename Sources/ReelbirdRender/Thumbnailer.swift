@@ -12,11 +12,18 @@ public enum Thumbnailer {
         let manifest = try bundle.readManifest()
         let plan = try RenderPlan(bundle: bundle, manifest: manifest, edit: try bundle.readEdit())
         let sources = try await MediaSources.load(bundle: bundle, manifest: manifest)
-        return try render(plan: plan, sources: sources, at: t, maxWidth: maxWidth)
+        return try await render(plan: plan, sources: sources, at: t, maxWidth: maxWidth)
     }
 
-    /// Renders one frame synchronously (blocks until the GPU finishes).
-    static func render(plan: RenderPlan, sources: MediaSources, at time: Double, maxWidth: Int) throws -> CGImage {
+    /// Renders one frame. The decode and the GPU wait block, so they run off the cooperative pool (see BlockingWork).
+    static func render(plan: RenderPlan, sources: MediaSources, at time: Double, maxWidth: Int) async throws -> CGImage {
+        try await BlockingWork.run("reelbird.thumbnail") { _ in
+            try renderBlocking(plan: plan, sources: sources, at: time, maxWidth: maxWidth)
+        }
+    }
+
+    /// Renders one frame synchronously (blocks until the decoder and the GPU finish). Never call it from a task.
+    private static func renderBlocking(plan: RenderPlan, sources: MediaSources, at time: Double, maxWidth: Int) throws -> CGImage {
         guard plan.duration > 0 else { throw RenderError.nothingToExport }
         let t = min(max(0, time), max(0, plan.duration - 0.001))
         let comp = try sources.composition(timeline: plan.timeline, camera: plan.showsCamera, audio: nil)

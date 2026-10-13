@@ -286,19 +286,49 @@ final class AudioTrackProcessor: @unchecked Sendable {
         return tap
     }
 
-    /// An audio mix that runs one processor per track. Track volumes stay at 1: gain happens in the tap.
-    static func mix(_ tracks: [Lane], forPlayback: Bool) -> (mix: AVAudioMix, processors: [AudioTrackProcessor]) {
+    /// Length of the fade around a stretch whose sound is left out (a speed over 2×), so it never clicks.
+    static let silenceFade = 0.012
+
+    /// Silent output ranges, sorted and merged where the fades between them would overlap (volume ramps must not).
+    static func silenceRanges(_ ranges: [TimeRange]) -> [TimeRange] {
+        var out: [TimeRange] = []
+        for r in ranges.sorted(by: { $0.start < $1.start }) where r.duration > 0 {
+            if let last = out.last, r.start - last.end < 2 * silenceFade + 0.001 {
+                out[out.count - 1].end = max(last.end, r.end)
+            } else {
+                out.append(r)
+            }
+        }
+        return out
+    }
+
+    /// An audio mix that runs one processor per track. Track volumes stay at 1 (gain happens in the tap), except
+    /// for short fades into and out of the `silent` output ranges.
+    static func mix(_ tracks: [Lane], forPlayback: Bool, silent: [TimeRange] = []) -> (mix: AVAudioMix, processors: [AudioTrackProcessor]) {
         let mix = AVMutableAudioMix()
         var processors: [AudioTrackProcessor] = []
         mix.inputParameters = tracks.map { t in
             let p = AVMutableAudioMixInputParameters(track: t.track)
             let processor = AudioTrackProcessor(kind: t.kind, gain: t.gain, isOriginal: t.isOriginal)
+            var level: Float = 1
             if let tap = processor.makeTap(forPlayback: forPlayback) {
                 p.audioTapProcessor = tap
             } else {
-                p.setVolume(min(1, t.gain), at: .zero)
+                level = min(1, t.gain)
+                p.setVolume(level, at: .zero)
             }
             processors.append(processor)
+            for r in silenceRanges(silent) {
+                let f = silenceFade
+                if r.start > 0 {
+                    p.setVolumeRamp(fromStartVolume: level, toEndVolume: 0,
+                                    timeRange: CMTimeRange(start: MediaSources.time(max(0, r.start - f)), end: MediaSources.time(r.start)))
+                } else {
+                    p.setVolume(0, at: .zero)
+                }
+                p.setVolumeRamp(fromStartVolume: 0, toEndVolume: level,
+                                timeRange: CMTimeRange(start: MediaSources.time(r.end), end: MediaSources.time(r.end + f)))
+            }
             return p
         }
         return (mix, processors)
@@ -309,55 +339,99 @@ final class AudioTrackProcessor: @unchecked Sendable {
 /// ceiling even though each is limited) and removes the look-ahead delays of the track processors and of
 /// this limiter, so audio stays sample-aligned with video. Takes interleaved Float32 buffers in, hands
 /// new ones out.
+///
+/// The output is exactly `length` frames from time zero, whatever the mix output delivers: each input buffer
+/// is placed by its timestamp (gaps become silence, overlaps are dropped), the buffer that crosses the end is
+/// cut at the exact frame, and `finish()` pads with silence if the input stopped short. The mix output can't do
+/// this itself: it hands out whole 8192-frame buffers past `AVAssetReader.timeRange`, and where its last buffer
+/// ends depends on how the time-pitch stretcher chunked the speed segments before it (measured: 0–170 ms over).
 final class MixFinisher {
     let sampleRate: Double
     let channels: Int
+    /// Frames the output has in all.
+    let length: Int
     private let limiter: PeakLimiter
-    /// Frames still to drop from the start (all look-ahead delays).
+    /// Frames still to drop from the limiter's output (all look-ahead delays).
     private var skip: Int
-    private var nextPTS: CMTime?
+    /// Input position (frames from zero) the next input frame belongs at.
+    private var inputFrame = 0
+    /// Frames handed out so far.
+    private(set) var outputFrames = 0
     private var format: CMAudioFormatDescription?
     private var scratch: [Float] = []
+    private static let chunk = 8192
 
-    init(sampleRate: Double, channels: Int) {
+    init(sampleRate: Double, channels: Int, length: Int) {
         self.sampleRate = sampleRate
         self.channels = channels
+        self.length = max(0, length)
         limiter = PeakLimiter(channels: channels, sampleRate: sampleRate)
         skip = limiter.latency + AudioTrackProcessor.latency(sampleRate: sampleRate)
     }
 
-    /// Processes one buffer from the mix output. Returns the buffer to append, if any.
-    func process(_ sb: CMSampleBuffer) -> CMSampleBuffer? {
-        guard let bb = CMSampleBufferGetDataBuffer(sb) else { return nil }
+    /// Output frames for a duration in seconds, rounded to the nearest frame.
+    static func frames(_ seconds: Double, sampleRate: Double) -> Int { max(0, Int((seconds * sampleRate).rounded())) }
+
+    /// Whether every output frame has been handed out.
+    var isComplete: Bool { outputFrames >= length }
+
+    /// Processes one buffer from the mix output. Returns the buffers to append (none, or a silent gap and the audio).
+    func process(_ sb: CMSampleBuffer) -> [CMSampleBuffer] {
+        guard !isComplete, let bb = CMSampleBufferGetDataBuffer(sb) else { return [] }
         if format == nil { format = CMSampleBufferGetFormatDescription(sb) }
-        if nextPTS == nil { nextPTS = CMSampleBufferGetPresentationTimeStamp(sb) }
         let frames = CMBlockBufferGetDataLength(bb) / (4 * channels)
-        guard frames > 0 else { return nil }
-        if scratch.count < frames * channels { scratch = [Float](repeating: 0, count: frames * channels) }
-        let ok = scratch.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: frames * channels * 4, destination: $0.baseAddress!) == noErr }
-        guard ok else { return nil }
-        return limitAndEmit(frames: frames)
+        guard frames > 0 else { return [] }
+        var out: [CMSampleBuffer] = []
+        // Where this buffer belongs. Untimed buffers, and a frame's rounding either way, continue from the last.
+        let pts = CMSampleBufferGetPresentationTimeStamp(sb)
+        var at = pts.isNumeric ? Int(CMTimeConvertScale(pts, timescale: CMTimeScale(sampleRate), method: .roundHalfAwayFromZero).value) : inputFrame
+        if abs(at - inputFrame) <= 1 { at = inputFrame }
+        if at > inputFrame { out += silence(at - inputFrame) }
+        let drop = min(frames, max(0, inputFrame - at))
+        let count = frames - drop
+        guard count > 0, !isComplete else { return out }
+        if scratch.count < count * channels { scratch = [Float](repeating: 0, count: count * channels) }
+        let ok = scratch.withUnsafeMutableBytes {
+            CMBlockBufferCopyDataBytes(bb, atOffset: drop * channels * 4, dataLength: count * channels * 4, destination: $0.baseAddress!) == noErr
+        }
+        guard ok else { return out }
+        if let b = limitAndEmit(frames: count) { out.append(b) }
+        return out
     }
 
-    /// Pushes silence through the limiter so its delayed tail comes out. Call once at the end.
-    func flush() -> CMSampleBuffer? {
-        guard format != nil else { return nil }
-        let frames = limiter.latency
-        if scratch.count < frames * channels { scratch = [Float](repeating: 0, count: frames * channels) }
-        for i in 0..<(frames * channels) { scratch[i] = 0 }
-        return limitAndEmit(frames: frames)
+    /// Pushes silence through until the output is `length` frames long: the limiters' delayed tails, then
+    /// silence if the mix ended early. Call once at the end.
+    func finish() -> [CMSampleBuffer] {
+        silence(length - outputFrames + skip)
     }
 
+    private func silence(_ frames: Int) -> [CMSampleBuffer] {
+        var out: [CMSampleBuffer] = []
+        var left = frames
+        while left > 0, !isComplete {
+            let n = min(left, Self.chunk)
+            if scratch.count < n * channels { scratch = [Float](repeating: 0, count: n * channels) }
+            for i in 0..<(n * channels) { scratch[i] = 0 }
+            if let b = limitAndEmit(frames: n) { out.append(b) }
+            left -= n
+        }
+        return out
+    }
+
+    /// Limits `frames` frames of `scratch` (input at `inputFrame`) and wraps what comes out, cut at `length`.
     private func limitAndEmit(frames: Int) -> CMSampleBuffer? {
         let ch = channels
+        inputFrame += frames
         scratch.withUnsafeMutableBufferPointer { p in
             let base = p.baseAddress!
             limiter.process(frames: frames, stride: ch) { base + $0 }
         }
         let drop = min(skip, frames)
         skip -= drop
-        let count = frames - drop
-        guard count > 0, let format, let pts = nextPTS else { return nil }
+        let count = min(frames - drop, length - outputFrames)
+        guard count > 0 else { return nil }
+        let format = format ?? Self.makeFormat(sampleRate: sampleRate, channels: ch)
+        guard let format else { return nil }
         let bytes = count * ch * 4
         var block: CMBlockBuffer?
         guard CMBlockBufferCreateWithMemoryBlock(allocator: kCFAllocatorDefault, memoryBlock: nil, blockLength: bytes, blockAllocator: nil,
@@ -368,10 +442,23 @@ final class MixFinisher {
         }
         guard copied else { return nil }
         var out: CMSampleBuffer?
+        let pts = CMTime(value: CMTimeValue(outputFrames), timescale: CMTimeScale(sampleRate))
         guard CMAudioSampleBufferCreateReadyWithPacketDescriptions(allocator: kCFAllocatorDefault, dataBuffer: block, formatDescription: format,
                                                                    sampleCount: count, presentationTimeStamp: pts,
                                                                    packetDescriptions: nil, sampleBufferOut: &out) == noErr else { return nil }
-        nextPTS = CMTimeAdd(pts, CMTime(value: CMTimeValue(count), timescale: CMTimeScale(sampleRate)))
+        outputFrames += count
         return out
+    }
+
+    /// Interleaved Float32 PCM, for silence written before any audio arrived (a mix that delivered nothing).
+    private static func makeFormat(sampleRate: Double, channels: Int) -> CMAudioFormatDescription? {
+        var asbd = AudioStreamBasicDescription(mSampleRate: sampleRate, mFormatID: kAudioFormatLinearPCM,
+                                               mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+                                               mBytesPerPacket: UInt32(4 * channels), mFramesPerPacket: 1, mBytesPerFrame: UInt32(4 * channels),
+                                               mChannelsPerFrame: UInt32(channels), mBitsPerChannel: 32, mReserved: 0)
+        var fd: CMAudioFormatDescription?
+        CMAudioFormatDescriptionCreate(allocator: kCFAllocatorDefault, asbd: &asbd, layoutSize: 0, layout: nil, magicCookieSize: 0,
+                                       magicCookie: nil, extensions: nil, formatDescriptionOut: &fd)
+        return fd
     }
 }

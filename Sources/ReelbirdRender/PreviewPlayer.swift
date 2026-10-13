@@ -270,6 +270,7 @@ public final class PreviewPlayer: @unchecked Sendable {
         // Every audio track stays in the composition (mutes are a gain of 0), so audio edits never rebuild the item.
         let comp = try sources.composition(timeline: plan.timeline, camera: false, audio: AudioSettings(), originalVoice: true)
         let item = AVPlayerItem(asset: comp.asset)
+        item.audioTimePitchAlgorithm = MediaSources.timePitch // speed segments keep the voice's pitch
         let attrs = MediaSources.decodeSettings
         let screenOut = AVPlayerItemVideoOutput(pixelBufferAttributes: attrs)
         screenOut.suppressesPlayerRendering = true
@@ -321,20 +322,11 @@ public final class PreviewPlayer: @unchecked Sendable {
                 self.notifyTime()
             }
         }
-        let target = keepingSourceTime.map { plan.timeline.outputTime(forSource: $0) ?? nearestOutput(plan, $0) } ?? state.pausedTime
+        let target = keepingSourceTime.map { plan.timeline.nearestOutputTime(forSource: $0) } ?? state.pausedTime
         state.pausedTime = min(max(0, target), plan.duration)
         seekInFlight = false
         pendingSeek = nil
         chaseSeek(state.pausedTime)
-    }
-
-    private func nearestOutput(_ plan: RenderPlan, _ source: Double) -> Double {
-        var acc = 0.0
-        for r in plan.timeline.kept {
-            if source < r.start { return acc }
-            acc += r.duration
-        }
-        return plan.duration
     }
 
     /// Renders the frame the preview would show now into an image (tests, debugging).

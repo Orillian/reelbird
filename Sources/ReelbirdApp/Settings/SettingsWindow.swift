@@ -101,22 +101,34 @@ struct GeneralSettings: View {
                             .buttonStyle(.plain).foregroundStyle(.secondary).help("Show in Finder")
                     }
                 }
-                Toggle("Open the editor when a recording stops", isOn: $prefs.openEditorAfterRecording).toggleStyle(.brand)
+                Picker("After recording", selection: $prefs.afterRecording) {
+                    ForEach(AfterRecording.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
                 Toggle("Open Reelbird at login", isOn: $launchAtLogin).toggleStyle(.brand)
                     .onChange(of: launchAtLogin) { _, on in setLaunchAtLogin(on) }
                 if let loginError { StatusLine(tone: .warning, text: loginError) }
             }
             Section {
                 LabeledContent("Start or stop recording") {
-                    HotKeyField(key: $prefs.recordHotKey, defaultKey: .defaultRecord) { app?.registerHotKeys() }
+                    HotKeyField(key: $prefs.recordHotKey, defaultKey: .defaultRecord,
+                                others: [prefs.pauseHotKey, prefs.markerHotKey, prefs.layoutHotKey]) { app?.registerHotKeys() }
                 }
                 LabeledContent("Pause or resume") {
-                    HotKeyField(key: $prefs.pauseHotKey, defaultKey: .defaultPause) { app?.registerHotKeys() }
+                    HotKeyField(key: $prefs.pauseHotKey, defaultKey: .defaultPause,
+                                others: [prefs.recordHotKey, prefs.markerHotKey, prefs.layoutHotKey]) { app?.registerHotKeys() }
+                }
+                LabeledContent("Add a marker") {
+                    HotKeyField(key: $prefs.markerHotKey, defaultKey: .defaultMarker,
+                                others: [prefs.recordHotKey, prefs.pauseHotKey, prefs.layoutHotKey]) { app?.registerHotKeys() }
+                }
+                LabeledContent("Switch camera layout") {
+                    HotKeyField(key: $prefs.layoutHotKey, defaultKey: .defaultLayout,
+                                others: [prefs.recordHotKey, prefs.pauseHotKey, prefs.markerHotKey]) { app?.registerHotKeys() }
                 }
             } header: {
                 Text("Keyboard shortcuts")
             } footer: {
-                Text("These work in every app. Click a shortcut, then press the new keys.")
+                Text("These work in every app. Add a marker works while you record; switch camera layout while you record with the camera on (bubble, camera only, screen only). Click a shortcut, then press the new keys.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
@@ -146,15 +158,36 @@ struct GeneralSettings: View {
     }
 }
 
-/// Click, then press a shortcut. Esc cancels, Delete restores the default.
+/// Click, then press a shortcut. Esc cancels, Delete restores the default. A shortcut another Reelbird
+/// action or another app already uses is refused, with a line saying so.
 struct HotKeyField: View {
     @Binding var key: HotKey
     let defaultKey: HotKey
+    /// Reelbird's other shortcuts.
+    var others: [HotKey] = []
     var onChange: () -> Void = {}
     @ViewState private var recording = false
     @ViewState private var monitor: Any?
+    @ViewState private var problem: String?
 
     var body: some View {
+        VStack(alignment: .trailing, spacing: 3) {
+            field
+            if let problem {
+                Text(problem).font(.system(size: 11)).foregroundStyle(Theme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// Why `hk` can't be used, or `nil` when it can.
+    static func conflict(_ hk: HotKey, others: [HotKey], takenElsewhere: (HotKey) -> Bool) -> String? {
+        if others.contains(hk) { return "Reelbird already uses \(hk.display) for something else." }
+        if takenElsewhere(hk) { return "Another app already uses \(hk.display). Pick other keys." }
+        return nil
+    }
+
+    private var field: some View {
         Button {
             recording ? stop() : start()
         } label: {
@@ -170,6 +203,7 @@ struct HotKeyField: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Shortcut \(key.display)")
+        .accessibilityValue(problem ?? "")
         .accessibilityHint("Click, then press new keys")
         .onDisappear { stop() }
     }
@@ -182,8 +216,16 @@ struct HotKeyField: View {
             let hk = HotKey(event: event)
             MainActor.assumeIsolated {
                 if code == 53 { stop(); return }
-                if code == 51 { key = defaultKey; stop(); return }
-                if let hk { key = hk; stop() } else { Beep.play() }
+                if code == 51 { key = defaultKey; problem = nil; stop(); return }
+                guard let hk else { Beep.play(); return }
+                if hk != key, let why = Self.conflict(hk, others: others, takenElsewhere: { HotKeyCenter.shared.isTakenByAnotherApp($0) }) {
+                    problem = why
+                    Beep.play()
+                    return
+                }
+                problem = nil
+                key = hk
+                stop()
             }
             return nil
         }

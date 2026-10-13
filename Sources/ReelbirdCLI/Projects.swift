@@ -86,6 +86,7 @@ enum ProjectSummary {
             throw CLIError("Can't read \(Format.path(bundle.editURL)): \(error.localizedDescription)", code: .dataError)
         }
         let timeline = EditTimeline(manifest: m, edit: e)
+        let markers = Markers.resolve(edit: e, events: (try? bundle.readEvents()) ?? [])
         let fm = FileManager.default
         let hasCaptions = fm.fileExists(atPath: bundle.captionsURL.path)
         let hasTranscript = fm.fileExists(atPath: Operations.transcriptURL(bundle).path)
@@ -132,6 +133,7 @@ enum ProjectSummary {
             "edit": [
                 "trim": e.trim.map { ["start": JSONValue($0.start), "end": JSONValue($0.end)] } ?? .null,
                 "cuts": .array(e.cuts.map { ["start": JSONValue($0.start), "end": JSONValue($0.end)] }),
+                "speed": speedJSON(e.speed),
                 "zoom": ["mode": .string(e.zoom.mode.rawValue), "intensity": JSONValue(e.zoom.intensity), "regions": .int(e.zoom.regions.count)],
                 "background": .string(e.background.kind.rawValue),
                 "aspect": .string(e.canvas.aspect.rawValue),
@@ -140,7 +142,10 @@ enum ProjectSummary {
                     "x": JSONValue(e.camera.position.x), "y": JSONValue(e.camera.position.y),
                     "corner": JSONValue(cameraCorner(e.camera)?.rawValue),
                     "moves": .array(e.camera.moves.map { ["t": JSONValue($0.t), "x": JSONValue($0.x), "y": JSONValue($0.y)] }),
+                    "shrinkWhenZoomed": .bool(e.camera.shrinkWhenZoomed), "sizeWhileZoomed": JSONValue(e.camera.sizeWhileZoomed),
+                    "smartFraming": .bool(e.camera.smartFraming),
                 ],
+                "layouts": .array(e.layouts.map { ["kind": .string($0.kind.rawValue), "start": JSONValue($0.range.start), "end": JSONValue($0.range.end)] }),
                 "crop": e.crop.map { ["x": JSONValue($0.x), "y": JSONValue($0.y), "width": JSONValue($0.width), "height": JSONValue($0.height)] } ?? .null,
                 "captionsFile": JSONValue(e.captions.file),
                 "annotations": .int(e.annotations.count),
@@ -155,6 +160,7 @@ enum ProjectSummary {
             "voiceLoudness": voice,
             "voiceStem": stemJSON,
             "chapters": .array(e.chapters.map { ["time": JSONValue($0.time), "title": .string($0.title)] }),
+            "markers": .array(markers.map { Operations.markerJSON($0, timeline: timeline) }),
             "captions": .bool(hasCaptions),
             "transcript": .bool(hasTranscript),
             "share": m.share.map { ["url": .string($0.url), "polished": .bool($0.polished), "updatedAt": .string(Format.iso($0.updatedAt))] } ?? .null,
@@ -176,7 +182,11 @@ enum ProjectSummary {
         editBits.append("zoom \(e.zoom.mode.rawValue) \(Format.seconds(e.zoom.intensity))")
         editBits.append("background \(e.background.kind.rawValue)")
         lines.append("  Edit       " + editBits.joined(separator: ", "))
-        if m.track(.camera) != nil { lines.append("  Camera     \(describeCamera(e.camera))") }
+        if let s = describeSpeed(e.speed) { lines.append("  Speed      \(s)") }
+        if m.track(.camera) != nil {
+            lines.append("  Camera     \(describeCamera(e.camera))")
+            if !e.layouts.isEmpty { lines.append("  Layouts    \(describeLayouts(e.layouts))") }
+        }
         if let mic = analysis?.microphone {
             var v = mic.integratedLUFS.map { String(format: "%.1f LUFS", $0) } ?? "silent"
             if let p = mic.peakDBFS { v += String(format: ", peak %.1f dBFS", p) }
@@ -197,6 +207,10 @@ enum ProjectSummary {
         if !e.chapters.isEmpty {
             lines.append("  Chapters")
             for c in e.chapters { lines.append("    \(Format.duration(c.time).padding(toLength: 8, withPad: " ", startingAt: 0)) \(c.title)") }
+        }
+        if !markers.isEmpty {
+            lines.append("  Markers")
+            for mk in markers { lines.append("    \(Format.duration(mk.t).padding(toLength: 8, withPad: " ", startingAt: 0)) \(mk.title)") }
         }
         if hasCaptions { lines.append("  Captions   captions.vtt") }
         if let s = m.share { lines.append("  Link       \(s.url)\(s.polished ? " (polished)" : "")") }
@@ -223,7 +237,25 @@ enum ProjectSummary {
         if !c.moves.isEmpty {
             s += ", \(c.moves.count) move\(c.moves.count == 1 ? "" : "s") (" + c.moves.map { Format.duration($0.t) }.joined(separator: ", ") + ")"
         }
+        var zoomed: [String] = []
+        if c.shrinkWhenZoomed { zoomed.append("\(Int((c.sizeWhileZoomed * 100).rounded()))% size") }
+        if c.smartFraming { zoomed.append("moves aside") }
+        s += zoomed.isEmpty ? "; unchanged during zooms" : "; during zooms " + zoomed.joined(separator: ", ")
         return s
+    }
+
+    /// "camera 0:05–0:12, split 0:20–0:31".
+    static func describeLayouts(_ layouts: [LayoutSegment]) -> String {
+        layouts.map { l in
+            let name: String
+            switch l.kind {
+            case .overlay: name = "bubble"
+            case .fullCamera: name = "camera"
+            case .split: name = "split"
+            case .screenOnly: name = "screen"
+            }
+            return "\(name) \(Format.duration(l.range.start))–\(Format.duration(l.range.end))"
+        }.joined(separator: ", ")
     }
 
     static func list(_ locator: ProjectLocator, limit: Int?) -> Report {

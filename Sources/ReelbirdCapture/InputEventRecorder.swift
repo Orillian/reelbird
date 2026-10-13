@@ -328,8 +328,10 @@ final class CursorRecorder: @unchecked Sendable {
 final class KeyTap: @unchecked Sendable {
     private let handler: @Sendable (String, [String]) -> Void
     private var port: CFMachPort?
-    private var runLoop: CFRunLoop?
     private var thread: Thread?
+    /// The tap thread's run loop once it runs, and whether `stop` came first. `start` doesn't wait for the
+    /// thread (it may be called from a task, which must never block), so the two meet here.
+    private let loop = Mutex<(runLoop: CFRunLoop?, stopped: Bool)>((nil, false))
 
     init(handler: @escaping @Sendable (String, [String]) -> Void) { self.handler = handler }
 
@@ -339,28 +341,36 @@ final class KeyTap: @unchecked Sendable {
                                            eventsOfInterest: mask, callback: keyTapCallback,
                                            userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return false }
         self.port = port
-        let ready = DispatchSemaphore(value: 0)
+        let tapPort = UncheckedPort(port: port)
         let thread = Thread { [weak self] in
-            guard let self, let port = self.port, let src = CFMachPortCreateRunLoopSource(nil, port, 0) else { ready.signal(); return }
-            self.runLoop = CFRunLoopGetCurrent()
-            CFRunLoopAddSource(CFRunLoopGetCurrent(), src, .commonModes)
+            let port = tapPort.port
+            guard let self, let src = CFMachPortCreateRunLoopSource(nil, port, 0) else { return }
+            let rl = CFRunLoopGetCurrent()
+            let stopped = self.loop.withLock { l -> Bool in
+                if !l.stopped { l.runLoop = rl }
+                return l.stopped
+            }
+            guard !stopped else { return }
+            CFRunLoopAddSource(rl, src, .commonModes)
             CGEvent.tapEnable(tap: port, enable: true)
-            ready.signal()
+            // Returns on `CFRunLoopStop`, or at once if `stop` invalidated the port (and so the source) first.
             CFRunLoopRun()
         }
         thread.name = "reelbird.keytap"
         thread.qualityOfService = .userInitiated
         thread.start()
         self.thread = thread
-        ready.wait()
         return true
     }
 
     func stop() {
         if let port { CGEvent.tapEnable(tap: port, enable: false); CFMachPortInvalidate(port) }
-        if let runLoop { CFRunLoopStop(runLoop) }
+        loop.withLock { l in
+            l.stopped = true
+            if let rl = l.runLoop { CFRunLoopStop(rl) }
+            l.runLoop = nil
+        }
         port = nil
-        runLoop = nil
         thread = nil
     }
 
@@ -394,6 +404,9 @@ final class KeyTap: @unchecked Sendable {
         handler(chars, mods)
     }
 }
+
+/// Hands the tap's port to its thread (CFMachPort is thread-safe but not marked Sendable).
+private struct UncheckedPort: @unchecked Sendable { let port: CFMachPort }
 
 private let keyTapCallback: CGEventTapCallBack = { _, type, event, refcon in
     if let refcon {

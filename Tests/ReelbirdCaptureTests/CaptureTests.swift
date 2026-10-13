@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 import ReelbirdCore
 import Synchronization
@@ -29,55 +29,61 @@ func loadAsset(_ url: URL) async throws -> (duration: Double, tracks: [AVAssetTr
 func samplePTS(_ url: URL, type: AVMediaType) async throws -> [Double] {
     let asset = AVURLAsset(url: url)
     guard let track = try await asset.loadTracks(withMediaType: type).first else { return [] }
-    let reader = try AVAssetReader(asset: asset)
-    let out = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
-    reader.add(out)
-    reader.startReading()
-    var pts: [Double] = []
-    while let sb = out.copyNextSampleBuffer() {
-        if let timings = try? sb.sampleTimingInfos() {
-            pts.append(contentsOf: timings.map(\.presentationTimeStamp.seconds))
+    // Blocking decode: off the cooperative pool (see BlockingWork).
+    return try await BlockingWork.run("test.decode") { _ in
+        let reader = try AVAssetReader(asset: asset)
+        let out = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+        reader.add(out)
+        reader.startReading()
+        var pts: [Double] = []
+        while let sb = out.copyNextSampleBuffer() {
+            if let timings = try? sb.sampleTimingInfos() {
+                pts.append(contentsOf: timings.map(\.presentationTimeStamp.seconds))
+            }
         }
+        return pts
     }
-    return pts
 }
 
 /// Decoded mono-mixed audio as (time, rms) per 50 ms window.
 func audioWindows(_ url: URL) async throws -> [(t: Double, rms: Float)] {
     let asset = AVURLAsset(url: url)
     guard let track = try await asset.loadTracks(withMediaType: .audio).first else { return [] }
-    let reader = try AVAssetReader(asset: asset)
-    let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
-        AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
-        AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false, AVSampleRateKey: 48_000,
-    ])
-    reader.add(out)
-    reader.startReading()
-    var samples: [Float] = []
-    var start: Double?
-    var channels = 1
-    while let sb = out.copyNextSampleBuffer() {
-        if start == nil { start = sb.presentationTimeStamp.seconds }
-        if let fd = sb.formatDescription, let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fd) {
-            channels = Int(asbd.pointee.mChannelsPerFrame)
+    // Blocking decode: off the cooperative pool (see BlockingWork).
+    return try await BlockingWork.run("test.decode") { _ in
+        let reader = try AVAssetReader(asset: asset)
+        let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
+            AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false, AVSampleRateKey: 48_000,
+        ])
+        reader.add(out)
+        reader.startReading()
+        var samples: [Float] = []
+        var start: Double?
+        var channels = 1
+        while let sb = out.copyNextSampleBuffer() {
+            if start == nil { start = sb.presentationTimeStamp.seconds }
+            if let fd = sb.formatDescription, let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fd) {
+                channels = Int(asbd.pointee.mChannelsPerFrame)
+            }
+            guard let block = sb.dataBuffer else { continue }
+            let n = CMBlockBufferGetDataLength(block) / 4
+            var chunk = [Float](repeating: 0, count: n)
+            chunk.withUnsafeMutableBytes { _ = CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: n * 4, destination: $0.baseAddress!) }
+            samples.append(contentsOf: chunk)
         }
-        guard let block = sb.dataBuffer else { continue }
-        let n = CMBlockBufferGetDataLength(block) / 4
-        var chunk = [Float](repeating: 0, count: n)
-        chunk.withUnsafeMutableBytes { _ = CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: n * 4, destination: $0.baseAddress!) }
-        samples.append(contentsOf: chunk)
+        let frames = samples.count / channels
+        let win = 2_400
+        var out2: [(Double, Float)] = []
+        var f = 0
+        while f + win <= frames {
+            var sum: Float = 0
+            for i in (f * channels)..<((f + win) * channels) { sum += samples[i] * samples[i] }
+            out2.append(((start ?? 0) + Double(f) / 48_000, (sum / Float(win * channels)).squareRoot()))
+            f += win
+        }
+        return out2
     }
-    let frames = samples.count / channels
-    let win = 2_400
-    var out2: [(Double, Float)] = []
-    var f = 0
-    while f + win <= frames {
-        var sum: Float = 0
-        for i in (f * channels)..<((f + win) * channels) { sum += samples[i] * samples[i] }
-        out2.append(((start ?? 0) + Double(f) / 48_000, (sum / Float(win * channels)).squareRoot()))
-        f += win
-    }
-    return out2
 }
 
 func cpuSeconds() -> Double {

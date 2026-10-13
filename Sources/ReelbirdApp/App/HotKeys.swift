@@ -8,6 +8,10 @@ struct HotKey: Codable, Hashable, Sendable {
 
     static let defaultRecord = HotKey(keyCode: UInt32(kVK_ANSI_R), modifiers: UInt32(optionKey | shiftKey))
     static let defaultPause = HotKey(keyCode: UInt32(kVK_ANSI_P), modifiers: UInt32(optionKey | shiftKey))
+    /// Registered only while recording, so ⌥⇧M types its character in other apps the rest of the time.
+    static let defaultMarker = HotKey(keyCode: UInt32(kVK_ANSI_M), modifiers: UInt32(optionKey | shiftKey))
+    /// Switches the camera layout while recording (registered only then, so it doesn't take ⌥⇧L from other apps).
+    static let defaultLayout = HotKey(keyCode: UInt32(kVK_ANSI_L), modifiers: UInt32(optionKey | shiftKey))
 
     init(keyCode: UInt32, modifiers: UInt32) { self.keyCode = keyCode; self.modifiers = modifiers }
 
@@ -69,7 +73,7 @@ struct HotKey: Codable, Hashable, Sendable {
 
 /// Registers global hot keys with Carbon `RegisterEventHotKey`, which needs no permission.
 @MainActor final class HotKeyCenter {
-    enum Action: UInt32, CaseIterable { case record = 1, pause = 2 }
+    enum Action: UInt32, CaseIterable { case record = 1, pause = 2, layout = 3, marker = 4 }
 
     static let shared = HotKeyCenter()
     private var refs: [Action: EventHotKeyRef] = [:]
@@ -83,16 +87,32 @@ struct HotKey: Codable, Hashable, Sendable {
         var ref: EventHotKeyRef?
         let id = EventHotKeyID(signature: OSType(0x5242_4952), id: action.rawValue) // 'RBIR'
         let status = RegisterEventHotKey(key.keyCode, key.modifiers, id, GetApplicationEventTarget(), 0, &ref)
-        if status == noErr, let ref { refs[action] = ref }
+        if status == noErr, let ref { refs[action] = ref; keys[action] = key }
     }
 
     func unregister(_ action: Action) {
         if let r = refs.removeValue(forKey: action) { UnregisterEventHotKey(r) }
+        keys[action] = nil
     }
+
+    func isRegistered(_ action: Action) -> Bool { refs[action] != nil }
+
+    /// Whether another app already holds `key` as a global shortcut (macOS refuses a second registration).
+    /// Keys Reelbird itself has registered count as free.
+    func isTakenByAnotherApp(_ key: HotKey) -> Bool {
+        var ref: EventHotKeyRef?
+        let id = EventHotKeyID(signature: OSType(0x5242_4952), id: 99)
+        let status = RegisterEventHotKey(key.keyCode, key.modifiers, id, GetApplicationEventTarget(), 0, &ref)
+        if let ref { UnregisterEventHotKey(ref) }
+        return status == OSStatus(eventHotKeyExistsErr) && !keys.values.contains(key)
+    }
+
+    /// The key each registered action is on.
+    private var keys: [Action: HotKey] = [:]
 
     /// Temporarily disables all hot keys (while the user records a new shortcut).
     func suspend(_ suspended: Bool) {
-        if suspended { for (_, r) in refs { UnregisterEventHotKey(r) }; refs.removeAll() }
+        if suspended { for (_, r) in refs { UnregisterEventHotKey(r) }; refs.removeAll(); keys.removeAll() }
     }
 
     fileprivate func fire(_ id: UInt32) {

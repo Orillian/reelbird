@@ -25,7 +25,7 @@ private func render(_ bundle: ProjectBundle, _ edit: EditDocument, at t: Double,
     let manifest = try bundle.readManifest()
     let plan = try RenderPlan(bundle: bundle, manifest: manifest, edit: edit)
     let sources = try await MediaSources.load(bundle: bundle, manifest: manifest)
-    return Pixels(try Thumbnailer.render(plan: plan, sources: sources, at: t, maxWidth: width))
+    return Pixels(try await Thumbnailer.render(plan: plan, sources: sources, at: t, maxWidth: width))
 }
 
 // Canvas 960×540 from a 1280×720 source with 10% padding: card is 768×432 at (96, 54), radius 27 px.
@@ -217,7 +217,7 @@ private func render(_ bundle: ProjectBundle, _ edit: EditDocument, at t: Double,
     let plan = try RenderPlan(bundle: bundle, manifest: manifest, edit: e)
     let sources = try await MediaSources.load(bundle: bundle, manifest: manifest)
     for t in [0.3, 1.2, 1.6, 2.2] {
-        let img = try Thumbnailer.render(plan: plan, sources: sources, at: t, maxWidth: 1280)
+        let img = try await Thumbnailer.render(plan: plan, sources: sources, at: t, maxWidth: 1280)
         let url = URL(fileURLWithPath: dir).appendingPathComponent("frame-\(t).png")
         let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
         CGImageDestinationAddImage(dest, img, nil)
@@ -240,7 +240,7 @@ private func render(_ bundle: ProjectBundle, _ edit: EditDocument, at t: Double,
     let wide = try RenderPlan(bundle: bundle, manifest: manifest, edit: plainEdit(manifest))
     #expect(wide.viewBase == SIMD2(1, 1))
     let sources = try await MediaSources.load(bundle: bundle, manifest: manifest)
-    let px = Pixels(try Thumbnailer.render(plan: plan, sources: sources, at: 1, maxWidth: 540))
+    let px = Pixels(try await Thumbnailer.render(plan: plan, sources: sources, at: 1, maxWidth: 540))
     let bg = (0x20, 0x50, 0xA0)
     // Background above and below the window, the screen (grey, centre square black) inside it.
     #expect(px.near(270, 20, bg, tol: 4) && px.near(270, px.height - 20, bg, tol: 4))

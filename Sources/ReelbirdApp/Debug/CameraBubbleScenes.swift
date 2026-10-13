@@ -24,6 +24,9 @@ import SwiftUI
         out.append(scene("camera-bubble-rest", shape: .circle, size: .medium, toolbar: false))
         out.append(scene("camera-bubble-lifted", shape: .circle, size: .medium, toolbar: false, lifted: true))
         out.append(scene("camera-bubble-below", shape: .roundedSquare, size: .medium, nearTop: true))
+        // The layout shortcut switched to camera only: the live bubble wears a badge.
+        out.append(scene("camera-bubble-camera-only", shape: .circle, size: .medium, toolbar: false, layout: .fullCamera))
+        out.append(scene("camera-bubble-camera-only-portrait", shape: .portrait, size: .small, toolbar: false, layout: .fullCamera))
         if animations { out += animationScenes() }
         return out
     }
@@ -37,9 +40,10 @@ import SwiftUI
 
     private static func scene(_ name: String, shape: CameraLayout.Shape, size: CameraBubbleSize, toolbar: Bool = true,
                               hovered: Int? = nil, pressed: Int? = nil, light: Bool = false, lifted: Bool = false,
-                              nearTop: Bool = false) -> Scene {
+                              nearTop: Bool = false, layout: LayoutSegment.Kind = .overlay) -> Scene {
         Scene(name: name, size: stage, backdrop: true) {
             let m = CameraBubbleModel(shape: shape, size: size)
+            m.liveLayout = layout
             m.toolbarVisible = toolbar
             m.hovering = toolbar
             m.lifted = lifted

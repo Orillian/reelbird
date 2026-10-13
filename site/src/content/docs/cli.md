@@ -23,9 +23,22 @@ reelbird record --window 1234 --share          # a window by ID from `sources`; 
 reelbird list                                  # recent recordings
 reelbird edit latest --set zoom.intensity=0.7 --trim 0:05-end
 reelbird edit latest --set camera.x=0.5 --set camera.y=1 --clear-camera-moves   # camera bottom centre, in one place
+reelbird edit latest --speed 0:12-0:20@2       # play 12–20 s at 2× (1 = normal speed again)
+reelbird speedup latest --apply                # speed up typing and idle stretches
+reelbird edit latest --layout camera@0:00-0:04 --layout split@0:30-0:45         # camera layouts for parts of the video
+reelbird edit latest --set camera.sizeWhileZoomed=0.6 --set camera.smartFraming=false
+reelbird edit latest --set zoom.regions.auto-3.enabled=false   # turn one zoom off (ids are in `edit latest --json`)
+reelbird edit latest --set zoom.regions.*.instant=true         # every zoom cuts in and out, no animation
+reelbird blur latest --rect 0.1,0.2,0.3,0.05 --from 0:05 --to 0:12   # blur an area (0–1 of the screen, or pixels)
+reelbird redact latest --auto                  # find emails, keys, card and phone numbers on screen (masked list)
+reelbird redact latest --auto --keep-all       # ...and blur them all (or --keep ID)
+reelbird annotate latest --add arrow --arrow 0.8,0.8,0.55,0.45 --from 3 --to 6
+reelbird annotate latest                       # list overlays; --remove ID or --clear
 reelbird export latest --format mp4 --height 1080
 reelbird captions latest                       # captions.vtt, made on this Mac
 reelbird enhance latest --strength medium      # clean up the voice; the raw mic is kept
+reelbird markers latest                        # markers dropped while recording
+reelbird markers latest --as-chapters          # make them the chapters on the share page
 reelbird share latest                          # upload and print the link
 reelbird share latest --polished               # render the edit, same link
 reelbird help record

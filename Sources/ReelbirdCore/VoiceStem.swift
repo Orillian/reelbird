@@ -195,15 +195,7 @@ public struct DuckCurve: Hashable, Sendable {
 
     /// Maps speech ranges on the recording timeline onto the edited output timeline.
     public init(recordingRanges: [TimeRange], timeline: EditTimeline) {
-        var out: [TimeRange] = []
-        var acc = 0.0
-        for k in timeline.kept {
-            for r in recordingRanges where r.overlaps(k) {
-                out.append(TimeRange(start: acc + max(r.start, k.start) - k.start, end: acc + min(r.end, k.end) - k.start))
-            }
-            acc += k.duration
-        }
-        self.init(outputRanges: out)
+        self.init(outputRanges: recordingRanges.flatMap(timeline.outputRanges(forSource:)))
     }
 
     /// How far ducked at `t`, 0 (not at all) … 1 (fully).

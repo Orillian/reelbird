@@ -58,54 +58,60 @@ private func clapperBundle(width: Int = 640, height: Int = 360, fps: Int = 30, s
 private func flashTimes(_ url: URL) async throws -> [Double] {
     let asset = AVURLAsset(url: url)
     let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
-    let reader = try AVAssetReader(asset: asset)
-    let out = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-    reader.add(out)
-    reader.startReading()
-    var times: [Double] = []
-    var wasBright = false
-    while let sb = out.copyNextSampleBuffer() {
-        guard let pb = CMSampleBufferGetImageBuffer(sb) else { continue }
-        CVPixelBufferLockBaseAddress(pb, .readOnly)
-        let base = CVPixelBufferGetBaseAddress(pb)!.assumingMemoryBound(to: UInt8.self)
-        let o = (CVPixelBufferGetHeight(pb) / 2) * CVPixelBufferGetBytesPerRow(pb) + (CVPixelBufferGetWidth(pb) / 2) * 4
-        let bright = base[o + 1] > 128
-        CVPixelBufferUnlockBaseAddress(pb, .readOnly)
-        if bright, !wasBright { times.append(CMSampleBufferGetPresentationTimeStamp(sb).seconds) }
-        wasBright = bright
+    // Blocking decode: off the cooperative pool (see BlockingWork).
+    return try await BlockingWork.run("test.decode") { _ in
+        let reader = try AVAssetReader(asset: asset)
+        let out = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        reader.add(out)
+        reader.startReading()
+        var times: [Double] = []
+        var wasBright = false
+        while let sb = out.copyNextSampleBuffer() {
+            guard let pb = CMSampleBufferGetImageBuffer(sb) else { continue }
+            CVPixelBufferLockBaseAddress(pb, .readOnly)
+            let base = CVPixelBufferGetBaseAddress(pb)!.assumingMemoryBound(to: UInt8.self)
+            let o = (CVPixelBufferGetHeight(pb) / 2) * CVPixelBufferGetBytesPerRow(pb) + (CVPixelBufferGetWidth(pb) / 2) * 4
+            let bright = base[o + 1] > 128
+            CVPixelBufferUnlockBaseAddress(pb, .readOnly)
+            if bright, !wasBright { times.append(CMSampleBufferGetPresentationTimeStamp(sb).seconds) }
+            wasBright = bright
+        }
+        return times
     }
-    return times
 }
 
 /// Output times of each click onset in an exported file's audio.
 private func clickTimes(_ url: URL) async throws -> [Double] {
     let asset = AVURLAsset(url: url)
     let track = try #require(try await asset.loadTracks(withMediaType: .audio).first)
-    let reader = try AVAssetReader(asset: asset)
-    let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
-        AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 1,
-        AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
-    ])
-    reader.add(out)
-    reader.startReading()
-    var times: [Double] = []
-    var last = -1.0
-    var index = 0
-    var first: Double?
-    while let sb = out.copyNextSampleBuffer() {
-        if first == nil { first = CMSampleBufferGetPresentationTimeStamp(sb).seconds }
-        guard let bb = CMSampleBufferGetDataBuffer(sb) else { continue }
-        let n = CMBlockBufferGetDataLength(bb) / 4
-        var samples = [Float](repeating: 0, count: n)
-        samples.withUnsafeMutableBytes { _ = CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: n * 4, destination: $0.baseAddress!) }
-        for (k, v) in samples.enumerated() where abs(v) > 0.25 {
-            let t = (first ?? 0) + Double(index + k) / 48_000
-            if t - last > 0.1 { times.append(t) }
-            last = t
+    // Blocking decode: off the cooperative pool (see BlockingWork).
+    return try await BlockingWork.run("test.decode") { _ in
+        let reader = try AVAssetReader(asset: asset)
+        let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
+        ])
+        reader.add(out)
+        reader.startReading()
+        var times: [Double] = []
+        var last = -1.0
+        var index = 0
+        var first: Double?
+        while let sb = out.copyNextSampleBuffer() {
+            if first == nil { first = CMSampleBufferGetPresentationTimeStamp(sb).seconds }
+            guard let bb = CMSampleBufferGetDataBuffer(sb) else { continue }
+            let n = CMBlockBufferGetDataLength(bb) / 4
+            var samples = [Float](repeating: 0, count: n)
+            samples.withUnsafeMutableBytes { _ = CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: n * 4, destination: $0.baseAddress!) }
+            for (k, v) in samples.enumerated() where abs(v) > 0.25 {
+                let t = (first ?? 0) + Double(index + k) / 48_000
+                if t - last > 0.1 { times.append(t) }
+                last = t
+            }
+            index += n
         }
-        index += n
+        return times
     }
-    return times
 }
 
 @Test func audioAndVideoStayInSyncAcrossCuts() async throws {

@@ -97,42 +97,46 @@ public enum AudioAnalyzer {
     static func measure(url: URL, voiceActivity: Bool = false) async throws -> (meter: LoudnessMeter, speech: [TimeRange], noiseFloorDB: Double?) {
         let asset = AVURLAsset(url: url)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else { throw RenderError.unreadableMedia("no audio track") }
-        let reader = try AVAssetReader(asset: asset)
-        let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
-            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
-        ])
-        out.alwaysCopiesSampleData = false
-        reader.add(out)
-        guard reader.startReading() else { throw RenderError.readerFailed(reader.error?.localizedDescription ?? "audio") }
-        var meter = LoudnessMeter(sampleRate: sampleRate, channels: 1)
-        var scratch: [Float] = []
-        let frameLength = Int(sampleRate * VoiceActivity.frameDuration)
-        var highPass = Biquad.highPass(frequency: 100, q: 0.7071, sampleRate: sampleRate)
-        var frameDB: [Float] = []
-        var frameSum = 0.0, frameFill = 0
-        while let sb = out.copyNextSampleBuffer() {
-            guard let bb = CMSampleBufferGetDataBuffer(sb) else { continue }
-            let n = CMBlockBufferGetDataLength(bb) / 4
-            guard n > 0 else { continue }
-            if scratch.count < n { scratch = [Float](repeating: 0, count: n) }
-            scratch.withUnsafeMutableBytes { _ = CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: n * 4, destination: $0.baseAddress!) }
-            scratch.withUnsafeBufferPointer { meter.process($0, frameCount: n) }
-            do {
-                for i in 0..<n {
-                    let y = highPass.run(Double(scratch[i]))
-                    frameSum += y * y
-                    frameFill += 1
-                    if frameFill == frameLength {
-                        frameDB.append(Float(10 * log10(frameSum / Double(frameLength) + 1e-12)))
-                        frameSum = 0; frameFill = 0
+        // The decode loop blocks, so it runs off the cooperative pool (see BlockingWork).
+        return try await BlockingWork.run("reelbird.audio-analysis") { cancel in
+            let reader = try AVAssetReader(asset: asset)
+            let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
+                AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: 1,
+                AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
+            ])
+            out.alwaysCopiesSampleData = false
+            reader.add(out)
+            guard reader.startReading() else { throw RenderError.readerFailed(reader.error?.localizedDescription ?? "audio") }
+            var meter = LoudnessMeter(sampleRate: sampleRate, channels: 1)
+            var scratch: [Float] = []
+            let frameLength = Int(sampleRate * VoiceActivity.frameDuration)
+            var highPass = Biquad.highPass(frequency: 100, q: 0.7071, sampleRate: sampleRate)
+            var frameDB: [Float] = []
+            var frameSum = 0.0, frameFill = 0
+            while !cancel.isCancelled, let sb = out.copyNextSampleBuffer() {
+                guard let bb = CMSampleBufferGetDataBuffer(sb) else { continue }
+                let n = CMBlockBufferGetDataLength(bb) / 4
+                guard n > 0 else { continue }
+                if scratch.count < n { scratch = [Float](repeating: 0, count: n) }
+                scratch.withUnsafeMutableBytes { _ = CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: n * 4, destination: $0.baseAddress!) }
+                scratch.withUnsafeBufferPointer { meter.process($0, frameCount: n) }
+                do {
+                    for i in 0..<n {
+                        let y = highPass.run(Double(scratch[i]))
+                        frameSum += y * y
+                        frameFill += 1
+                        if frameFill == frameLength {
+                            frameDB.append(Float(10 * log10(frameSum / Double(frameLength) + 1e-12)))
+                            frameSum = 0; frameFill = 0
+                        }
                     }
                 }
             }
+            if cancel.isCancelled { reader.cancelReading(); throw CancellationError() }
+            if reader.status == .failed { throw RenderError.readerFailed(reader.error?.localizedDescription ?? "audio") }
+            let floor = frameDB.isEmpty ? nil : Double(frameDB.sorted()[frameDB.count / 10])
+            return (meter, voiceActivity ? VoiceActivity.detect(frameDB: frameDB) : [], floor)
         }
-        if reader.status == .failed { throw RenderError.readerFailed(reader.error?.localizedDescription ?? "audio") }
-        let floor = frameDB.isEmpty ? nil : Double(frameDB.sorted()[frameDB.count / 10])
-        return (meter, voiceActivity ? VoiceActivity.detect(frameDB: frameDB) : [], floor)
     }
 
     static func fileSize(_ url: URL) -> Int64 {

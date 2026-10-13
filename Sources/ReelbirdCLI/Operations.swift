@@ -159,7 +159,8 @@ struct Operations: Sendable {
     }
 
     func edit(_ project: String, sets: [EditSetter.Assignment], trim: String?, cuts: [String], clearCuts: Bool,
-              crop cropChange: CropChange? = nil, clearCameraMoves: Bool = false) throws -> Report {
+              crop cropChange: CropChange? = nil, clearCameraMoves: Bool = false,
+              layouts: [String] = [], clearLayouts: Bool = false, speeds: [String] = [], clearSpeed: Bool = false) throws -> Report {
         let bundle = try locator.resolve(project)
         let manifest: ProjectManifest
         do { manifest = try bundle.readManifest() } catch {
@@ -170,8 +171,14 @@ struct Operations: Sendable {
             throw CLIError("Can't read edit.json: \(error.localizedDescription)", code: .dataError)
         }
         let changed = !sets.isEmpty || trim != nil || !cuts.isEmpty || clearCuts || cropChange != nil || clearCameraMoves
+            || !layouts.isEmpty || clearLayouts || !speeds.isEmpty || clearSpeed
         let cropBefore = edit.crop
-        if !sets.isEmpty { edit = try EditSetter.apply(sets, to: edit) }
+        if !sets.isEmpty {
+            let zoomsBefore = edit.zoom.regions
+            edit = try EditSetter.apply(sets, to: edit)
+            // An automatic zoom changed by hand (turned off, made instant, deeper) is kept when zooms are planned again.
+            edit.zoom.regions = ZoomEditing.markingEdited(edit.zoom.regions, before: zoomsBefore)
+        }
         // A corner is a preset: it pins the bubble there for the whole video, unless a place is set too.
         let keys = Set(sets.map(\.path))
         if keys.contains("camera.corner"), keys.isDisjoint(with: ["camera.x", "camera.y", "camera.moves"]) {
@@ -199,10 +206,23 @@ struct Operations: Sendable {
                 edit.trim = TimeRange(start: r.start, end: duration.map { min($0, r.end) } ?? r.end)
             }
         }
+        if !layouts.isEmpty, manifest.track(.camera) == nil {
+            throw CLIError("This recording has no camera, so it has no camera layouts.", code: .dataError)
+        }
+        if clearLayouts { edit.layouts = [] }
+        for l in layouts {
+            let segment = try Self.layoutSegment(l, duration: duration)
+            edit.layouts = LayoutSegment.inserting(segment, into: edit.layouts)
+        }
         if clearCuts { edit.cuts = [] }
         for c in cuts {
             let r = try TimeParsing.range(c, duration: duration)
             edit.cuts = Self.mergingCut(r, into: edit.cuts)
+        }
+        if clearSpeed { edit.speed.segments = [] }
+        for s in speeds {
+            let (r, rate) = try Self.speedChange(s, duration: duration)
+            edit.speed.set(TimeRange(start: r.start, end: duration.map { min($0, r.end) } ?? r.end), rate: rate)
         }
         if changed {
             do { try bundle.writeEdit(edit) } catch {
@@ -220,6 +240,35 @@ struct Operations: Sendable {
             ? "Updated \(Format.path(bundle.editURL)) (length \(Format.duration(timeline.duration)))."
             : json.serialized(pretty: true)
         return Report(json: json, text: text)
+    }
+
+    /// "KIND@START-END": camera (full frame), split, screen (only) or bubble (the overlay), over a time range.
+    static func layoutSegment(_ s: String, duration: Double?) throws -> LayoutSegment {
+        let parts = s.split(separator: "@", maxSplits: 1).map { String($0).trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 2, let kind = layoutKind(parts[0]) else {
+            throw CLIError.usage("Invalid layout '\(s)'. Use KIND@START-END with KIND camera, split, screen or bubble, e.g. split@0:05-0:12.")
+        }
+        var r = try TimeParsing.range(parts[1], duration: duration)
+        if let duration {
+            guard r.start < duration else {
+                throw CLIError.usage("Layout '\(s)' starts at \(Format.seconds(r.start))s but the recording is \(Format.seconds(duration))s long.")
+            }
+            r.end = min(r.end, duration)
+        }
+        guard r.duration >= LayoutSegment.minimumLength else {
+            throw CLIError.usage("Layout '\(s)' is shorter than \(Format.seconds(LayoutSegment.minimumLength))s.")
+        }
+        return LayoutSegment(range: r, kind: kind)
+    }
+
+    static func layoutKind(_ s: String) -> LayoutSegment.Kind? {
+        switch s.lowercased().replacingOccurrences(of: "-", with: "").replacingOccurrences(of: "_", with: "") {
+        case "camera", "fullcamera", "cameraonly", "full": .fullCamera
+        case "split", "sidebyside", "stacked": .split
+        case "screen", "screenonly", "nocamera": .screenOnly
+        case "bubble", "overlay": .overlay
+        default: nil
+        }
     }
 
     /// Adds a cut, merging overlapping or touching cuts.
@@ -375,12 +424,12 @@ struct Operations: Sendable {
         ], text: lines.joined(separator: "\n"))
     }
 
-    func silences(_ project: String, thresholdDB: Double, minDuration: Double, padding: Double, apply: Bool) throws -> Report {
+    func silences(_ project: String, thresholdDB: Double, minDuration: Double, padding: Double, apply: Bool) async throws -> Report {
         let bundle = try locator.resolve(project)
         let track = try audioTrack(bundle)
         let ranges: [TimeRange]
         do {
-            ranges = try SilenceDetector.silentRanges(audio: track.url, thresholdDB: thresholdDB, minDuration: minDuration)
+            ranges = try await SilenceDetector.silentRanges(audio: track.url, thresholdDB: thresholdDB, minDuration: minDuration)
                 .map { TimeRange(start: $0.start + track.startTime, end: $0.end + track.startTime) }
         } catch { throw CLIError(error.localizedDescription) }
         let duration = (try? bundle.readManifest().duration) ?? nil

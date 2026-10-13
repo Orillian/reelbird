@@ -16,6 +16,8 @@ import Foundation
 ///   critically damped spring; so does the un-zoomed view when the output crops the source (a 9:16 export
 ///   of a landscape screen).
 /// - The view always stays inside the frame.
+/// - A zoom turned off (`enabled == false`) is skipped. An `instant` zoom cuts in at its start and out at its
+///   end: the view jumps between two frames, with no animation and no motion blur across the cut.
 public struct CameraPath: Sendable {
     public static let sampleRate: Double = 120
     /// van Wijk–Nuij ρ: how readily long pans zoom out. 1.3 is a little calmer than the paper's 1.42.
@@ -28,9 +30,20 @@ public struct CameraPath: Sendable {
     public let base: SIMD2<Double>
     /// (ln scale, centre x, centre y) at `sampleRate`.
     let table: [SIMD3<Float>]
+    /// Times of instant cuts, sorted. Each sits half a sample before a table entry, so `transform` never
+    /// blends across one.
+    public let cutTimes: [Double]
 
     enum State: Equatable { case wide, region(Int) }
-    struct Segment { var t0: Double; var t1: Double; var from: State; var to: State }
+    /// A move from one state to another over `t0…t1`; a cut has `t0 == t1`.
+    struct Segment {
+        var t0: Double; var t1: Double; var from: State; var to: State; var cut = false
+        static func cut(at t: Double, from: State, to: State) -> Segment {
+            // Half a sample before a sample time: samples before show `from`, samples after show `to`.
+            let tc = (max(0, (t * CameraPath.sampleRate).rounded()) - 0.5) / CameraPath.sampleRate
+            return Segment(t0: tc, t1: tc, from: from, to: to, cut: true)
+        }
+    }
 
     /// The camera for an output that shows the whole source at zoom 1 (16:10 source assumed for pan metrics).
     public init(regions: [ZoomRegion], cursor: CursorPath, duration: Double) {
@@ -51,6 +64,7 @@ public struct CameraPath: Sendable {
         let soften = crops ? min(base.x, base.y).squareRoot() : 1
         // Sanitise: clamp, drop no-ops, sort, split overlaps at the midpoint.
         var rs = regions.compactMap { r -> ZoomRegion? in
+            guard r.enabled else { return nil }
             var r = r
             r.range = TimeRange(start: max(0, r.range.start), end: min(duration, r.range.end))
             r.scale = min(8, max(1, r.scale.isFinite ? r.scale * soften : 1))
@@ -76,9 +90,14 @@ public struct CameraPath: Sendable {
         // Transitions in time order.
         var transitions: [Segment] = []
         for (k, r) in rs.enumerated() {
+            if r.instant {
+                transitions.append(.cut(at: r.range.start, from: .wide, to: .region(k)))
+                transitions.append(.cut(at: r.range.end, from: .region(k), to: .wide))
+                continue
+            }
             let d = min(Spring.zoomDuration(from: 1, to: r.scale), max(0.3, r.range.duration))
             let inSeg = Segment(t0: r.range.start - d / 2, t1: r.range.start + d / 2, from: .wide, to: .region(k))
-            if let last = transitions.last, last.to == .wide, case .region(let p) = last.from, p == k - 1,
+            if let last = transitions.last, !last.cut, last.to == .wide, case .region(let p) = last.from, p == k - 1,
                inSeg.t0 < last.t1 + 0.3 {
                 // The previous region's zoom-out has not finished before this zoom-in starts: go directly.
                 transitions.removeLast()
@@ -94,12 +113,20 @@ public struct CameraPath: Sendable {
             }
             transitions.append(Segment(t0: r.range.end - d / 2, t1: r.range.end + d / 2, from: .region(k), to: .wide))
         }
-        // Keep transitions from overlapping: meet in the middle of any overlap.
+        // Keep transitions from overlapping: meet in the middle of any overlap. A cut never stretches: the
+        // animation next to it starts after it or finishes before it.
         for j in transitions.indices.dropFirst() where transitions[j].t0 < transitions[j - 1].t1 {
-            let mid = (transitions[j].t0 + transitions[j - 1].t1) / 2
-            transitions[j - 1].t1 = max(transitions[j - 1].t0 + 1e-3, mid)
-            transitions[j].t0 = min(transitions[j].t1 - 1e-3, mid)
+            if transitions[j - 1].cut {
+                transitions[j].t0 = min(max(transitions[j].t0, transitions[j - 1].t1), transitions[j].t1)
+            } else if transitions[j].cut {
+                transitions[j - 1].t1 = max(min(transitions[j - 1].t1, transitions[j].t0), transitions[j - 1].t0)
+            } else {
+                let mid = (transitions[j].t0 + transitions[j - 1].t1) / 2
+                transitions[j - 1].t1 = max(transitions[j - 1].t0 + 1e-3, mid)
+                transitions[j].t0 = min(transitions[j].t1 - 1e-3, mid)
+            }
         }
+        cutTimes = transitions.filter(\.cut).map(\.t0).sorted()
 
         // The follower: an unclamped point that tracks the cursor with a dead zone and a critically damped
         // spring, for focus-less regions and (when cropping) the un-zoomed view. It runs continuously so
@@ -151,7 +178,7 @@ public struct CameraPath: Sendable {
             var from: State, to: State, u = 1.0
             if seg < transitions.count, transitions[seg].t0 <= t {
                 from = transitions[seg].from; to = transitions[seg].to
-                u = (t - transitions[seg].t0) / (transitions[seg].t1 - transitions[seg].t0)
+                u = min(1, max(0, (t - transitions[seg].t0) / max(1e-9, transitions[seg].t1 - transitions[seg].t0)))
             } else {
                 from = seg > 0 ? transitions[seg - 1].to : .wide
                 to = from
@@ -228,11 +255,24 @@ public struct CameraPath: Sendable {
         if !(f > 0) { v = table[0] } else {
             if f >= Double(table.count - 1) { v = table[table.count - 1] } else {
                 let i = Int(f)
-                v = table[i] + (table[i + 1] - table[i]) * Float(f - Double(i))
+                if hasCut(after: Double(i) / Self.sampleRate, upTo: Double(i + 1) / Self.sampleRate) {
+                    // An instant zoom: no in-between view, the nearer side of the cut.
+                    v = f - Double(i) < 0.5 ? table[i] : table[i + 1]
+                } else {
+                    v = table[i] + (table[i + 1] - table[i]) * Float(f - Double(i))
+                }
             }
         }
         let s = exp(Double(v.x))
         return (s, clampCenter(NormPoint(x: Double(v.y), y: Double(v.z)), scale: s, base: base))
+    }
+
+    /// Whether an instant cut falls in `(a, b]` (motion blur never smears across one). Binary search, no allocation.
+    public func hasCut(after a: Double, upTo b: Double) -> Bool {
+        guard !cutTimes.isEmpty, b > a else { return false }
+        var lo = 0, hi = cutTimes.count
+        while lo < hi { let mid = (lo + hi) / 2; if cutTimes[mid] <= a { lo = mid + 1 } else { hi = mid } }
+        return lo < cutTimes.count && cutTimes[lo] <= b
     }
 
     /// The visible source rectangle at time `t`.

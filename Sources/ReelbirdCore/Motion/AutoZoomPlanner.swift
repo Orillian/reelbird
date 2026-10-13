@@ -192,7 +192,8 @@ public enum AutoZoomPlanner {
     /// Replaces the `.auto` regions in `existing` with a fresh plan, keeping every `.user` region.
     /// Auto regions that would overlap a user region are dropped (the user's choice wins).
     public static func merged(existing: [ZoomRegion], events: [InputEvent], duration: Double, intensity: Double) -> [ZoomRegion] {
-        let user = existing.filter { $0.source == .user }
+        // A zoom turned off stays off (and keeps automatic zooms away from that moment), like a zoom you made.
+        let user = existing.filter { $0.source == .user || !$0.enabled }
         let auto = plan(events: events, duration: duration, intensity: intensity)
             .filter { a in !user.contains { $0.range.overlaps(a.range) } }
         return (user + auto).sorted { $0.range.start < $1.range.start }

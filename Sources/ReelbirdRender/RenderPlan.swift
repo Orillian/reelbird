@@ -35,10 +35,10 @@ public final class RenderPlan: Sendable {
     public let bundle: ProjectBundle
     public let manifest: ProjectManifest
     public let edit: EditDocument
-    /// Output ↔ recording time mapping (trim + cuts).
+    /// Output ↔ recording time mapping (trim, cuts and speed).
     public let timeline: EditTimeline
-    /// Effective zoom regions (auto regions regenerated in `.auto` mode, none in `.off`), focus points in
-    /// full-screen coordinates like the edit's.
+    /// Effective zoom regions (auto regions regenerated in `.auto` mode, none in `.off`, zooms turned off left
+    /// out), focus points in full-screen coordinates like the edit's.
     public let regions: [ZoomRegion]
     /// The smoothed cursor in view (crop) coordinates.
     public let cursor: CursorPath
@@ -70,6 +70,10 @@ public final class RenderPlan: Sendable {
     public let showsCamera: Bool
     /// The camera bubble's place over recording time (start place plus glides).
     public let cameraPlacement: CameraPlacementPath
+    /// The camera layouts over recording time (`edit.layouts`).
+    public let layoutTimeline: LayoutTimeline
+    /// The bubble during zooms: shrinking with the zoom and stepping aside from the cursor.
+    let zoomFraming: CameraZoomFraming
 
     /// Output duration in seconds.
     public var duration: Double { timeline.duration }
@@ -86,7 +90,7 @@ public final class RenderPlan: Sendable {
         self.manifest = manifest
         self.edit = edit
         let duration = max(manifest.duration, manifest.track(.screen)?.duration ?? 0)
-        timeline = EditTimeline(duration: duration, trim: edit.trim, cuts: edit.cuts)
+        timeline = EditTimeline(duration: duration, trim: edit.trim, cuts: edit.cuts, speed: edit.speed)
         let screen = manifest.track(.screen)?.pixelSize ?? manifest.capture.pixelSize
         screenSize = PixelSize(width: max(2, screen.width), height: max(2, screen.height))
         let crop = CropSpace(edit.crop)
@@ -101,13 +105,14 @@ public final class RenderPlan: Sendable {
         }
         switch edit.zoom.mode {
         case .off: regions = []
-        case .manual: regions = edit.zoom.regions
+        case .manual: regions = edit.zoom.regions.filter(\.enabled)
         case .auto:
             if let old, sameCrop, old.edit.zoom == edit.zoom, old.manifest.duration == manifest.duration {
                 regions = old.regions
             } else {
+                // Zooms turned off still keep automatic zooms away from their moment, then drop out.
                 regions = AutoZoomPlanner.merged(existing: edit.zoom.regions, events: events, duration: duration,
-                                                 intensity: edit.zoom.intensity, crop: edit.crop)
+                                                 intensity: edit.zoom.intensity, crop: edit.crop).filter(\.enabled)
             }
         }
         canvasSize = Self.canvasSize(source: sourceSize, aspect: edit.canvas.aspect, height: edit.canvas.outputHeight)
@@ -148,12 +153,22 @@ public final class RenderPlan: Sendable {
         showsCamera = edit.camera.visible && manifest.track(.camera) != nil
         cameraPlacement = old.flatMap { $0.edit.camera.position == edit.camera.position && $0.edit.camera.moves == edit.camera.moves
             ? $0.cameraPlacement : nil } ?? CameraPlacementPath(edit.camera)
+        layoutTimeline = LayoutTimeline(edit.layouts, duration: duration)
+        if showsCamera, edit.camera.smartFraming, !camera.regions.isEmpty {
+            let layout = CanvasLayout(background: edit.background, cardAspect: cardAspect, base: viewBase, sourceWidth: Double(sourceSize.width),
+                                      width: Double(canvasSize.width), height: Double(canvasSize.height))
+            let aside = CameraZoomFraming.Aside(camera: camera, cursor: cursor, layout: layout, bubble: edit.camera, path: cameraPlacement,
+                                                zoomedScale: edit.camera.shrinkWhenZoomed ? edit.camera.sizeWhileZoomed : 1)
+            zoomFraming = CameraZoomFraming(regions: camera.regions, aside: aside)
+        } else {
+            zoomFraming = CameraZoomFraming(regions: showsCamera ? camera.regions : [], aside: nil)
+        }
     }
 
     /// The camera bubble's rectangle on a `width` × `height` canvas at recording time `t` (output pixels,
-    /// top-left origin).
+    /// top-left origin): at its place, smaller and stepped aside during zooms. The overlay layout's bubble.
     public func cameraFrame(at t: Double, width: Double, height: Double) -> CGRect {
-        CameraPlacement.frame(at: cameraPlacement.position(at: t), layout: edit.camera, width: width, height: height)
+        CameraPlacement.frame(at: cameraPlace(at: t), layout: edit.camera, width: width, height: height, sizeScale: cameraSizeScale(at: t))
     }
 
     /// Output canvas size for a source and aspect. `height == nil` keeps the source's shorter side.
@@ -269,29 +284,58 @@ struct CanvasLayout {
     /// Output pixels per source pixel at zoom 1.
     let contentScale: Double
     let cornerRadius: Double
+    /// The card is a fixed window the screen zooms inside (the Split layout).
+    let windowed: Bool
     let shadowStrength: Double
     let shadowBlur: Double
     let shadowOffset: Double
 
+    /// The layout of the overlay (and full camera, and screen only): the card fitted inside the padding.
     init(plan: RenderPlan, width: Double, height: Double) {
+        self.init(background: plan.edit.background, cardAspect: plan.cardAspect, base: plan.viewBase,
+                  sourceWidth: Double(plan.sourceSize.width), width: width, height: height)
+    }
+
+    /// The layout at a moment of the camera layouts: the card slides between the overlay's place and the
+    /// Split layout's. In Split the card is a fixed window the screen zooms inside (it would cover the camera).
+    init(plan: RenderPlan, width: Double, height: Double, layout state: LayoutTimeline.State) {
+        let split = state.weight(.split)
+        guard split > 0 else { self.init(plan: plan, width: width, height: height); return }
+        let full = Self.fittedCard(background: plan.edit.background, cardAspect: plan.cardAspect, width: width, height: height)
+        let s = SplitGeometry.rects(width: width, height: height, background: plan.edit.background, cardAspect: plan.cardAspect).card
+        func l(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * split }
+        let card = CGRect(x: l(full.minX, s.minX), y: l(full.minY, s.minY), width: l(full.width, s.width), height: l(full.height, s.height))
+        self.init(background: plan.edit.background, cardAspect: plan.cardAspect, base: plan.viewBase,
+                  sourceWidth: Double(plan.sourceSize.width), width: width, height: height, card: card, windowed: split >= 0.5)
+    }
+
+    /// `card` overrides the padded fit; `windowed` keeps the zoomed screen inside it.
+    init(background bg: BackgroundSettings, cardAspect: Double, base: SIMD2<Double>, sourceWidth: Double,
+         width: Double, height: Double, card: CGRect? = nil, windowed: Bool = false) {
         self.width = width
         self.height = height
-        let bg = plan.edit.background
         let short = min(width, height)
-        let pad = bg.kind == .none ? 0 : min(0.45, max(0, bg.padding)) * short
-        let avail = CGSize(width: max(1, width - 2 * pad), height: max(1, height - 2 * pad))
-        let cardAspect = plan.cardAspect
-        var w = avail.width, h = avail.width / cardAspect
-        if h > avail.height { h = avail.height; w = h * cardAspect }
-        card = CGRect(x: (width - w) / 2, y: (height - h) / 2, width: w, height: h)
-        base = plan.viewBase
-        contentScale = Double(w) / (base.x * Double(plan.sourceSize.width))
+        let card = card ?? Self.fittedCard(background: bg, cardAspect: cardAspect, width: width, height: height)
+        self.card = card
+        self.base = base
+        self.windowed = windowed
+        contentScale = Double(card.width) / (base.x * max(1, sourceWidth))
         cornerRadius = bg.kind == .none ? 0 : max(0, bg.cornerRadius) * short
         shadowStrength = bg.kind == .none ? 0 : min(1, max(0, bg.shadow))
         // A soft ambient shadow (blur 4.5% of the short side, dropped 1.8%) for depth, plus a tight contact
         // shadow (0.6%) that defines the card's edge on light backgrounds.
         shadowBlur = 0.045 * short
         shadowOffset = 0.018 * short
+    }
+
+    /// The card at zoom 1 fitted inside the padding, centred.
+    static func fittedCard(background bg: BackgroundSettings, cardAspect: Double, width: Double, height: Double) -> CGRect {
+        let short = min(width, height)
+        let pad = bg.kind == .none ? 0 : min(0.45, max(0, bg.padding)) * short
+        let avail = CGSize(width: max(1, width - 2 * pad), height: max(1, height - 2 * pad))
+        var w = avail.width, h = avail.width / cardAspect
+        if h > avail.height { h = avail.height; w = h * cardAspect }
+        return CGRect(x: (width - w) / 2, y: (height - h) / 2, width: w, height: h)
     }
 
     /// Output pixel for a normalized source point under camera (scale, centre).
@@ -331,8 +375,8 @@ struct CanvasLayout {
         return NormPoint(x: axis(c.x, span: spanX), y: axis(c.y, span: spanY))
     }
 
-    /// Whether the card is a window onto part of the source (narrow outputs).
-    var crops: Bool { base.x < 0.999 || base.y < 0.999 }
+    /// Whether the card is a window onto part of the source (narrow outputs, or the Split layout).
+    var crops: Bool { windowed || base.x < 0.999 || base.y < 0.999 }
 
     /// How much the card's frame (corners, shadow) grows at zoom `s`. A full-source card grows with the zoom
     /// and slides off the canvas, so the zoomed screen fills the frame; a cropping card stays a fixed window

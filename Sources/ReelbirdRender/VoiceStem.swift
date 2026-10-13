@@ -110,41 +110,45 @@ public enum VoiceStem {
         let rate = nativeRate > 0 ? nativeRate : 48_000
         let expectedFrames = max(1, Int(range.duration.seconds * rate))
 
-        let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
-            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: rate, AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
-        ])
-        output.alwaysCopiesSampleData = false
-        reader.add(output)
-        guard reader.startReading() else { throw RenderError.readerFailed(reader.error?.localizedDescription ?? "microphone") }
+        let denoiser = Unchecked(mix > 0 ? makeDenoiser(rate) : nil)
+        // The read → process → write loop blocks, so it runs off the cooperative pool (see BlockingWork).
+        return try await BlockingWork.run("reelbird.voice-stem") { cancel in
+            let reader = try AVAssetReader(asset: asset)
+            let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+                AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: rate, AVNumberOfChannelsKey: 1,
+                AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
+            ])
+            output.alwaysCopiesSampleData = false
+            reader.add(output)
+            guard reader.startReading() else { throw RenderError.readerFailed(reader.error?.localizedDescription ?? "microphone") }
 
-        let writer = try AVAudioFile(forWriting: destination, settings: [
-            AVFormatIDKey: kAudioFormatAppleLossless, AVSampleRateKey: rate, AVNumberOfChannelsKey: 1, AVEncoderBitDepthHintKey: 24,
-        ], commonFormat: .pcmFormatFloat32, interleaved: false)
+            let writer = try AVAudioFile(forWriting: destination, settings: [
+                AVFormatIDKey: kAudioFormatAppleLossless, AVSampleRateKey: rate, AVNumberOfChannelsKey: 1, AVEncoderBitDepthHintKey: 24,
+            ], commonFormat: .pcmFormatFloat32, interleaved: false)
 
-        let pipeline = try Pipeline(sampleRate: rate, strength: strength, mix: mix, speechLevelDB: speechLevelDB, noiseFloorDB: noiseFloorDB,
-                                    denoiser: mix > 0 ? makeDenoiser(rate) : nil, writer: writer)
-        var scratch: [Float] = []
-        var lastReport = 0
-        while let sb = output.copyNextSampleBuffer() {
-            try Task.checkCancellation()
-            guard let bb = CMSampleBufferGetDataBuffer(sb) else { continue }
-            let n = CMBlockBufferGetDataLength(bb) / 4
-            guard n > 0 else { continue }
-            if scratch.count < n { scratch = [Float](repeating: 0, count: n) }
-            let ok = scratch.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: n * 4, destination: $0.baseAddress!) == noErr }
-            guard ok else { throw RenderError.readerFailed("microphone: couldn't read samples") }
-            try scratch.withUnsafeBufferPointer { try pipeline.push($0.baseAddress!, count: n) }
-            if pipeline.inputFrames - lastReport > Int(rate) {
-                lastReport = pipeline.inputFrames
-                progress(min(0.99, Double(pipeline.inputFrames) / Double(expectedFrames)))
+            let pipeline = try Pipeline(sampleRate: rate, strength: strength, mix: mix, speechLevelDB: speechLevelDB, noiseFloorDB: noiseFloorDB,
+                                        denoiser: denoiser.value, writer: writer)
+            var scratch: [Float] = []
+            var lastReport = 0
+            while let sb = output.copyNextSampleBuffer() {
+                if cancel.isCancelled { reader.cancelReading(); throw CancellationError() }
+                guard let bb = CMSampleBufferGetDataBuffer(sb) else { continue }
+                let n = CMBlockBufferGetDataLength(bb) / 4
+                guard n > 0 else { continue }
+                if scratch.count < n { scratch = [Float](repeating: 0, count: n) }
+                let ok = scratch.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: n * 4, destination: $0.baseAddress!) == noErr }
+                guard ok else { throw RenderError.readerFailed("microphone: couldn't read samples") }
+                try scratch.withUnsafeBufferPointer { try pipeline.push($0.baseAddress!, count: n) }
+                if pipeline.inputFrames - lastReport > Int(rate) {
+                    lastReport = pipeline.inputFrames
+                    progress(min(0.99, Double(pipeline.inputFrames) / Double(expectedFrames)))
+                }
             }
+            if reader.status == .failed { throw RenderError.readerFailed(reader.error?.localizedDescription ?? "microphone") }
+            try pipeline.finish()
+            return Result(engine: pipeline.engineID, sampleRate: rate, frames: pipeline.inputFrames, latency: pipeline.latency,
+                          highPassHz: pipeline.highPassHz)
         }
-        if reader.status == .failed { throw RenderError.readerFailed(reader.error?.localizedDescription ?? "microphone") }
-        try pipeline.finish()
-        return Result(engine: pipeline.engineID, sampleRate: rate, frames: pipeline.inputFrames, latency: pipeline.latency,
-                      highPassHz: pipeline.highPassHz)
     }
 
     /// Streaming state of one render.

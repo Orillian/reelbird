@@ -22,6 +22,8 @@ public enum CameraPlacement {
     static let snapTolerance = 0.02
     /// The sizes the editor offers (`CameraLayout.size`).
     public static let sizeRange = 0.1...0.45
+    /// The sizes during a zoom the editor offers, as a share of the bubble's size (`CameraLayout.sizeWhileZoomed`).
+    public static let zoomedSizeRange = 0.4...1.0
 
     public static func clampUnit(_ v: Double) -> Double { v.isFinite ? min(1, max(0, v)) : 0.5 }
 
@@ -99,9 +101,10 @@ public enum CameraPlacement {
     // MARK: Output geometry
 
     /// The bubble's rectangle on a `width` × `height` canvas (top-left origin, pixels) at a place.
-    public static func frame(at p: NormPoint, layout: CameraLayout, width W: Double, height H: Double) -> CGRect {
+    /// `sizeScale` scales the bubble (shrinking during a zoom); the place keeps it against the same edges.
+    public static func frame(at p: NormPoint, layout: CameraLayout, width W: Double, height H: Double, sizeScale: Double = 1) -> CGRect {
         let short = min(W, H)
-        let (w, h) = bubbleSize(shape: layout.shape, size: layout.size, short: short)
+        let (w, h) = bubbleSize(shape: layout.shape, size: layout.size * (sizeScale.isFinite ? max(0.05, sizeScale) : 1), short: short)
         let inset = max(0, layout.inset) * short
         let x: Double = inset + clampUnit(p.x) * (W - 2 * inset - w)
         let y: Double = inset + clampUnit(p.y) * (H - 2 * inset - h)

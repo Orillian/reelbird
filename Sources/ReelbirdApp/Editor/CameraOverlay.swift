@@ -14,9 +14,9 @@ struct CameraOverlay: View {
     var body: some View {
         GeometryReader { geo in
             let canvas = CropOverlay.fit(aspect: model.canvasPixelSize.aspect, in: geo.size)
-            let layout = model.edit.camera
-            let f = CameraPlacement.frame(at: model.cameraPosition, layout: layout, width: canvas.width, height: canvas.height)
-                .offsetBy(dx: canvas.minX, dy: canvas.minY)
+            // As drawn: smaller and stepped aside during a zoom.
+            let (bubble, layout) = model.cameraOverlayFrame(width: canvas.width, height: canvas.height)
+            let f = bubble.offsetBy(dx: canvas.minX, dy: canvas.minY)
             let dragging = model.cameraDraft != nil
             ZStack(alignment: .topLeading) {
                 Color.clear.allowsHitTesting(false)
@@ -29,7 +29,7 @@ struct CameraOverlay: View {
                     .offset(x: f.minX, y: f.minY)
                     .onHover { h in withAnimation(Theme.snappy) { hovering = h } }
                     .pointerStyle(dragging ? .grabActive : .grabIdle)
-                    .gesture(drag(frame: f, canvas: canvas))
+                    .gesture(drag(frame: f, canvas: canvas, layout: layout))
                     .help("Drag to move the camera")
                     .accessibilityElement()
                     .accessibilityLabel("Camera bubble")
@@ -39,7 +39,7 @@ struct CameraOverlay: View {
         }
     }
 
-    private func drag(frame f: CGRect, canvas: CGRect) -> some Gesture {
+    private func drag(frame f: CGRect, canvas: CGRect, layout: CameraLayout) -> some Gesture {
         DragGesture(minimumDistance: 2, coordinateSpace: .local)
             .onChanged { v in
                 if dragOrigin == nil {
@@ -47,7 +47,6 @@ struct CameraOverlay: View {
                     model.beginCameraDrag()
                 }
                 guard let o = dragOrigin else { return }
-                let layout = model.edit.camera
                 let raw = CameraPlacement.position(origin: CGPoint(x: o.x + v.translation.width, y: o.y + v.translation.height),
                                                    layout: layout, width: canvas.width, height: canvas.height)
                 let s = CameraPlacement.snapped(raw, layout: layout, width: canvas.width, height: canvas.height,

@@ -75,6 +75,10 @@ import ReelbirdRender
         } catch { print("makeSession failed: \(error)"); return false }
         session.updateCameraBubble(frame: CGRect(x: 1200, y: 700, width: 200, height: 200), shape: .portrait, atHostTime: nil)
         check((session as? MockRecordingSession)?.cameraUpdates.last?.shape == .portrait, "camera bubble place reaches the session")
+        session.updateCameraLayout(.fullCamera, atHostTime: nil)
+        check((session as? MockRecordingSession)?.layoutUpdates == [.fullCamera], "camera layout switch reaches the session")
+        check(Set([prefs.recordHotKey, prefs.pauseHotKey, prefs.layoutHotKey]).count == 3 && prefs.layoutHotKey.display.hasPrefix("⌥⇧"),
+              "the layout shortcut (\(prefs.layoutHotKey.display)) doesn't clash with record or pause")
         if let screen = NSScreen.screens.first {
             let size = NSSize(width: 212, height: 212)
             let o = CameraBubbleController.defaultOrigin(size: size, screen: screen)
@@ -105,6 +109,7 @@ import ReelbirdRender
         microphoneChoice(services: services, prefs: prefs, check: check)
         await cameraBubble(services: services, prefs: prefs, check: check)
         await windowSections(services: services, prefs: prefs, check: check)
+        await markersAndQuickActions(services: services, prefs: prefs, root: root, check: check)
 
         // Library
         let store = LibraryStore(services: services, prefs: prefs)
@@ -173,11 +178,16 @@ import ReelbirdRender
         editor.undoManager.undo()
         check(editor.edit.camera.moves.count == 1, "undo brings the moves back")
         editor.setCameraCorner(.bottomRight)
+        await OverlaySelfTest.run(editor: editor, check: check)
         editor.seek(source: 1)
         editor.addZoomAtPlayhead()
         check(editor.selectedZoom?.source == .user, "manual zoom added and selected")
         editor.deleteSelection()
         check(editor.selectedZoom == nil, "zoom deleted")
+        await nextEvent()
+        commandRegistry(editor: editor, prefs: prefs, check: check)
+        await commandMenu(editor: editor, check: check)
+        await zoomHandling(editor: editor, check: check)
         editor.seek(source: 2)
         editor.splitAtPlayhead()
         editor.seek(source: 3)
@@ -186,6 +196,23 @@ import ReelbirdRender
         let before = editor.outputDuration
         editor.deleteSelection()
         check(abs((before - editor.outputDuration) - 1) < 0.01, "split + delete cuts one second")
+        // Speed: R on a selected part (3–4 s) plays it at 2×, R again goes to the next preset.
+        await nextEvent()
+        editor.selection = .segment(TimeRange(start: 3, end: 4))
+        let unsped = editor.outputDuration
+        editor.speedKey()
+        await nextEvent()
+        check(editor.selectedSpeed?.rate == 2 && abs((unsped - editor.outputDuration) - 0.5) < 0.01, "R plays the selected part at 2×")
+        editor.speedKey()
+        await nextEvent()
+        check(editor.selectedSpeed?.rate == 4 && abs((unsped - editor.outputDuration) - 0.75) < 0.01, "R again goes to 4×")
+        editor.deleteSelection()
+        await nextEvent()
+        check(editor.edit.speed.segments.isEmpty && abs(editor.outputDuration - unsped) < 0.01, "a speed segment deletes")
+        editor.undoManager.undo()
+        check(editor.edit.speed.segments.count == 1, "speed delete undoes")
+        editor.undoManager.undo(); editor.undoManager.undo()
+        check(editor.edit.speed.segments.isEmpty && editor.edit.cuts.count == 2, "speed changes undo one at a time")
         editor.setTrim(start: 0.5)
         check(editor.edit.trim?.start == 0.5, "trim start")
         try? await Task.sleep(for: .milliseconds(900))
@@ -240,10 +267,14 @@ import ReelbirdRender
         await session.pause()
         try? await Task.sleep(for: .milliseconds(500))
         await session.resume()
-        try? await Task.sleep(for: .seconds(2))
+        try? await Task.sleep(for: .seconds(1))
+        let marker = await session.addMarker(label: nil)
+        try? await Task.sleep(for: .seconds(1))
         let bundle: ProjectBundle
         do { bundle = try await session.stop() } catch { check(false, "stop: \(error.localizedDescription)"); return false }
         watcher.cancel()
+        let markerEvents = ((try? bundle.readEvents()) ?? []).filter { $0.type == .marker }
+        check(marker?.number == 1 && markerEvents.map(\.t) == [marker?.t ?? -1], "a marker lands in events.jsonl on the recording clock")
         guard let manifest = try? bundle.readManifest() else { check(false, "manifest readable"); return false }
         check(manifest.status == .complete, "manifest written as complete")
         check((3.5...5.5).contains(manifest.duration), "duration \(String(format: "%.2f", manifest.duration)) s")
@@ -285,6 +316,7 @@ import ReelbirdRender
         let expected = editor.outputDuration
         check(abs(expected - (manifest.duration - 1 - manifest.pauses.reduce(0) { $0 + $1.duration })) < 0.05,
               "cut shortens the edit to \(String(format: "%.2f", expected)) s")
+        await OverlaySelfTest.runLive(editor: editor, check: check)
 
         // Export
         let out = root.appendingPathComponent("selftest.mp4")
@@ -507,5 +539,16 @@ extension SelfTest {
         let morph = BubbleSpring.frames(from: [0, 0, 200, 200, 0.5, 2], to: [0, 0, 173, 230, 0.31, 4], style: BubbleSpring.morph, tolerance: tol)
         let first = morph.firstIndex { abs($0[3] - 230) < 2 } ?? 99
         check((14...21).contains(first), "shape morph is visually done in \(first) frames (about \(first * 1000 / 60) ms)")
+
+        // The live layout: screen only hides the bubble where it is (no clicks, no toolbar), camera only badges it.
+        let placed = bubble.bubbleFrame
+        bubble.setLiveLayout(.screenOnly)
+        try? await Task.sleep(for: .milliseconds(400))
+        check(bubble.model?.liveLayout == .screenOnly && window.ignoresMouseEvents && bubble.bubbleFrame == placed
+              && bubble.model?.toolbarVisible == false, "screen only hides the live bubble in place")
+        bubble.setLiveLayout(.fullCamera)
+        check(bubble.model?.liveLayout == .fullCamera && !window.ignoresMouseEvents, "camera only shows the bubble with a badge")
+        bubble.setLiveLayout(.overlay)
+        check(bubble.model?.liveLayout == .overlay, "back to the bubble")
     }
 }

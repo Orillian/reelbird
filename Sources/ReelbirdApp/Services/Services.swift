@@ -48,6 +48,11 @@ protocol RecordingSessionHandle: AnyObject, Sendable {
     /// The live camera bubble's frame (global points, top-left origin; `nil` = hidden) and shape, at host time
     /// `host` (`nil` = now). Logged as `camera` events so the editor places the camera where it was.
     func updateCameraBubble(frame: CGRect?, shape: CameraLayout.Shape, atHostTime host: Double?)
+    /// Drops a marker now (a `marker` event on the recording clock). `nil` when no take is running.
+    func addMarker(label: String?) async -> RecordedMarker?
+    /// The live camera layout switched (the layout shortcut) at host time `host` (`nil` = now). Logged with the
+    /// `camera` events, so the first edit gets matching layout segments.
+    func updateCameraLayout(_ layout: LayoutSegment.Kind, atHostTime host: Double?)
 }
 
 /// Creates recording sessions (`RecordingSession.init`) and recovers crashed ones (`ProjectRecovery`).
@@ -82,6 +87,12 @@ extension RecorderService {
     func voiceStemDidChange()
     /// Playback is silent (automated runs).
     var isMuted: Bool { get }
+    /// The camera bubble as the renderer draws it at recording time `t`: its place (stepped aside during a zoom)
+    /// and its size as a share of `camera.size` (smaller during a zoom). `nil` when the player can't say.
+    func cameraBubble(atSource t: Double) -> (place: NormPoint, sizeScale: Double)?
+    /// Where full-screen coordinates land on a `width` × `height` canvas at recording time `t` (crop, padding,
+    /// layout and zoom), so overlays drawn on the preview line up with the frame. `nil` when the player can't say.
+    func screenMapping(atSource t: Double, width: Double, height: Double) -> ScreenMapping?
 }
 
 /// `ReelbirdRender` (PreviewPlayer, Exporter, Thumbnailer) and `ReelbirdCore.Motion.AutoZoomPlanner`.
@@ -130,7 +141,10 @@ protocol AIService: Sendable {
     func suggestStory(transcript: Transcript) async throws -> (title: String, chapters: [Chapter])
     func transcribe(audio: URL, locale: Locale?) async throws -> Transcript
     func webVTT(_ t: Transcript) -> String
-    func silentRanges(audio: URL) throws -> [TimeRange]
+    func silentRanges(audio: URL) async throws -> [TimeRange]
+    /// `ReelbirdAI.SensitiveInfoScanner`: emails, keys, card and phone numbers on screen, found on this Mac.
+    func findSensitiveInfo(bundle: ProjectBundle, options: SensitiveInfoScanner.Options,
+                           progress: @escaping @Sendable (Double) -> Void) async throws -> SensitiveInfoScanner.Result
 }
 
 /// Live input monitoring for the source picker (microphone meter, camera preview). App-owned:

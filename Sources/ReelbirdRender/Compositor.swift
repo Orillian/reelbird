@@ -104,9 +104,9 @@ final class Compositor {
                 commandBuffer: any MTLCommandBuffer) -> [CVMetalTexture] {
         let vp = viewport ?? CGRect(x: 0, y: 0, width: target.width, height: target.height)
         let W = Double(vp.width), H = Double(vp.height)
-        let layout = CanvasLayout(plan: plan, width: W, height: H)
         let edit = plan.edit
         let src = plan.timeline.sourceTime(forOutput: outputTime)
+        let layout = CanvasLayout(plan: plan, width: W, height: H, layout: plan.layoutState(at: src))
         let (s, rawCenter) = plan.camera.transform(at: src)
         let c = layout.fillCenter(scale: s, center: rawCenter)
 
@@ -129,16 +129,20 @@ final class Compositor {
         var taps: Float = 0
         var prev = (s: s, c: c)
         var srcPrev = src
+        // The card a shutter earlier too: it slides during a change of layout.
+        var prevLayout = layout
         if edit.background.motionBlur {
             let sp = plan.timeline.sourceTime(forOutput: max(0, outputTime - shutter))
-            if abs((src - sp) - shutter) < 1e-3 {
+            // Never across an instant zoom's cut: that frame is a clean jump, not a smear.
+            if abs((src - sp) - shutter) < 1e-3, !plan.camera.hasCut(after: sp, upTo: src) {
                 srcPrev = sp
-                let pt = plan.camera.transform(at: srcPrev); prev = (pt.scale, layout.fillCenter(scale: pt.scale, center: pt.center))
+                prevLayout = CanvasLayout(plan: plan, width: W, height: H, layout: plan.layoutState(at: srcPrev))
+                let pt = plan.camera.transform(at: srcPrev); prev = (pt.scale, prevLayout.fillCenter(scale: pt.scale, center: pt.center))
                 var maxMove = 0.0
                 // How far visible content moves on screen: the corners and centre of the current view.
                 let v = plan.camera.viewport(at: src)
                 for corner in [NormPoint(x: v.x, y: v.y), NormPoint(x: v.x + v.width, y: v.y + v.height), v.center] {
-                    let a = layout.map(corner, scale: s, center: c), b = layout.map(corner, scale: prev.s, center: prev.c)
+                    let a = layout.map(corner, scale: s, center: c), b = prevLayout.map(corner, scale: prev.s, center: prev.c)
                     maxMove = max(maxMove, hypot(a.x - b.x, a.y - b.y))
                 }
                 if maxMove > 1.5 { taps = Float(min(16, max(4, (maxMove / 2).rounded(.up)))) }
@@ -153,7 +157,7 @@ final class Compositor {
         // View (crop) uv → screen texture uv.
         let uvMap = layout.uvMap(scale: s, center: c, crop: plan.crop)
         u.uvMap = uvMap
-        u.uvPrev = layout.uvMap(scale: prev.s, center: prev.c, crop: plan.crop)
+        u.uvPrev = prevLayout.uvMap(scale: prev.s, center: prev.c, crop: plan.crop)
         let g = layout.frameGrowth(s)
         u.params = SIMD4(Float(layout.cornerRadius * g), taps, Float(Double(uvMap.z) * Double(plan.screenSize.width)), 0)
         u.shadow = SIMD4(Float(layout.shadowStrength * 0.7), Float(layout.shadowBlur * g), Float(layout.shadowOffset * g), 0)
@@ -207,10 +211,25 @@ final class Compositor {
         }
 
         // 2. Annotations (recording timeline). Rects are stored in full-screen coordinates.
-        for a in edit.annotations where a.range.contains(src) {
+        let screenW = Double(plan.screenSize.width), screenH = Double(plan.screenSize.height)
+        // Three passes: highlights dim the frame first, then blurs, then marks on top (an arrow pointing into a
+        // blurred area stays sharp and undimmed).
+        let card = layout.screenRect(scale: s, center: c).offsetBy(dx: vp.minX, dy: vp.minY)
+            .intersection(CGRect(x: 0, y: 0, width: target.width, height: target.height))
+        for pass in 0..<3 {
+        // Blurs stay inside the visible screen card (never smeared over the background or a split's camera).
+        if pass == 1, !card.isNull, card.width >= 1, card.height >= 1 {
+            enc.setScissorRect(MTLScissorRect(x: Int(card.minX.rounded(.down)), y: Int(card.minY.rounded(.down)),
+                                              width: Int(card.width.rounded(.up)), height: Int(card.height.rounded(.up))))
+        } else if pass == 2 {
+            enc.setScissorRect(MTLScissorRect(x: 0, y: 0, width: target.width, height: target.height))
+        }
+        for a in edit.annotations where a.range.contains(src)
+            && (pass == 0 ? a.kind == .highlight : pass == 1 ? a.kind == .blur : a.kind != .highlight && a.kind != .blur) {
             let fadeIn = min(1, (src - a.range.start) / 0.2), fadeOut = min(1, (a.range.end - src) / 0.2)
-            let alpha = max(0, min(fadeIn, fadeOut))
-            let viewRect = plan.crop.toView(a.rect)
+            // A privacy blur never fades: it covers from its first frame to its last.
+            let alpha = a.kind == .blur ? 1 : max(0, min(fadeIn, fadeOut))
+            let viewRect = plan.crop.toView(a.rect(at: src))
             let r = layout.map(viewRect, scale: s, center: c)
             var su = SpriteUniforms()
             switch a.kind {
@@ -223,39 +242,59 @@ final class Compositor {
                 draw(&su)
             case .box:
                 let sw = max(2, 0.0045 * short)
-                su.rect = rect(r.insetBy(dx: -sw, dy: -sw))
                 su.mode.x = 3
                 su.params = SIMD4(Float(r.width / 2), Float(r.height / 2), Float(0.008 * short), Float(sw))
+                // A soft dark edge under the stroke keeps it visible on content of the same colour.
+                su.rect = rect(r.insetBy(dx: -sw, dy: -sw).offsetBy(dx: 0, dy: max(1, 0.0012 * short)))
+                su.params.w = Float(sw + max(1.5, 0.0016 * short))
+                su.color = SIMD4(0, 0, 0, Float(0.22 * alpha))
+                draw(&su)
+                su.rect = rect(r.insetBy(dx: -sw, dy: -sw))
+                su.params.w = Float(sw)
                 su.color = premul(a.color, alpha)
                 draw(&su)
             case .arrow:
-                let th = max(2, 0.006 * short), head = th * 4.5
-                let q = r.insetBy(dx: -head, dy: -head)
-                su.rect = rect(q)
+                let ends = a.arrowEnds
+                let p0 = layout.map(plan.crop.toView(ends.tail), scale: s, center: c)
+                let p1 = layout.map(plan.crop.toView(ends.head), scale: s, center: c)
+                let th = max(2, 0.006 * short), head = th * 4.2
+                let q = CGRect(x: min(p0.x, p1.x), y: min(p0.y, p1.y), width: abs(p1.x - p0.x), height: abs(p1.y - p0.y))
+                    .insetBy(dx: -head - 2, dy: -head - 2)
                 su.mode.x = 7
-                su.params = SIMD4(Float(r.minX - q.minX), Float(r.minY - q.minY), Float(r.maxX - q.minX), Float(r.maxY - q.minY))
+                let drop = max(1, 0.0012 * short)
+                // Shadow, then the arrow.
+                su.rect = rect(q.offsetBy(dx: 0, dy: drop))
+                su.params = SIMD4(Float(p0.x - q.minX), Float(p0.y - q.minY), Float(p1.x - q.minX), Float(p1.y - q.minY))
+                su.params2 = SIMD4(Float(th + 1.5), Float(head + 1.5), 0, 0)
+                su.color = SIMD4(0, 0, 0, Float(0.22 * alpha))
+                draw(&su)
+                su.rect = rect(q)
                 su.params2 = SIMD4(Float(th), Float(head), 0, 0)
                 su.color = premul(a.color, alpha)
                 draw(&su)
             case .blur:
                 guard let f = screenFrame else { continue }
                 su.rect = rect(r)
-                su.mode.x = 6
-                let cellPx = max(8.0, min(r.width, r.height) / 10)
-                let cellU = cellPx * Double(uvMap.z)
-                su.params = SIMD4(Float(r.width / 2), Float(r.height / 2), Float(0.006 * short), Float(cellU))
-                su.params2 = SIMD4(Float(uvMap.w / uvMap.z), 0, 0, 0)
+                su.mode.x = a.blurStyle == .pixelate ? 6 : 10
+                // Cells anchored to the screen video, sized from the area in screen pixels: the same cells at
+                // every zoom, crop, preview size and export size.
+                let ref = a.blurReferenceRect
+                let cellPx = PrivacyBlur.cellPixels(shortSidePixels: min(ref.width * screenW, ref.height * screenH),
+                                                    strength: a.blurStrength, captureScale: plan.manifest.capture.scale)
+                su.card = SIMD4(Float(cellPx / screenW), Float(cellPx / screenH), 0, 0)
+                su.params = SIMD4(Float(r.width / 2), Float(r.height / 2), Float(min(min(r.width, r.height) * 0.1, 0.008 * short * s)), 0)
+                su.params2 = u.uvClamp
                 su.camera = uvMap
                 if let y = f.yuv { su.yuv0 = y.r0; su.yuv1 = y.r1; su.yuv2 = y.r2; su.yuvOffset = y.offset }
-                su.color = SIMD4(1, 1, 1, Float(alpha))
+                su.color = SIMD4(1, 1, 1, 1)
                 draw(&su, f.t0, f.t1)
             case .text:
                 guard let str = a.text, !str.isEmpty else { continue }
-                // Render at the zoom-1 size ×2 so zooming stays crisp; mipmaps handle shrinking.
-                let base = viewRect.height * layout.card.height / layout.base.y * 0.7
+                // Letter size at zoom 1 in output pixels; rendered ×2 so zooming stays crisp (mipmaps shrink it).
+                let base = a.textSize / plan.crop.rect.height * layout.card.height / layout.base.y
                 guard base.isFinite, base > 0 else { continue }
                 let key = TextCache.Key(text: str, fontSize: Int(min(base * 2, 2048).rounded()), weight: 600,
-                                        color: packRGBA(a.color), pill: 0, maxWidth: 0)
+                                        color: AnnotationLabel.textColor(on: a.color), pill: packRGBA(a.color) | 0xFF, maxWidth: 0)
                 guard let e = text.texture(key, context: ctx, queue: queue) else { continue }
                 let scale = s / 2
                 let tw = Double(e.width) * scale, th = Double(e.height) * scale
@@ -264,6 +303,7 @@ final class Compositor {
                 su.color = SIMD4(1, 1, 1, Float(alpha))
                 draw(&su, e.texture)
             }
+        }
         }
 
         // 3. Cursor and click effects (view coordinates; hidden past the crop's edges).
@@ -327,7 +367,7 @@ final class Compositor {
                 var trail = CGPoint.zero
                 var ctaps: Float = 1
                 if edit.background.motionBlur, srcPrev < src, let pp = plan.cursor.position(at: srcPrev) {
-                    let b = layout.map(pp, scale: prev.s, center: prev.c)
+                    let b = prevLayout.map(pp, scale: prev.s, center: prev.c)
                     trail = CGPoint(x: b.x - at.x, y: b.y - at.y)
                     let len = hypot(trail.x, trail.y)
                     if len > 2 { ctaps = Float(min(12, (len / 2).rounded(.up) + 1)) } else { trail = .zero }
@@ -349,35 +389,40 @@ final class Compositor {
             }
         }
 
-        // 4. Camera bubble.
-        if plan.showsCamera, let cam = camera.flatMap(bind) {
+        // 4. Camera: the bubble, or the tile of the layout at this moment (full frame, split panel).
+        if plan.showsCamera, case let tile = plan.cameraTile(at: src, width: W, height: H), tile.opacity > 0.001,
+           tile.rect.width >= 1, tile.rect.height >= 1, let cam = camera.flatMap(bind) {
             keep += cam.keepAlive
             let cl = edit.camera
-            let f = plan.cameraFrame(at: src, width: W, height: H)
+            let f = tile.rect
             let x = Double(f.minX), y = Double(f.minY), w = Double(f.width), h = Double(f.height)
-            let (radius, exponent) = CameraPlacement.corner(shape: cl.shape, width: w, height: h)
-            var sh = SpriteUniforms()
-            // CameraBubbleStyle: the same shadow and rim as the live bubble.
-            let soft = CameraBubbleStyle.shadowRadius(bubbleWidth: w)
-            sh.rect = SIMD4(Float(x - soft * 2), Float(y - soft * 2 + CameraBubbleStyle.shadowOffset(bubbleWidth: w)),
-                            Float(w + soft * 4), Float(h + soft * 4))
-            sh.mode.x = 4
-            sh.mode.y = Int32(exponent)
-            sh.params = SIMD4(Float(w / 2), Float(h / 2), Float(radius), Float(soft))
-            sh.color = SIMD4(0, 0, 0, Float(CameraBubbleStyle.shadowOpacity))
-            draw(&sh)
+            let radius = tile.radius, exponent = tile.exponent
+            // CameraBubbleStyle: the same shadow and rim as the live bubble, sized like a bubble at most.
+            let styleWidth = min(w, CameraPlacement.sizeRange.upperBound * short)
+            if tile.shadow > 0.001 {
+                var sh = SpriteUniforms()
+                let soft = CameraBubbleStyle.shadowRadius(bubbleWidth: styleWidth)
+                sh.rect = SIMD4(Float(x - soft * 2), Float(y - soft * 2 + CameraBubbleStyle.shadowOffset(bubbleWidth: styleWidth)),
+                                Float(w + soft * 4), Float(h + soft * 4))
+                sh.mode.x = 4
+                sh.mode.y = Int32(exponent)
+                sh.params = SIMD4(Float(w / 2), Float(h / 2), Float(radius), Float(soft))
+                sh.color = SIMD4(0, 0, 0, Float(CameraBubbleStyle.shadowOpacity * tile.shadow * tile.opacity))
+                draw(&sh)
+            }
             var su = SpriteUniforms()
             su.rect = SIMD4(Float(x), Float(y), Float(w), Float(h))
             su.mode.x = 5
             su.mode.y = Int32(exponent)
-            // Aspect-fill crop of the camera frame around its centre, for every shape.
+            // Aspect-fill crop of the camera frame around its centre, for every shape and tile.
             let fill = CameraPlacement.aspectFill(camera: Double(cam.width) / Double(max(1, cam.height)), bubble: w / h)
             var u0 = fill.u0, u1 = fill.u1
             let v0 = fill.v0, v1 = fill.v1
             if cl.mirror { swap(&u0, &u1) }
             su.uvRect = SIMD4(Float(u0), Float(v0), Float(u1), Float(v1))
-            su.params = SIMD4(Float(w / 2), Float(h / 2), Float(radius), Float(CameraBubbleStyle.rimWidth(bubbleWidth: w)))
-            su.params2 = SIMD4(1, 1, 1, Float(CameraBubbleStyle.rimOpacity))
+            su.params = SIMD4(Float(w / 2), Float(h / 2), Float(radius), Float(CameraBubbleStyle.rimWidth(bubbleWidth: styleWidth)))
+            su.params2 = SIMD4(1, 1, 1, Float(CameraBubbleStyle.rimOpacity * tile.rim))
+            su.color = SIMD4(1, 1, 1, Float(min(1, tile.opacity)))
             if let y = cam.yuv { su.yuv0 = y.r0; su.yuv1 = y.r1; su.yuv2 = y.r2; su.yuvOffset = y.offset }
             draw(&su, cam.t0, cam.t1)
         }

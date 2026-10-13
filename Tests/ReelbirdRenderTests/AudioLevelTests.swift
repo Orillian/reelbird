@@ -46,22 +46,25 @@ private func speech(seconds: Double, voicedRMSDB: Double) -> [Float] {
 private func decodeStereo(_ url: URL) async throws -> [Float] {
     let asset = AVURLAsset(url: url)
     let track = try #require(try await asset.loadTracks(withMediaType: .audio).first)
-    let reader = try AVAssetReader(asset: asset)
-    let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
-        AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2,
-        AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
-    ])
-    reader.add(out)
-    reader.startReading()
-    var samples: [Float] = []
-    while let sb = out.copyNextSampleBuffer() {
-        guard let bb = CMSampleBufferGetDataBuffer(sb) else { continue }
-        let n = CMBlockBufferGetDataLength(bb) / 4
-        var chunk = [Float](repeating: 0, count: n)
-        chunk.withUnsafeMutableBytes { _ = CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: n * 4, destination: $0.baseAddress!) }
-        samples += chunk
+    // Blocking decode: off the cooperative pool (see BlockingWork).
+    return try await BlockingWork.run("test.decode") { _ in
+        let reader = try AVAssetReader(asset: asset)
+        let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2,
+            AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
+        ])
+        reader.add(out)
+        reader.startReading()
+        var samples: [Float] = []
+        while let sb = out.copyNextSampleBuffer() {
+            guard let bb = CMSampleBufferGetDataBuffer(sb) else { continue }
+            let n = CMBlockBufferGetDataLength(bb) / 4
+            var chunk = [Float](repeating: 0, count: n)
+            chunk.withUnsafeMutableBytes { _ = CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: n * 4, destination: $0.baseAddress!) }
+            samples += chunk
+        }
+        return samples
     }
-    return samples
 }
 
 private func measure(_ stereo: [Float]) -> (lufs: Double?, peakDB: Double) {

@@ -94,7 +94,7 @@ private func render(_ bundle: ProjectBundle, _ edit: EditDocument, at t: Double,
     let manifest = try bundle.readManifest()
     let plan = try RenderPlan(bundle: bundle, manifest: manifest, edit: edit)
     let sources = try await MediaSources.load(bundle: bundle, manifest: manifest)
-    return Pixels(try Thumbnailer.render(plan: plan, sources: sources, at: t, maxWidth: width))
+    return Pixels(try await Thumbnailer.render(plan: plan, sources: sources, at: t, maxWidth: width))
 }
 
 private func count(_ px: Pixels, where match: ((r: Int, g: Int, b: Int)) -> Bool) -> Int {

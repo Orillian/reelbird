@@ -79,6 +79,13 @@ struct LiveRecorder: RecorderService {
     func setHearOriginal(_ on: Bool) { player.hearOriginal = on }
     func voiceStemDidChange() { player.voiceStemDidChange() }
     var isMuted: Bool { player.isMuted }
+    func cameraBubble(atSource t: Double) -> (place: NormPoint, sizeScale: Double)? {
+        let plan = player.plan
+        return (plan.cameraPlace(at: t), plan.cameraSizeScale(at: t))
+    }
+    func screenMapping(atSource t: Double, width: Double, height: Double) -> ScreenMapping? {
+        player.plan.screenMapping(atSource: t, width: width, height: height)
+    }
 }
 
 struct LiveRender: RenderService {
@@ -129,7 +136,7 @@ struct LiveAI: AIService {
         try await Transcriber.transcribe(audio: audio, locale: locale)
     }
     func webVTT(_ t: Transcript) -> String { Captions.webVTT(t) }
-    func silentRanges(audio: URL) throws -> [TimeRange] { try SilenceDetector.silentRanges(audio: audio) }
+    func silentRanges(audio: URL) async throws -> [TimeRange] { try await SilenceDetector.silentRanges(audio: audio) }
 }
 
 /// `ReelbirdShare`: settings (JSON + Keychain), the live uploader and publish/unpublish.

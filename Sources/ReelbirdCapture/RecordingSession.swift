@@ -43,6 +43,12 @@ public final class RecordingSession: Sendable {
         cameraLog.update(frame: frame, shape: shape, atHostTime: host ?? HostClock.now())
     }
 
+    /// The live camera layout switched (the layout shortcut: overlay, full camera, screen only) at host time
+    /// `host` (default now). Logged in the `camera` events, so the first edit gets matching layout segments.
+    public func updateCameraLayout(_ layout: LayoutSegment.Kind, atHostTime host: Double? = nil) {
+        cameraLog.update(layout: layout, atHostTime: host ?? HostClock.now())
+    }
+
     /// Now on the host clock that recording timestamps use (seconds).
     public static var hostTime: Double { HostClock.now() }
 
@@ -68,6 +74,13 @@ public final class RecordingSession: Sendable {
     public func pause() async { await engine.pause() }
 
     public func resume() async { await engine.resume() }
+
+    /// Drops a marker now: a `marker` event in `events.jsonl` on the recording clock (`label` names it, else
+    /// "Marker N"). Works while recording or paused (a marker in a pause lands where the video carries on
+    /// once markers become chapters). Returns the marker, or `nil` when no take is running.
+    public func addMarker(label: String? = nil) async -> RecordedMarker? {
+        await engine.addMarker(label: label, atHost: HostClock.now())
+    }
 
     /// Stops, finalizes every writer, consolidates segments into one file per track and writes
     /// `project.json` with status `.complete`. Calling it again returns the same bundle.
@@ -178,6 +191,7 @@ actor SessionEngine {
     private var origin = 0.0
     private var pausedTotal = 0.0
     private var pauseStartHost: Double?
+    private var markerCount = 0
     private var ticker: Task<Void, Never>?
     private var health = HealthMonitor()
     private var status = RecorderStatus()
@@ -375,9 +389,10 @@ actor SessionEngine {
         if fmt.hasCamera {
             let composer = pipeline.composer, screen = fmt.pixelSize
             cameraLog.begin(writer: eventLog, origin: origin, realTime: fmt.isRealTime, area: area,
-                            isPaused: { [weak pipeline] t in pipeline?.isPaused(t) ?? false }) { rect, shape, t in
+                            isPaused: { [weak pipeline] t in pipeline?.isPaused(t) ?? false }) { rect, shape, layout, t in
                 composer?.setCamera(position: CameraPlacement.position(recorded: rect, screen: screen), shape: shape,
                                     size: CameraPlacement.size(recorded: rect, shape: shape, screen: screen), at: t)
+                composer?.setLayout(layout)
             }
         }
         phase = .recording
@@ -442,6 +457,20 @@ actor SessionEngine {
         publish()
     }
 
+    // MARK: Markers
+
+    func addMarker(label: String?, atHost host: Double) -> RecordedMarker? {
+        guard phase == .recording || phase == .paused, let pipeline, let fmt = format, let eventLog else { return nil }
+        // Generated frames don't run on the wall clock: put the marker on the latest frame instead.
+        let t = fmt.isRealTime ? max(0, host - origin) : pipeline.metrics.withLock { $0.lastScreenTime }
+        markerCount += 1
+        let marker = RecordedMarker(number: markerCount, t: (t * 10_000).rounded() / 10_000,
+                                    label: Markers.label(label, number: markerCount))
+        let given = (label ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : marker.label
+        eventLog.append(.marker(marker.t, label: given))
+        return marker
+    }
+
     // MARK: Stop
 
     func stop() async throws -> ProjectBundle {
@@ -467,7 +496,8 @@ actor SessionEngine {
 
         await source?.stop()
         recorder?.stop()
-        pipeline.close(endTime: endTime)
+        // Closing waits (up to seconds) for busy encoders to take the last audio, so it runs off the cooperative pool.
+        await BlockingWork.run("reelbird.capture.close") { _ in pipeline.close(endTime: endTime) }
         if pipeline.pauses.count > m.pauses.count, let last = pipeline.pauses.last { recorder?.mark(.resume, at: last.end) }
         cameraLog.end()
         eventLog?.close()

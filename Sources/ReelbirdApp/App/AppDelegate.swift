@@ -159,6 +159,7 @@ import ReelbirdCore
     @objc func toggleRecording(_ sender: Any?) { model.toggleRecordingFromHotKey() }
     @objc func togglePauseRecording(_ sender: Any?) { model.recording.togglePause() }
     @objc func discardRecording(_ sender: Any?) { model.recording.confirmDiscard() }
+    @objc func addMarker(_ sender: Any?) { model.recording.addMarker() }
 
     // MARK: Editor commands (routed to the key editor window)
 
@@ -178,10 +179,28 @@ import ReelbirdCore
     @objc func goToStart(_ sender: Any?) { editor?.seek(source: 0) }
     @objc func splitAtPlayhead(_ sender: Any?) { editor?.splitAtPlayhead() }
     @objc func addZoom(_ sender: Any?) { editor?.addZoomAtPlayhead() }
+    @objc func addEditorMarker(_ sender: Any?) { editor?.addMarkerAtPlayhead() }
+    @objc func addLayout(_ sender: Any?) { editor?.addLayoutAtPlayhead() }
+    @objc func addBlur(_ sender: Any?) { editor?.beginOverlayTool(.blur) }
     @objc func deleteSelection(_ sender: Any?) { editor?.deleteSelection() }
     @objc func removeSilences(_ sender: Any?) { editor?.removeSilences() }
+    @objc func changeSpeed(_ sender: Any?) { editor?.speedKey() }
+    @objc func speedUpTyping(_ sender: Any?) { editor?.applySpeedSuggestions() }
+    @objc func toggleKeepFastAudio(_ sender: Any?) { if let e = editor { e.setKeepFastAudio(!e.edit.speed.keepFastAudio) } }
     @objc func zoomTimelineIn(_ sender: Any?) { if let e = editor { e.timelineZoom = min(16, e.timelineZoom * 1.5) } }
     @objc func zoomTimelineOut(_ sender: Any?) { if let e = editor { e.timelineZoom = max(1, e.timelineZoom / 1.5) } }
+    @objc func showCommandMenu(_ sender: Any?) {
+        guard let e = editor else { return }
+        if e.showCommandPalette { CommandMenu.close(e) } else { CommandMenu.open(e) }
+    }
+    @objc func showKeyboardShortcuts(_ sender: Any?) {
+        guard let e = editor else { return }
+        e.showCommandPalette = false
+        e.showShortcuts.toggle()
+    }
+    /// Edit ▸ Copy and Paste reach here when no text field took them: in the editor they copy and paste zooms.
+    @objc func copy(_ sender: Any?) { editorNotEditingText?.copyZooms() }
+    @objc func paste(_ sender: Any?) { editorNotEditingText?.pasteZooms() }
     @objc func showInspectorSection(_ sender: NSMenuItem) {
         let i = sender.tag - MainMenu.Tag.inspectorBase.rawValue
         guard InspectorSection.allCases.indices.contains(i) else { return }
@@ -193,7 +212,9 @@ import ReelbirdCore
     @objc func libraryAsGrid(_ sender: Any?) { model.library.gridLayout = true }
     @objc func libraryAsList(_ sender: Any?) { model.library.gridLayout = false }
     /// Edit ▸ Select All reaches here (end of the responder chain) only when no text field took it.
-    @objc func selectAll(_ sender: Any?) { if model.windows.libraryIsKey { model.library.selectAll() } }
+    @objc func selectAll(_ sender: Any?) {
+        if model.windows.libraryIsKey { model.library.selectAll() } else { editorNotEditingText?.selectAllZooms() }
+    }
 
     /// The library is key, has a selection, and isn't editing text (where ⌘⌫ deletes to the line start).
     private var libraryHasSelection: Bool {
@@ -213,7 +234,7 @@ import ReelbirdCore
         case #selector(togglePauseRecording(_:)):
             item.title = rec.phase == .paused ? "Resume" : "Pause"
             return rec.phase == .recording || rec.phase == .paused
-        case #selector(discardRecording(_:)):
+        case #selector(discardRecording(_:)), #selector(addMarker(_:)):
             return rec.phase == .recording || rec.phase == .paused
         case #selector(exportRecording(_:)):
             return e != nil && !(e?.isBusy ?? true)
@@ -225,17 +246,30 @@ import ReelbirdCore
         case #selector(trashRecording(_:)):
             return editorNotEditingText != nil || libraryHasSelection
         case #selector(selectAll(_:)):
+            if let ed = editorNotEditingText { return !ed.edit.zoom.regions.isEmpty }
             return model.windows.libraryIsKey && !model.library.filtered.isEmpty
+        case #selector(copy(_:)):
+            return editorNotEditingText?.canCopyZooms == true
+        case #selector(paste(_:)):
+            return editorNotEditingText?.canPasteZooms == true
+        case #selector(showCommandMenu(_:)), #selector(showKeyboardShortcuts(_:)):
+            return e != nil
         case #selector(goToStart(_:)), #selector(splitAtPlayhead(_:)),
-             #selector(addZoom(_:)), #selector(zoomTimelineIn(_:)), #selector(zoomTimelineOut(_:)):
+             #selector(addZoom(_:)), #selector(addEditorMarker(_:)), #selector(zoomTimelineIn(_:)), #selector(zoomTimelineOut(_:)),
+             #selector(changeSpeed(_:)), #selector(speedUpTyping(_:)), #selector(addBlur(_:)):
             return e != nil
         case #selector(togglePlay(_:)):
             item.title = e?.isPlaying == true ? "Pause" : "Play"
             return e != nil
         case #selector(deleteSelection(_:)):
             guard let sel = e?.selection else { item.title = "Cut Selection"; return false }
-            item.title = sel.isCut ? "Restore Cut" : sel.isZoom ? "Delete Zoom" : "Cut Selection"
+            item.title = sel.isCut ? "Restore Cut" : sel.isZoom ? e?.deleteZoomsTitle ?? "Delete Zoom" : sel.isLayout ? "Delete Layout" : sel.isSpeed ? "Remove Speed" : "Cut Selection"
             return true
+        case #selector(toggleKeepFastAudio(_:)):
+            item.state = e?.edit.speed.keepFastAudio == true ? .on : .off
+            return e != nil
+        case #selector(addLayout(_:)):
+            return e?.hasCamera == true
         case #selector(removeSilences(_:)):
             return e?.hasMicrophone == true
         case #selector(showInspectorSection(_:)):

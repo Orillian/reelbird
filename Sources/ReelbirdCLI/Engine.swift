@@ -43,10 +43,13 @@ protocol RecordingControl: Sendable {
     func discard() async
     /// After `stop()`: tracks that stopped early or were left out, with the reason.
     var trackIssues: [TrackKind: String] { get async }
+    /// Drops a marker now (a `marker` event on the recording clock). `nil` when the take isn't running.
+    func addMarker(label: String?) async -> RecordedMarker?
 }
 
 extension RecordingControl {
     var trackIssues: [TrackKind: String] { get async { [:] } }
+    func addMarker(label: String?) async -> RecordedMarker? { nil }
 }
 
 enum ExportFormat: String, CaseIterable, Codable, Sendable {

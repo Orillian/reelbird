@@ -7,15 +7,31 @@ import Testing
 // The CLI is an executable target, so it is exercised as a process: arguments in, exit code + output out.
 
 private enum CLI {
-    static var binary: URL? {
+    static var binary: URL? { CLIBinary.url }
+}
+
+/// The `reelbird` binary `swift test` built: in `$RB_SCRATCH/debug` when scripts/test.sh runs with a separate
+/// build folder (relative paths are from the repo root), next to the test bundle, or in `.build/debug`.
+/// Tests that need it fail (never skip) when it is missing: see `cliBinaryIsBuilt`.
+enum CLIBinary {
+    static var url: URL? {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         var candidates: [URL] = []
+        if let scratch = ProcessInfo.processInfo.environment["RB_SCRATCH"], !scratch.isEmpty {
+            let dir = scratch.hasPrefix("/") ? URL(fileURLWithPath: scratch) : root.appendingPathComponent(scratch)
+            candidates.append(dir.appendingPathComponent("debug/reelbird"))
+            // The Xcode-style layout some toolchains use for a scratch folder.
+            candidates.append(dir.appendingPathComponent("out/Products/Debug/reelbird"))
+        }
         if let xctest = Bundle.allBundles.first(where: { $0.bundlePath.hasSuffix(".xctest") }) {
             candidates.append(xctest.bundleURL.deletingLastPathComponent().appendingPathComponent("reelbird"))
         }
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         candidates.append(root.appendingPathComponent(".build/debug/reelbird"))
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
+}
+
+private extension CLI {
 
     struct Result {
         var code: Int32
@@ -52,7 +68,10 @@ private enum CLI {
     }
 }
 
-private let binaryAvailable = CLI.binary != nil
+/// Fails loudly when the CLI tests can't find the binary, instead of every one of them being skipped.
+@Test func cliBinaryIsBuilt() {
+    #expect(CLIBinary.url != nil, "No reelbird binary in $RB_SCRATCH/debug, next to the tests or in .build/debug. Build it with scripts/build.sh.")
+}
 
 /// A project bundle with a 30 s synthetic screen track and, optionally, a microphone file.
 private func makeProject(in dir: URL, name: String = "Demo", microphone: URL? = nil, micStart: Double = 0.5) throws -> ProjectBundle {
@@ -83,7 +102,7 @@ private func tempDir() throws -> URL {
 
 // MARK: - Argument parsing
 
-@Test(.enabled(if: binaryAvailable)) func usageErrorsHaveExitCode64() throws {
+@Test func usageErrorsHaveExitCode64() throws {
     let help = try CLI.run([])
     #expect(help.code == 0 && help.out.contains("Commands:"))
 
@@ -114,13 +133,13 @@ private func tempDir() throws -> URL {
     #expect((jsonError.json?["error"] as? [String: Any])?["message"] as? String == "Project not found: nope-not-a-project")
 }
 
-@Test(.enabled(if: binaryAvailable)) func captureCommandsReportUnavailable() throws {
+@Test func captureCommandsReportUnavailable() throws {
     let r = try CLI.run(["record", "--json", "--duration", "2"], library: try tempDir())
     #expect(r.code == 69)
     #expect(r.json?["ok"] as? Bool == false)
 }
 
-@Test(.enabled(if: binaryAvailable)) func recordStopsAfterDurationAndOnCtrlC() throws {
+@Test func recordStopsAfterDurationAndOnCtrlC() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
 
@@ -143,7 +162,7 @@ private func tempDir() throws -> URL {
 
 // MARK: - edit / info / list
 
-@Test(.enabled(if: binaryAvailable)) func editSetsDottedKeysTrimAndCuts() throws {
+@Test func editSetsDottedKeysTrimAndCuts() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let bundle = try makeProject(in: dir)
@@ -196,7 +215,7 @@ private func tempDir() throws -> URL {
     #expect(try !bundle.readEdit().audio.autoLevel && bundle.readEdit().audio.microphoneGainDB == 4.5)
 }
 
-@Test(.enabled(if: binaryAvailable)) func editSetsCropByKeyAndFromTheDetectedToolbar() throws {
+@Test func editSetsCropByKeyAndFromTheDetectedToolbar() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let bundle = try makeProject(in: dir)
@@ -231,7 +250,7 @@ private func tempDir() throws -> URL {
     #expect(try bundle.readEdit().crop == nil)
 }
 
-@Test(.enabled(if: binaryAvailable)) func infoAndListFindProjects() throws {
+@Test func infoAndListFindProjects() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let a = try makeProject(in: dir, name: "Alpha Take")
@@ -263,7 +282,7 @@ private func tempDir() throws -> URL {
 
 // MARK: - AI commands on real audio
 
-@Test(.enabled(if: binaryAvailable)) func silencesCommandFindsAndCutsGaps() async throws {
+@Test func silencesCommandFindsAndCutsGaps() async throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let audio = dir.appendingPathComponent("tone.m4a")
@@ -279,7 +298,7 @@ private func tempDir() throws -> URL {
     #expect(cuts.count == 1 && abs(cuts[0].start - 1.65) < 0.1)
 }
 
-@Test(.enabled(if: binaryAvailable)) func enhanceRendersTheVoiceStemAndInfoReportsIt() async throws {
+@Test func enhanceRendersTheVoiceStemAndInfoReportsIt() async throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let audio = dir.appendingPathComponent("tone.m4a")
@@ -314,7 +333,7 @@ private func tempDir() throws -> URL {
     #expect(bad.code == 64)
 }
 
-@Test(.enabled(if: binaryAvailable && Transcriber.isAvailable)) func captionsCommandWritesVTT() async throws {
+@Test(.enabled(if: Transcriber.isAvailable)) func captionsCommandWritesVTT() async throws {
     guard await Transcriber.availability(for: Locale(identifier: "en-US")).canTranscribe else {
         print("SKIP captions CLI test: no en-US speech model")
         return
@@ -355,7 +374,7 @@ private func mcp(_ messages: [String], library: URL? = nil, demo: Bool = false) 
 private func toolResult(_ response: [String: Any]?) -> [String: Any]? { response?["result"] as? [String: Any] }
 private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"] as? [String: Any])?["code"] as? Int }
 
-@Test(.enabled(if: binaryAvailable)) func mcpLegacyHandshakeAndTools() throws {
+@Test func mcpLegacyHandshakeAndTools() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let bundle = try makeProject(in: dir, name: "Agent Take")
@@ -409,7 +428,7 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
     #expect(errorCode(responses["null"]) == -32700)
 }
 
-@Test(.enabled(if: binaryAvailable)) func mcpModernPerRequestMetadata() throws {
+@Test func mcpModernPerRequestMetadata() throws {
     let meta = #""_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"t","version":"1"}}"#
     let responses = try mcp([
         #"{"jsonrpc":"2.0","id":"d","method":"server/discover","params":{\#(meta)}}"#,
@@ -441,7 +460,7 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
     #expect(errorCode(responses["n"]) == -32602)   // no _meta and no initialize
 }
 
-@Test(.enabled(if: binaryAvailable)) func mcpRecordingSessions() throws {
+@Test func mcpRecordingSessions() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let meta = #""_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}"#
@@ -472,7 +491,7 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
 
 // MARK: - export --out never replaces a file by accident
 
-@Test(.enabled(if: binaryAvailable)) func exportKeepsAnExistingOutFileUnlessForced() throws {
+@Test func exportKeepsAnExistingOutFileUnlessForced() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let bundle = try makeProject(in: dir)
@@ -511,7 +530,7 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
     }
 }
 
-@Test(.enabled(if: binaryAvailable)) func cameraPlacementFromTheCommandLineAndMCP() throws {
+@Test func cameraPlacementFromTheCommandLineAndMCP() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let bundle = try makeProject(in: dir, name: "Camera Take")
@@ -528,7 +547,9 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
 
     let info = try CLI.run(["info", bundle.url.path])
     #expect(info.code == 0, "\(info.err)")
-    #expect(info.out.contains("Camera     circle 22%, bottom right, 1 move (0:12)"), "\(info.out)")
+    // The first edit takes the live bubble's size (CameraPlacement.apply, WYSIWYG): 200 pt on a 1080 pt screen is
+    // 18.5% of it, times the padded screen card (0.84 of the canvas at the default 8% padding) = 16%.
+    #expect(info.out.contains("Camera     circle 16%, bottom right, 1 move (0:12)"), "\(info.out)")
     let infoJSON = try #require(try CLI.run(["info", bundle.url.path, "--json"]).json)
     let camera = try #require((infoJSON["edit"] as? [String: Any])?["camera"] as? [String: Any])
     #expect(camera["x"] as? Double == 1 && camera["y"] as? Double == 1)
@@ -553,7 +574,7 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
     #expect(try CLI.run(["edit", bundle.url.path, "--set", "camera.corner=bottomLeft"]).code == 0)
     edit = try bundle.readEdit()
     #expect(edit.camera.x == nil && edit.camera.y == nil && edit.camera.position == NormPoint(x: 0, y: 1))
-    #expect(try CLI.run(["info", bundle.url.path]).out.contains("Camera     portrait 22%, bottom left"))
+    #expect(try CLI.run(["info", bundle.url.path]).out.contains("Camera     portrait 16%, bottom left"))   // size kept from the live bubble
 
     // MCP: set a place and moves, then clear the moves (separate sessions: tool calls may run concurrently).
     let p = bundle.url.path
@@ -570,4 +591,162 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
     #expect(toolResult(clear["3"])?["isError"] as? Bool == false)
     edit = try bundle.readEdit()
     #expect(edit.camera.position == NormPoint(x: 0.25, y: 0.75) && edit.camera.moves.isEmpty)
+}
+
+@Test func speedFromTheCommandLineAndMCP() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let bundle = try makeProject(in: dir, name: "Typing Take")
+    // Ten seconds of typing from 5 s, a click at 20 s.
+    let log = try EventLogWriter(url: bundle.eventsURL)
+    log.append(.move(0, NormPoint(x: 0.5, y: 0.5)))
+    for k in 0...50 { log.append(InputEvent(t: 5 + Double(k) * 0.2, type: .key, chars: "a")) }
+    log.append(.down(20, NormPoint(x: 0.5, y: 0.5)))
+    log.close()
+
+    // Speed ranges by hand: 2× and 0.5×; 1 removes speed; out-of-range rates are usage errors.
+    let r = try CLI.run(["edit", bundle.url.path, "--speed", "0:01-0:03@2", "--speed", "25-end@0.5x", "--json"])
+    #expect(r.code == 0, "\(r.err)")
+    let rJSON = try #require(r.json)
+    #expect(rJSON["outputDuration"] as? Double == 34)
+    var edit = try bundle.readEdit()
+    #expect(edit.speed.segments.map(\.rate) == [2, 0.5])
+    #expect(edit.speed.segments.last?.range == TimeRange(start: 25, end: 30))
+    #expect(try CLI.run(["edit", bundle.url.path, "--speed", "1-3@9"]).code == 64)
+    #expect(try CLI.run(["edit", bundle.url.path, "--speed", "1-3"]).code == 64)
+    #expect(try CLI.run(["edit", bundle.url.path, "--speed", "2-3@1"]).code == 0)
+    edit = try bundle.readEdit()
+    #expect(edit.speed.segments.first?.range == TimeRange(start: 1, end: 2))
+    let info = try CLI.run(["info", bundle.url.path])
+    #expect(info.out.contains("Speed      2 parts: 2× 0:01–0:02, 0.5× 0:25–0:30"), "\(info.out)")
+    let infoJSON = try #require(try CLI.run(["info", bundle.url.path, "--json"]).json)
+    let speedJSON = try #require((infoJSON["edit"] as? [String: Any])?["speed"] as? [String: Any])
+    #expect((speedJSON["segments"] as? [[String: Any]])?.count == 2)
+    #expect(try CLI.run(["edit", bundle.url.path, "--clear-speed"]).code == 0)
+    #expect(try bundle.readEdit().speed.segments.isEmpty)
+
+    // Suggestions from the key presses: typing 5–15 s at 4× (no microphone, so no talking); idle (no input) before
+    // the typing, between it and the click at 20 s, and after the click.
+    let dry = try CLI.run(["speedup", bundle.url.path, "--json"])
+    #expect(dry.code == 0, "\(dry.err)")
+    let dryJSON = try #require(dry.json)
+    let found = try #require(dryJSON["suggestions"] as? [[String: Any]])
+    #expect(found.map { $0["kind"] as? String } == ["idle", "typing", "idle", "idle"], "\(found)")
+    #expect(found[1]["rate"] as? Double == 4 && found[0]["rate"] as? Double == 8)
+    #expect(try bundle.readEdit().speed.segments.isEmpty, "dry run leaves the edit alone")
+    let applied = try CLI.run(["speedup", bundle.url.path, "--apply"])
+    #expect(applied.code == 0 && applied.out.contains("Speed up 1 typing stretch and 3 idle stretches"), "\(applied.out)")
+    edit = try bundle.readEdit()
+    #expect(edit.speed.segments.map(\.source) == [.idle, .typing, .idle, .idle])
+    #expect(try CLI.run(["info", bundle.url.path]).out.contains("4× typing 0:05–0:15"))
+
+    // MCP: suggest (nothing left), set a speed range, keep fast sound.
+    let p = bundle.url.path
+    let initialize = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#
+    let s = try mcp([initialize,
+        #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"suggest_speedups","arguments":{"project":"\#(p)"}}}"#,
+    ], library: dir)
+    let structured = toolResult(s["2"])?["structuredContent"] as? [String: Any]
+    #expect(toolResult(s["2"])?["isError"] as? Bool == false)
+    #expect((structured?["suggestions"] as? [Any])?.isEmpty == true, "\(String(describing: s["2"]))")
+    let set = try mcp([initialize,
+        #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_edit","arguments":{"project":"\#(p)","clear_speed":true,"speed":["0:02-0:04@1.5"],"set":{"speed.keepFastAudio":true}}}}"#,
+    ], library: dir)
+    #expect(toolResult(set["3"])?["isError"] as? Bool == false, "\(String(describing: set["3"]))")
+    edit = try bundle.readEdit()
+    #expect(edit.speed.segments.count == 1 && edit.speed.segments[0].rate == 1.5 && edit.speed.keepFastAudio)
+}
+
+@Test func zoomsTurnedOffAndInstantFromTheCommandLineAndMCP() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let bundle = try makeProject(in: dir, name: "Zoom Take")
+    var edit = EditDocument()
+    edit.zoom.mode = .auto
+    edit.zoom.regions = [ZoomRegion(id: "auto-1", range: TimeRange(start: 2, end: 4), scale: 1.8, source: .auto),
+                         ZoomRegion(id: "mine", range: TimeRange(start: 8, end: 10), scale: 2)]
+    try bundle.writeEdit(edit)
+
+    // By id: turned off (and kept as yours, so replanning never brings it back) and instant.
+    let r = try CLI.run(["edit", bundle.url.path, "--set", "zoom.regions.auto-1.enabled=false", "--set", "zoom.regions.mine.instant=true"])
+    #expect(r.code == 0, "\(r.err)")
+    edit = try bundle.readEdit()
+    #expect(edit.zoom.regions.first { $0.id == "auto-1" }.map { !$0.enabled && $0.source == .user } == true)
+    #expect(edit.zoom.regions.first { $0.id == "mine" }?.instant == true)
+    let json = try #require(try CLI.run(["edit", bundle.url.path, "--json"]).json)
+    let regions = try #require((json["zoom"] as? [String: Any])?["regions"] as? [[String: Any]])
+    #expect(regions.contains { $0["id"] as? String == "auto-1" && $0["enabled"] as? Bool == false })
+
+    // Every zoom at once, and a clear error for an unknown id.
+    #expect(try CLI.run(["edit", bundle.url.path, "--set", "zoom.regions.*.enabled=true"]).code == 0)
+    #expect(try bundle.readEdit().zoom.regions.allSatisfy { $0.enabled })
+    let bad = try CLI.run(["edit", bundle.url.path, "--set", "zoom.regions.nope.enabled=false"])
+    #expect(bad.code == 65 && bad.err.contains("no item in zoom.regions has the id 'nope'") && bad.err.contains("auto-1"), "\(bad.err)")
+    // Index paths still work.
+    #expect(try CLI.run(["edit", bundle.url.path, "--set", "zoom.regions.1.scale=2.5"]).code == 0)
+    #expect(try bundle.readEdit().zoom.regions[1].scale == 2.5)
+
+    // MCP set_edit takes the same keys.
+    let p = bundle.url.path
+    let initialize = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#
+    let set = try mcp([initialize,
+        #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"set_edit","arguments":{"project":"\#(p)","set":{"zoom.regions.*.instant":true,"zoom.regions.mine.enabled":false}}}}"#,
+    ], library: dir)
+    #expect(toolResult(set["2"])?["isError"] as? Bool == false)
+    edit = try bundle.readEdit()
+    #expect(edit.zoom.regions.allSatisfy { $0.instant } && edit.zoom.regions.first { $0.id == "mine" }?.enabled == false)
+}
+
+@Test func cameraLayoutsAndZoomedSizeFromTheCommandLineAndMCP() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let bundle = try makeProject(in: dir, name: "Layout Take")
+    let p = bundle.url.path
+    // No camera: no layouts.
+    let none = try CLI.run(["edit", p, "--layout", "split@1-3"])
+    #expect(none.code == 65 && none.err.contains("no camera"), "\(none.err)")
+    var m = try bundle.readManifest()
+    m.tracks.append(TrackInfo(kind: .camera, directory: "camera", file: "camera/camera.mp4", codec: "h264",
+                              pixelSize: PixelSize(width: 1280, height: 720), duration: 30))
+    try bundle.writeManifest(m)
+
+    let set = try CLI.run(["edit", p, "--layout", "split@0:05-0:12", "--layout", "camera@8-10", "--layout", "screen@20-end",
+                           "--set", "camera.sizeWhileZoomed=0.55", "--set", "camera.smartFraming=false"])
+    #expect(set.code == 0, "\(set.err)")
+    var edit = try bundle.readEdit()
+    #expect(edit.layouts.map(\.kind) == [.split, .fullCamera, .split, .screenOnly], "camera@8-10 splits the split")
+    #expect(edit.layouts.map(\.range) == [TimeRange(start: 5, end: 8), TimeRange(start: 8, end: 10), TimeRange(start: 10, end: 12),
+                                          TimeRange(start: 20, end: 30)])
+    #expect(edit.camera.sizeWhileZoomed == 0.55 && !edit.camera.smartFraming && edit.camera.shrinkWhenZoomed)
+
+    let info = try CLI.run(["info", p])
+    #expect(info.out.contains("during zooms 55% size"), "\(info.out)")
+    #expect(info.out.contains("Layouts    split 0:05–0:08, camera 0:08–0:10, split 0:10–0:12, screen 0:20–0:30"), "\(info.out)")
+    let json = try #require(try CLI.run(["info", p, "--json"]).json)
+    let e = try #require(json["edit"] as? [String: Any])
+    let cam = try #require(e["camera"] as? [String: Any])
+    #expect(cam["sizeWhileZoomed"] as? Double == 0.55 && cam["smartFraming"] as? Bool == false && cam["shrinkWhenZoomed"] as? Bool == true)
+    let layouts = try #require(e["layouts"] as? [[String: Any]])
+    #expect(layouts.first?["kind"] as? String == "split" && layouts.first?["start"] as? Double == 5)
+
+    // Bad input: an unknown kind, a size out of range, a layout past the end.
+    let bad = try CLI.run(["edit", p, "--layout", "pip@1-2"])
+    #expect(bad.code == 64 && bad.err.contains("camera, split, screen or bubble"), "\(bad.err)")
+    let tooSmall = try CLI.run(["edit", p, "--set", "camera.sizeWhileZoomed=0.1"])
+    #expect(tooSmall.code == 65, "\(tooSmall.err)")
+    #expect(try CLI.run(["edit", p, "--layout", "camera@40-45"]).code == 64)
+
+    // Bubble clears a range; --clear-layouts clears all.
+    #expect(try CLI.run(["edit", p, "--layout", "bubble@0-15"]).code == 0)
+    #expect(try bundle.readEdit().layouts.map(\.kind) == [.screenOnly])
+
+    // MCP: layouts and the zoomed size in one call.
+    let initialize = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#
+    let r = try mcp([initialize,
+        #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"set_edit","arguments":{"project":"\#(p)","clear_layouts":true,"layouts":["camera@1-4"],"set":{"camera.shrinkWhenZoomed":false}}}}"#,
+    ], library: dir)
+    #expect(toolResult(r["2"])?["isError"] as? Bool == false)
+    edit = try bundle.readEdit()
+    #expect(edit.layouts.map(\.kind) == [.fullCamera] && edit.layouts[0].range == TimeRange(start: 1, end: 4))
+    #expect(!edit.camera.shrinkWhenZoomed)
 }

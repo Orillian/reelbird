@@ -357,4 +357,6 @@ final class LiveRecording: RecordingControl {
     func discard() async { await session.discard() }
 
     var trackIssues: [TrackKind: String] { get async { await session.trackIssues } }
+
+    func addMarker(label: String?) async -> RecordedMarker? { await session.addMarker(label: label) }
 }

@@ -90,6 +90,9 @@ import ReelbirdCore
                                 symbol: rec.phase == .paused ? "play.circle" : "pause.circle")
                 pause.keyEquivalent = prefs.pauseHotKey.menuKeyEquivalent
                 pause.keyEquivalentModifierMask = prefs.pauseHotKey.menuModifiers
+                let marker = add("Add Marker", #selector(addMarker), symbol: "flag")
+                marker.keyEquivalent = prefs.markerHotKey.menuKeyEquivalent
+                marker.keyEquivalentModifierMask = prefs.markerHotKey.menuModifiers
                 if rec.status.shareURL != nil {
                     add("Copy Live Link", #selector(copyLiveLink), symbol: "link")
                 }
@@ -219,6 +222,7 @@ import ReelbirdCore
     @objc private func stopRecording() { app.recording.stop() }
     @objc private func cancelCountdown() { app.recording.cancelCountdown(); app.recording.closePicker() }
     @objc private func togglePause() { app.recording.togglePause() }
+    @objc private func addMarker() { app.recording.addMarker() }
     @objc private func restart() { app.recording.confirmRestart() }
     @objc private func discard() { app.recording.confirmDiscard() }
     @objc private func openLibrary() { app.openLibrary() }

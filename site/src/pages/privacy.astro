@@ -10,6 +10,7 @@ const crumbs = [{ name: "Privacy", path: "/privacy/" }];
       <h2 id="app">The app</h2>
       <ul>
         <li>Recordings, edits, captions and transcripts stay on your Mac, in <code>~/Movies/Reelbird</code> unless you choose another folder.</li>
+        <li>Find Sensitive Info reads the text on screen with Apple's on-device text recognition to suggest blurs. Nothing is uploaded, and the command line and MCP server show only masked previews of what it finds.</li>
         <li>Captions and titles are made on your Mac by Apple's frameworks. No API keys and no cloud services. On macOS 26, macOS downloads Apple's speech model the first time you make captions.</li>
         <li>Nothing is uploaded unless you share. Shares go only to the bucket you configured, signed with your own keys. The secret key lives in your macOS Keychain and is only sent to your storage endpoint as a request signature.</li>
         <li>No analytics, no telemetry, no crash reporting and no update checks. The app never contacts a Reelbird server, because there isn't one.</li>
@@ -18,7 +19,7 @@ const crumbs = [{ name: "Privacy", path: "/privacy/" }];
       <h2 id="links">Share links</h2>
       <ul>
         <li><strong>Links are unlisted, not secret.</strong> Anyone who has a link can watch the video and forward the link. Random IDs make links impossible to guess, and the bucket isn't listable, but there's no password.</li>
-        <li><strong>Sharing while recording uploads as you go.</strong> If you discard the take, Reelbird deletes everything it uploaded for it.</li>
+        <li><strong>Sharing while recording uploads as you go.</strong> If you discard the take, Reelbird deletes everything it uploaded for it. That quick version has no edits, so blurs you add later reach viewers when you update the link.</li>
         <li><strong>Stop sharing</strong> deletes every file for that link. A CDN cache may serve a deleted file for a short time, and anyone who downloaded the video keeps their copy.</li>
         <li><strong>What viewers load.</strong> The viewer page, video and captions all come from your bucket. While a share has only the live stream, browsers without built-in HLS (Chrome, Firefox) also load the hls.js player from jsDelivr, pinned to one version and integrity-checked. Once you update the link, viewers get a plain MP4 and nothing else.</li>
       </ul>

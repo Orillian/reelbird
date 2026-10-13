@@ -120,6 +120,8 @@ final class MockRecordingSession: RecordingSessionHandle, @unchecked Sendable {
     private var summary: MicTakeSummary?
     /// Seconds of the simulated silent stretch (9–15 s) that were recorded.
     private var silentSeconds = 0.0
+    /// Markers dropped while recording, written to events.jsonl at stop.
+    private var markers: [InputEvent] = []
 
     init(options: RecordingOptions, bundleURL: URL, shareSink: (any ShareSegmentSink)?) {
         self.options = options; self.bundleURL = bundleURL; self.shareSink = shareSink
@@ -244,7 +246,7 @@ final class MockRecordingSession: RecordingSessionHandle, @unchecked Sendable {
                                        share: lock.withLock { shareInfo })
         try bundle.writeManifest(manifest)
         let writer = try EventLogWriter(url: bundle.eventsURL)
-        for e in MockData.events(duration: duration) { writer.append(e) }
+        for e in (MockData.events(duration: duration) + lock.withLock { markers }).sorted(by: { $0.t < $1.t }) { writer.append(e) }
         writer.close()
         if let sink = shareSink { await sink.finish(totalDuration: duration, timeout: 1) }
         publish { $0.phase = .finished }
@@ -259,6 +261,23 @@ final class MockRecordingSession: RecordingSessionHandle, @unchecked Sendable {
     private(set) var cameraUpdates: [(frame: CGRect?, shape: CameraLayout.Shape)] = []
     func updateCameraBubble(frame: CGRect?, shape: CameraLayout.Shape, atHostTime host: Double?) {
         lock.withLock { cameraUpdates.append((frame, shape)) }
+    }
+    /// Live layouts switched while this session lived (self test).
+    private(set) var layoutUpdates: [LayoutSegment.Kind] = []
+    func updateCameraLayout(_ layout: LayoutSegment.Kind, atHostTime host: Double?) {
+        lock.withLock { layoutUpdates.append(layout) }
+    }
+
+    func addMarker(label: String?) async -> RecordedMarker? {
+        let phase = lock.withLock { current.phase }
+        guard phase == .recording || phase == .paused else { return nil }
+        let t = Date().timeIntervalSince(lock.withLock { startDate })
+        return lock.withLock {
+            let n = markers.count + 1
+            let m = RecordedMarker(number: n, t: (t * 1000).rounded() / 1000, label: Markers.label(label, number: n))
+            markers.append(.marker(m.t, label: label))
+            return m
+        }
     }
 
     func discard() async {
@@ -423,7 +442,7 @@ struct MockAI: AIService {
         return MockData.transcript
     }
     func webVTT(_ t: Transcript) -> String { Captions.webVTT(t) }
-    func silentRanges(audio: URL) throws -> [TimeRange] { [TimeRange(start: 9, end: 15)] }
+    func silentRanges(audio: URL) async throws -> [TimeRange] { [TimeRange(start: 9, end: 15)] }
 }
 
 /// Mock live inputs: a speech-like meter and a placeholder camera view.

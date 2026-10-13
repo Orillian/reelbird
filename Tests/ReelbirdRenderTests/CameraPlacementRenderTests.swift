@@ -24,7 +24,9 @@ private func frames(_ bundle: ProjectBundle, _ edit: EditDocument, at times: [Do
     let manifest = try bundle.readManifest()
     let plan = try RenderPlan(bundle: bundle, manifest: manifest, edit: edit)
     let sources = try await MediaSources.load(bundle: bundle, manifest: manifest)
-    return try times.map { Pixels(try Thumbnailer.render(plan: plan, sources: sources, at: $0, maxWidth: width)) }
+    var frames: [Pixels] = []
+    for t in times { frames.append(Pixels(try await Thumbnailer.render(plan: plan, sources: sources, at: t, maxWidth: width))) }
+    return frames
 }
 
 /// The synthetic camera is solid green (with one thin moving line, so look at three neighbours).
@@ -179,7 +181,7 @@ private func cameraBundle(seconds: Double = 4, events: [InputEvent]? = nil) asyn
             e.camera.position = place
             e.canvas.aspect = aspect
             let plan = try RenderPlan(bundle: bundle, manifest: manifest, edit: e)
-            let img = try Thumbnailer.render(plan: plan, sources: sources, at: 1, maxWidth: 1280)
+            let img = try await Thumbnailer.render(plan: plan, sources: sources, at: 1, maxWidth: 1280)
             let url = URL(fileURLWithPath: dir).appendingPathComponent("camera-\(shape.rawValue)-\(name).png")
             let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
             CGImageDestinationAddImage(dest, img, nil)

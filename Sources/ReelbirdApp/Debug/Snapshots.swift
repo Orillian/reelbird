@@ -176,7 +176,12 @@ import SwiftUI
         scenes.append(Scene(name: "toast", size: CGSize(width: 520, height: 140), backdrop: true) {
             AnyView(ToastView(title: "Link copied", detail: "Still uploading 2 segments…", symbol: "link"))
         })
+        scenes.append(Scene(name: "toast-layout", size: CGSize(width: 560, height: 140), backdrop: true) {
+            AnyView(ToastView(title: "Camera only", detail: "The video shows your camera full frame. ⌥⇧L switches to screen only.",
+                              symbol: "person.crop.rectangle"))
+        })
         scenes += CameraBubbleScenes.scenes(animations: filter?.contains("camera-anim") == true)
+        scenes += QuickShareScenes.scenes(services: services, prefs: prefs, status: status(elapsed: 84, level: 0.6))
 
         // Editor
         func editor(_ section: InspectorSection, variant: String? = nil, bundle: ProjectBundle? = nil,
@@ -199,6 +204,52 @@ import SwiftUI
             m.addZoomAtPlayhead()
             m.setPlayheadForSnapshot(13.6)
         })
+        // Speed: a slowed part, a 2× part (selected: its rate chips show), applied typing and idle suggestions.
+        scenes.append(editor(.zoom, variant: "speed") { m in
+            m.change("x") { e in
+                e.speed.set(TimeRange(start: 6.2, end: 8.4), rate: 0.5)
+                e.speed.set(TimeRange(start: 14, end: 18.5), rate: 2, id: "sel")
+                e.speed.set(TimeRange(start: 22, end: 26.6), rate: 4, source: .typing)
+                e.speed.set(TimeRange(start: 30.4, end: 37.5), rate: 8, source: .idle)
+            }
+            m.selection = .speed("sel")
+            m.setPlayheadForSnapshot(15.2)
+        })
+        // "Speed up typing": dashed suggestions and the one-click offer.
+        scenes.append(editor(.zoom, variant: "speed-suggest") { m in
+            m.setSpeedSuggestionsForSnapshot([
+                SpeedSuggestion(kind: .typing, range: TimeRange(start: 9.8, end: 14.6), rate: 4),
+                SpeedSuggestion(kind: .typing, range: TimeRange(start: 21.5, end: 27), rate: 2),
+                SpeedSuggestion(kind: .idle, range: TimeRange(start: 30.4, end: 37.5), rate: 8),
+            ])
+        })
+        // Several zooms selected (shift-click or a box on the zoom lane): one turned off, one instant.
+        scenes.append(editor(.zoom, variant: "multi") { m in
+            let rs = m.edit.zoom.regions
+            guard rs.count >= 4 else { return }
+            m.change("x") { e in
+                e.zoom.regions[1].enabled = false
+                e.zoom.regions[2].instant = true
+            }
+            m.selectZooms([rs[0].id, rs[2].id, rs[3].id])
+            m.section = .zoom
+        })
+        // Command menu (⌘K): recent commands then every command by area; a search; the shortcut sheet (⌘/).
+        scenes.append(editor(.zoom, variant: "palette") { m in
+            CommandHistory.setForSnapshot(["export-gif", "split", "motion-blur", "panel-captions"])
+            CommandMenu.open(m)
+        })
+        scenes.append(editor(.zoom, variant: "palette-search") { m in
+            CommandHistory.setForSnapshot(["export-gif"])
+            CommandMenu.open(m)
+            m.paletteQuery = "zoom"
+            m.paletteHighlight = 1
+        })
+        scenes.append(editor(.zoom, variant: "palette-empty") { m in
+            CommandMenu.open(m)
+            m.paletteQuery = "qqqq"
+        })
+        scenes.append(editor(.zoom, variant: "shortcuts") { m in m.showShortcuts = true })
         scenes.append(editor(.camera) { m in m.change("x") { $0.camera.shape = .roundedSquare; $0.canvas.aspect = .wide } })
         // Recorded moves listed in the Camera panel and marked on the timeline; a portrait tile mid-video.
         scenes.append(editor(.camera, variant: "moves") { m in
@@ -213,6 +264,21 @@ import SwiftUI
         scenes.append(editor(.camera, variant: "drag") { m in
             m.beginCameraDrag()
             m.updateCameraDrag(NormPoint(x: 0.5, y: 0.5), guides: [.centerX, .centerY])
+        })
+        // Camera layouts on the timeline: camera only and split segments, the split one selected; zoom settings.
+        scenes.append(editor(.camera, variant: "layouts") { m in
+            m.change("x") {
+                $0.canvas.aspect = .wide
+                $0.layouts = [LayoutSegment(id: "l1", range: TimeRange(start: 6, end: 11), kind: .fullCamera),
+                              LayoutSegment(id: "l2", range: TimeRange(start: 19, end: 27), kind: .split),
+                              LayoutSegment(id: "l3", range: TimeRange(start: 33, end: 36), kind: .screenOnly)]
+            }
+            m.setPlayheadForSnapshot(8.5)
+            m.selection = .layout("l2")
+        })
+        scenes.append(editor(.camera, variant: "zooms") { m in
+            m.change("x") { $0.camera.sizeWhileZoomed = 0.6; $0.canvas.aspect = .wide }
+            m.setPlayheadForSnapshot(m.unzoomedTime(after: 4))
         })
         scenes.append(editor(.canvas) { m in m.change("x") { $0.canvas.aspect = .vertical } })
         // Crop: a Chrome window before and after "Hide Browser Toolbar", and crop mode on the preview.
@@ -262,6 +328,16 @@ import SwiftUI
             m.setTranscriptForSnapshot(MockData.transcript)
             m.setPlayheadForSnapshot(9.5)
         })
+        // Markers dropped while recording: flags on the ruler, and the chapters made from them.
+        scenes.append(editor(.captions, variant: "markers") { m in
+            m.change("x") {
+                $0.markers = [Marker(id: "m1", t: 6.2, title: "Cart"), Marker(id: "m2", t: 17.5, title: "Shipping details"),
+                              Marker(id: "m3", t: 33.4, title: "Paying")]
+            }
+            m.useMarkersAsChapters()
+            m.setPlayheadForSnapshot(17.5)
+        })
+        scenes += OverlayScenes.scenes { section, variant, configure in editor(section, variant: variant, configure: configure) }
 
         // Export and share
         func editorModel() -> EditorModel? {

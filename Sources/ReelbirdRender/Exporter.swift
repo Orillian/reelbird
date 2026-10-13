@@ -269,12 +269,16 @@ final class ExportJob: @unchecked Sendable {
         var aOut: AVAssetReaderAudioMixOutput?
         if let aIn, let mix {
             let r = try AVAssetReader(asset: comp.asset)
+            // Stretched sound can run a little past the last piece (the stretcher's tail). The mix output still hands
+            // out whole buffers past this range; `MixFinisher` cuts the sound at the picture's last frame exactly.
+            r.timeRange = CMTimeRange(start: .zero, duration: MediaSources.time(comp.duration))
             let o = AVAssetReaderAudioMixOutput(audioTracks: comp.audio.map(\.track), audioSettings: [
                 AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2,
                 AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false,
                 AVLinearPCMIsBigEndianKey: false,
             ])
             o.audioMix = mix.mix
+            o.audioTimePitchAlgorithm = MediaSources.timePitch // speed segments keep the voice's pitch
             r.add(o)
             aReader = r; aOut = o
             _ = aIn
@@ -284,8 +288,12 @@ final class ExportJob: @unchecked Sendable {
         writer.startSession(atSourceTime: .zero)
         guard vReader.startReading() else { throw RenderError.readerFailed(vReader.error?.localizedDescription ?? "start failed") }
 
+        // The picture is `total` whole frames; the file and its sound end exactly where the last one does.
+        let total = max(1, Int((comp.duration * Double(fps)).rounded(.down)))
+        let end = CMTime(value: CMTimeValue(total), timescale: CMTimeScale(fps))
+
         // Audio on its own thread: per-track gain and limiting happen in the mix's taps; the finisher limits
-        // the sum and removes the limiters' look-ahead delay.
+        // the sum, removes the limiters' look-ahead delay and makes the sound exactly as long as the picture.
         let audioDone = DispatchSemaphore(value: 0)
         let audioError = Box<(any Error)?>(nil)
         if let aReader, let aOut, let aIn, let mix {
@@ -298,21 +306,22 @@ final class ExportJob: @unchecked Sendable {
                     aIn.markAsFinished()
                     return
                 }
-                let finisher = MixFinisher(sampleRate: 48_000, channels: 2)
+                let finisher = MixFinisher(sampleRate: 48_000, channels: 2, length: MixFinisher.frames(end.seconds, sampleRate: 48_000))
                 func append(_ sb: CMSampleBuffer) -> Bool {
                     while !aIn.isReadyForMoreMediaData, !cancelled.isSet, writer.status == .writing { usleep(300) }
                     if cancelled.isSet || writer.status != .writing { return false }
                     return aIn.append(sb)
                 }
                 var ok = true
-                while ok, !cancelled.isSet, writer.status == .writing {
+                while ok, !finisher.isComplete, !cancelled.isSet, writer.status == .writing {
                     guard let sb = aOut.copyNextSampleBuffer() else { break }
-                    if let out = finisher.process(sb) { ok = append(out) }
+                    for out in finisher.process(sb) where ok { ok = append(out) }
                 }
                 if aReader.status == .failed {
                     audioError.value = RenderError.readerFailed(aReader.error?.localizedDescription ?? "audio")
-                } else if ok, !cancelled.isSet, aReader.status == .completed, let tail = finisher.flush() {
-                    _ = append(tail)
+                } else if ok, !cancelled.isSet {
+                    if aReader.status == .reading { aReader.cancelReading() } // the rest is past the end
+                    for out in finisher.finish() where ok { ok = append(out) }
                 }
                 withExtendedLifetime(processors) {}
                 aIn.markAsFinished()
@@ -329,7 +338,6 @@ final class ExportJob: @unchecked Sendable {
         let compositor = Compositor(context: ctx, queue: queue)
         let screenSteps = FrameStepper(screenOut)
         let cameraSteps = cameraOut.map(FrameStepper.init)
-        let total = max(1, Int((comp.duration * Double(fps)).rounded(.down)))
         let tolerance = 0.5 / Double(fps)
         var inflight: [InFlight] = []
         inflight.reserveCapacity(4)
@@ -396,6 +404,7 @@ final class ExportJob: @unchecked Sendable {
         }
         vReader.cancelReading()
         if let e = audioError.value { writer.cancelWriting(); throw e }
+        writer.endSession(atSourceTime: end)
         let done = DispatchSemaphore(value: 0)
         writer.finishWriting { done.signal() }
         done.wait()

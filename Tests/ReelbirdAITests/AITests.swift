@@ -89,13 +89,13 @@ private func sampleTranscript() -> Transcript {
         .init(duration: 1.0, amplitude: 0.25),
     ], to: url)
 
-    let ranges = try SilenceDetector.silentRanges(audio: url, thresholdDB: -45, minDuration: 1.2)
+    let ranges = try await SilenceDetector.silentRanges(audio: url, thresholdDB: -45, minDuration: 1.2)
     #expect(ranges.count == 2, "\(ranges)")
     if ranges.count == 2 {
         #expect(abs(ranges[0].start - 1.0) < 0.08 && abs(ranges[0].end - 3.0) < 0.08, "\(ranges[0])")
         #expect(abs(ranges[1].start - 4.5) < 0.08 && abs(ranges[1].end - 6.0) < 0.08, "\(ranges[1])")
     }
-    let longOnly = try SilenceDetector.silentRanges(audio: url, minDuration: 1.8)
+    let longOnly = try await SilenceDetector.silentRanges(audio: url, minDuration: 1.8)
     #expect(longOnly.count == 1)
 
     let cuts = SilenceDetector.trimCuts(silences: ranges, padding: 0.15)
@@ -115,9 +115,9 @@ private func sampleTranscript() -> Transcript {
     #expect(r.count == 1 && abs(r[0].duration - 2.0) < 1e-9)
 }
 
-@Test func silenceDetectorReportsMissingFile() {
-    #expect(throws: SilenceDetectorError.self) {
-        try SilenceDetector.silentRanges(audio: URL(fileURLWithPath: "/nonexistent/a.m4a"))
+@Test func silenceDetectorReportsMissingFile() async {
+    await #expect(throws: SilenceDetectorError.self) {
+        try await SilenceDetector.silentRanges(audio: URL(fileURLWithPath: "/nonexistent/a.m4a"))
     }
 }
 

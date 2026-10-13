@@ -67,7 +67,7 @@ private func bandPass(_ x: [Float]) -> [Float] {
 @Test func voiceStemCleansNoiseKeepsSpeechAndIsFast() async throws {
     // Speed is measured on 60 s (medium); the other strengths run on the first 20 s to keep the suite light.
     let seconds = 60.0
-    let take = try VoiceFixture.take(seconds: seconds, speechDB: -24, snrDB: 20)
+    let take = try await VoiceFixture.take(seconds: seconds, speechDB: -24, snrDB: 20)
     let b = try await VoiceFixture.bundle(microphone: take.noisy, seconds: seconds)
     defer { try? FileManager.default.removeItem(at: b.url) }
     let rawURL = b.resolve("microphone/microphone.m4a")
@@ -122,7 +122,7 @@ private func bandPass(_ x: [Float]) -> [Float] {
 }
 
 @Test func mixZeroReproducesTheRawMicrophone() async throws {
-    let take = try VoiceFixture.take(seconds: 8)
+    let take = try await VoiceFixture.take(seconds: 8)
     let b = try await VoiceFixture.bundle(microphone: take.noisy, seconds: 8)
     defer { try? FileManager.default.removeItem(at: b.url) }
     let info = try await VoiceStem.render(bundle: b, settings: settings(.max, mix: 0))
@@ -151,8 +151,8 @@ private func bandPass(_ x: [Float]) -> [Float] {
 
 // MARK: - Voice activity and ducking
 
-@Test func voiceActivityFindsThePhrases() throws {
-    let take = try VoiceFixture.take(seconds: 30, speechDB: -24, snrDB: 15)
+@Test func voiceActivityFindsThePhrases() async throws {
+    let take = try await VoiceFixture.take(seconds: 30, speechDB: -24, snrDB: 15)
     // 10 ms frame levels at 48 kHz (the analyzer works at 16 kHz; the detector only sees levels).
     let frame = 480
     var levels: [Float] = []
@@ -239,7 +239,7 @@ private func stereoToMono(_ s: [Float]) -> [Float] { stride(from: 0, to: s.count
 
 @Test func exportDucksSystemAudioUnderTheVoiceAndLandsOnTarget() async throws {
     let seconds = 20.0
-    let take = try VoiceFixture.take(seconds: seconds, speechDB: -30, snrDB: 20)
+    let take = try await VoiceFixture.take(seconds: seconds, speechDB: -30, snrDB: 20)
     // System audio: a 55 Hz tone (below the voice's high-pass) at −20 dBFS throughout.
     let tone = (0..<Int(seconds * 48_000)).map { Float(0.1 * sin(2 * Double.pi * 55 * Double($0) / 48_000)) }
     let b = try await VoiceFixture.bundle(microphone: take.noisy, seconds: seconds, systemAudio: tone)
@@ -294,7 +294,7 @@ private func stereoToMono(_ s: [Float]) -> [Float] { stride(from: 0, to: s.count
 
 @MainActor
 @Test func previewSwitchesToTheStemAndHearsTheOriginal() async throws {
-    let take = try VoiceFixture.take(seconds: 6)
+    let take = try await VoiceFixture.take(seconds: 6)
     let b = try await VoiceFixture.bundle(microphone: take.noisy, seconds: 6)
     defer { try? FileManager.default.removeItem(at: b.url) }
     let player = try PreviewPlayer(bundle: b)

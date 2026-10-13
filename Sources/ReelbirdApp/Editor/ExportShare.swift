@@ -32,6 +32,10 @@ struct ExportSheet: View {
         .frame(width: 440)
         .background(Theme.panel)
         .animation(Theme.gentle, value: model.exportState)
+        .onAppear {
+            // A format picked in the command menu ("Export as GIF…").
+            if let f = model.pendingExportFormat { format = f; model.pendingExportFormat = nil }
+        }
     }
 
     private var form: some View {

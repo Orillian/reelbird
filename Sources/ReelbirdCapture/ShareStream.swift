@@ -164,6 +164,8 @@ final class ShareComposer: @unchecked Sendable {
     private let latest = Locked(Latest())
     private struct Placement { var from: NormPoint; var to: NormPoint; var since: Double; var shape: CameraLayout.Shape; var size: Double }
     private let placement: Locked<Placement>
+    /// The live layout: the bubble, the camera filling the frame, or no camera.
+    private let liveLayout = Locked(LayoutSegment.Kind.overlay)
     private var mask: (shape: CameraLayout.Shape, width: Int, height: Int, image: CIImage)?
     private var timer: (any DispatchSourceTimer)?
     private var nextTime = 0.0
@@ -208,6 +210,9 @@ final class ShareComposer: @unchecked Sendable {
                        : Placement(from: now, to: position, since: t, shape: shape, size: size)
         }
     }
+
+    /// The live layout switched (overlay, full camera or screen only).
+    func setLayout(_ layout: LayoutSegment.Kind) { liveLayout.withLock { $0 = layout } }
 
     private static func place(_ p: Placement, at t: Double) -> NormPoint {
         let u = (t - p.since) / CameraPlacement.glideDuration
@@ -275,13 +280,15 @@ final class ShareComposer: @unchecked Sendable {
         let dx = (W - img.extent.width) / 2 - img.extent.minX, dy = (H - img.extent.height) / 2 - img.extent.minY
         img = img.transformed(by: CGAffineTransform(translationX: dx, y: dy))
             .composited(over: CIImage(color: .black).cropped(to: CGRect(x: 0, y: 0, width: W, height: H)))
-        guard let camera, layout.visible else { return img.cropped(to: CGRect(x: 0, y: 0, width: W, height: H)) }
+        let live = liveLayout.withLock { $0 }
+        guard let camera, layout.visible, live != .screenOnly else { return img.cropped(to: CGRect(x: 0, y: 0, width: W, height: H)) }
 
         let (place, shape, size) = placement.withLock { (Self.place($0, at: t), $0.shape, $0.size) }
         var bubble = layout
         bubble.shape = shape
         bubble.size = size
-        let f = CameraPlacement.frame(at: place, layout: bubble, width: W, height: H)
+        let full = live == .fullCamera
+        let f = full ? CGRect(x: 0, y: 0, width: W, height: H) : CameraPlacement.frame(at: place, layout: bubble, width: W, height: H)
         let bw = f.width.rounded(), bh = f.height.rounded()
         var cam = CIImage(cvPixelBuffer: camera)
         let ce = cam.extent
@@ -297,6 +304,7 @@ final class ShareComposer: @unchecked Sendable {
         let x = f.minX.rounded(), y = (H - f.maxY).rounded()
         tr = tr.concatenating(CGAffineTransform(translationX: x, y: y))
         cam = cam.transformed(by: tr)
+        if full { return cam.composited(over: img).cropped(to: CGRect(x: 0, y: 0, width: W, height: H)) }
         let maskImage = bubbleMask(shape: shape, width: Int(bw), height: Int(bh))
             .transformed(by: CGAffineTransform(translationX: x, y: y))
         let blend = CIFilter.blendWithAlphaMask()
