@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Builds build/Reelbird.app (release) with the `reelbird` CLI inside it.
-#   RB_SIGN_IDENTITY  codesigning identity (default "-" = ad-hoc). See scripts/dev-signing.sh.
+#   RB_SIGN_IDENTITY  codesigning identity (default: "Reelbird Local Signing" if present, else "-" = ad-hoc).
 #   RB_CONFIG         debug|release (default release)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/env.sh
 CONFIG="${RB_CONFIG:-release}"
-IDENTITY="${RB_SIGN_IDENTITY:--}"
+# Default: the local identity from scripts/dev-signing.sh when it exists (keeps permissions across
+# rebuilds), otherwise ad-hoc.
+DEFAULT_IDENTITY="-"
+security find-certificate -c "Reelbird Local Signing" >/dev/null 2>&1 && DEFAULT_IDENTITY="Reelbird Local Signing"
+IDENTITY="${RB_SIGN_IDENTITY:-$DEFAULT_IDENTITY}"
 SCRATCH=()
 [ -n "${RB_SCRATCH:-}" ] && SCRATCH=(--scratch-path "$RB_SCRATCH")
 swift build -c "$CONFIG" ${SCRATCH[@]+"${SCRATCH[@]}"} --product ReelbirdApp
