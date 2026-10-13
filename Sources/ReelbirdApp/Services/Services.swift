@@ -21,6 +21,9 @@ protocol CaptureSourceService: Sendable {
     func list() async throws -> [AvailableSource]
     /// A preview of `source`, or `nil` when it can't be captured.
     func thumbnail(for source: AvailableSource, maxPixelWidth: Int) async -> CGImage?
+    /// Brings an off-screen window (other desktop, minimized) on screen, waiting up to ~2 s.
+    /// Returns whether it is on screen.
+    func bringOnScreen(_ source: AvailableSource) async -> Bool
     func microphones() -> [MediaDevice]
     func cameras() -> [MediaDevice]
     /// The microphone's hardware input volume (0…1), or `nil` when the device doesn't offer one.

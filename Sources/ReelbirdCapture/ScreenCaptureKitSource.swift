@@ -54,7 +54,16 @@ public final class ScreenCaptureKitSource: NSObject, FrameSource, SCStreamOutput
             area = CGDisplayBounds(id)
             displayID = id
         case .window(let id, let app, let title):
-            guard let w = content.windows.first(where: { $0.windowID == id }) else { throw CaptureError.sourceNotFound("the \(app) window “\(title)”") }
+            // The picker brings an off-screen window on screen before starting, but it can leave again
+            // during the countdown. Capture it anyway rather than failing with "not found": while a window
+            // is minimized or on another Space, ScreenCaptureKit sends idle/blank frames or none (the
+            // take holds its last frame) and picks up again when the window is back.
+            var window = content.windows.first(where: { $0.windowID == id })
+            if window == nil {
+                window = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
+                    .windows.first(where: { $0.windowID == id })
+            }
+            guard let w = window else { throw CaptureError.sourceNotFound("the \(app) window “\(title)”") }
             filter = SCContentFilter(desktopIndependentWindow: w)
             area = w.frame
             windowID = id

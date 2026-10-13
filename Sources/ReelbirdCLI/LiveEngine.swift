@@ -232,11 +232,12 @@ struct LiveEngine: Engine {
         return Double(mode.pixelWidth) / Double(mode.width)
     }
 
-    /// Displays and windows. Checks the permission first: asking ScreenCaptureKit without it can
+    /// Displays and on-screen windows (the CLI can't bring a window from another Space or the Dock
+    /// the way the picker does). Checks the permission first: asking ScreenCaptureKit without it can
     /// put up a system prompt and wait for it, which would hang a script or an MCP client.
     private func screenSources() async throws -> [AvailableSource] {
         guard Permissions.status(.screen) == .granted else { throw Self.cliError(CaptureError.permissionDenied(.screen)) }
-        do { return try await CaptureSources.list() } catch { throw Self.cliError(error) }
+        do { return try await CaptureSources.list().filter(\.isOnScreen) } catch { throw Self.cliError(error) }
     }
 
     private func displays() async throws -> [(id: CGDirectDisplayID, name: String)] {

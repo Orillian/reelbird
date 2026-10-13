@@ -27,26 +27,50 @@ struct MockCaptureSources: CaptureSourceService {
                             source: .display(id: 2, name: "Studio Display"), thumbnail: thumb(480, 270, .code, dark: true)),
             AvailableSource(id: "win-101", kind: .window, title: "Pull request #482 — Checkout flow", appName: "Safari",
                             pixelSize: PixelSize(width: 2880, height: 1800), frame: CGRect(x: 80, y: 60, width: 1440, height: 900),
-                            source: .window(id: 101, app: "Safari", title: "Pull request #482"), thumbnail: thumb(320, 200, .browser)),
+                            source: .window(id: 101, app: "Safari", title: "Pull request #482"), thumbnail: thumb(320, 200, .browser), bundleID: "com.apple.Safari"),
             AvailableSource(id: "win-102", kind: .window, title: "CheckoutView.swift", appName: "Xcode",
                             pixelSize: PixelSize(width: 3024, height: 1890), frame: CGRect(x: 80, y: 60, width: 1512, height: 945),
-                            source: .window(id: 102, app: "Xcode", title: "CheckoutView.swift"), thumbnail: thumb(320, 200, .code, dark: true)),
+                            source: .window(id: 102, app: "Xcode", title: "CheckoutView.swift"), thumbnail: thumb(320, 200, .code, dark: true), bundleID: "com.apple.dt.Xcode"),
             AvailableSource(id: "win-103", kind: .window, title: "Onboarding v3", appName: "Figma",
                             pixelSize: PixelSize(width: 2560, height: 1600), frame: CGRect(x: 80, y: 60, width: 1280, height: 800),
-                            source: .window(id: 103, app: "Figma", title: "Onboarding v3"), thumbnail: thumb(320, 200, .design)),
+                            source: .window(id: 103, app: "Figma", title: "Onboarding v3"), thumbnail: thumb(320, 200, .design), bundleID: "com.figma.Desktop"),
             AvailableSource(id: "win-104", kind: .window, title: "Q4 launch plan", appName: "Notion",
                             pixelSize: PixelSize(width: 2400, height: 1560), frame: CGRect(x: 80, y: 60, width: 1200, height: 780),
-                            source: .window(id: 104, app: "Notion", title: "Q4 launch plan"), thumbnail: thumb(320, 208, .docs)),
+                            source: .window(id: 104, app: "Notion", title: "Q4 launch plan"), thumbnail: thumb(320, 208, .docs), bundleID: "notion.id"),
             AvailableSource(id: "win-105", kind: .window, title: "#design-review", appName: "Slack",
                             pixelSize: PixelSize(width: 2200, height: 1500), frame: CGRect(x: 80, y: 60, width: 1100, height: 750),
-                            source: .window(id: 105, app: "Slack", title: "#design-review"), thumbnail: thumb(320, 218, .chat, dark: true)),
+                            source: .window(id: 105, app: "Slack", title: "#design-review"), thumbnail: thumb(320, 218, .chat, dark: true), bundleID: "com.tinyspeck.slackmacgap"),
             AvailableSource(id: "win-106", kind: .window, title: "Terminal — zsh", appName: "Terminal",
                             pixelSize: PixelSize(width: 1800, height: 1100), frame: CGRect(x: 80, y: 60, width: 900, height: 550),
-                            source: .window(id: 106, app: "Terminal", title: "zsh"), thumbnail: thumb(320, 196, .code, dark: true)),
-        ]
+                            source: .window(id: 106, app: "Terminal", title: "zsh"), thumbnail: thumb(320, 196, .code, dark: true), bundleID: "com.apple.Terminal"),
+        ] + offScreenWindows
     }
 
-    func thumbnail(for source: AvailableSource, maxPixelWidth: Int) async -> CGImage? { source.thumbnail }
+    /// Windows on other desktops or minimized (no thumbnails: they can't be captured), grouped by app
+    /// as `CaptureSources.arrange` orders them. Apps every Mac has, so snapshots show real icons.
+    static let offScreenWindows: [AvailableSource] = [
+        ("win-201", "Mail", "com.apple.mail", "Inbox — 3 unread", CGSize(width: 1280, height: 820)),
+        ("win-202", "Notes", "com.apple.Notes", "Demo script", CGSize(width: 900, height: 640)),
+        ("win-203", "Preview", "com.apple.Preview", "Invoice-0193.pdf", CGSize(width: 820, height: 1060)),
+        ("win-204", "Safari", "com.apple.Safari", "Release notes 2.4", CGSize(width: 1440, height: 900)),
+    ].enumerated().map { i, w in
+        AvailableSource(id: w.0, kind: .window, title: w.3, appName: w.1,
+                        pixelSize: PixelSize(width: Int(w.4.width) * 2, height: Int(w.4.height) * 2),
+                        frame: CGRect(origin: CGPoint(x: 120, y: 90), size: w.4),
+                        source: .window(id: CGWindowID(201 + i), app: w.1, title: w.3),
+                        isOnScreen: false, bundleID: w.2)
+    }
+
+    /// Off-screen windows `bringOnScreen` fails for in mocks (a minimized window that stays put).
+    static let stuckOffScreen: Set<String> = ["win-203"]
+
+    func thumbnail(for source: AvailableSource, maxPixelWidth: Int) async -> CGImage? { source.isOnScreen ? source.thumbnail : nil }
+
+    func bringOnScreen(_ source: AvailableSource) async -> Bool {
+        guard !source.isOnScreen else { return true }
+        try? await Task.sleep(for: .milliseconds(150))
+        return !Self.stuckOffScreen.contains(source.id)
+    }
 
     func microphones() -> [MediaDevice] {
         [MediaDevice(id: "builtin-mic", name: "MacBook Pro Microphone", isDefault: true, transport: .builtIn, sampleRate: 48_000),

@@ -24,6 +24,27 @@ import ReelbirdRender
         prefs.microphoneID = MicPolicy.automaticID
     }
 
+    /// Picker Window tab: windows on other desktops are listed in their own section, search covers
+    /// both, Start brings an off-screen window on screen or says what to do.
+    private static func windowSections(services: Services, prefs: Preferences, check: (Bool, String) -> Void) async {
+        let picker = SourcePickerModel(services: services, prefs: prefs)
+        picker.apply(MockCaptureSources.sources(withThumbnails: false))
+        check(!picker.onScreenWindows.isEmpty && picker.onScreenWindows.allSatisfy { $0.isOnScreen }, "on-screen windows listed")
+        check(picker.offScreenWindows.map(\.appName) == ["Mail", "Notes", "Preview", "Safari"], "windows on other desktops listed, grouped by app")
+        picker.windowQuery = "safari"
+        check(picker.onScreenWindows.count == 1 && picker.offScreenWindows.count == 1, "search finds windows in both sections")
+        picker.windowQuery = ""
+        let onScreen = picker.onScreenWindows[0].source
+        check(await picker.bringOnScreenIfNeeded(onScreen) && picker.notice == nil, "an on-screen window starts right away")
+        check(await picker.bringOnScreenIfNeeded(picker.offScreenWindows[3].source) && picker.notice == nil,
+              "an off-screen window that comes on screen starts")
+        let stuck = picker.offScreenWindows[2]
+        picker.selectedWindowID = stuck.id
+        let ok = await picker.bringOnScreenIfNeeded(stuck.source)
+        check(!ok && picker.notice == "Bring “\(stuck.title)” onto your screen, then press Start.", "a window that stays off screen gets a notice")
+        check(picker.canRecord, "the picker stays usable after the notice")
+    }
+
     static func run() async -> Bool {
         var failures: [String] = []
         func check(_ ok: Bool, _ what: String) { print(ok ? "  ok   \(what)" : "  FAIL \(what)"); if !ok { failures.append(what) } }
@@ -67,6 +88,7 @@ import ReelbirdRender
         check(session.microphoneTakeSummary.map { !$0.isEssentiallySilent } == true, "mic take summary reported (not silent)")
 
         microphoneChoice(services: services, prefs: prefs, check: check)
+        await windowSections(services: services, prefs: prefs, check: check)
 
         // Library
         let store = LibraryStore(services: services, prefs: prefs)

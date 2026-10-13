@@ -62,6 +62,24 @@ import SwiftUI
             })
         }
 
+        // Window tab: scrolled to windows on other desktops / minimized, and a search that matches
+        // windows in both sections.
+        for (name, query, reveal) in [("picker-window-other", "", true), ("picker-window-search", "safari", false)] {
+            scenes.append(Scene(name: name, size: CGSize(width: 620, height: 600), backdrop: true) {
+                prefs.sourceTab = .window
+                prefs.microphoneID = MicPolicy.automaticID
+                let picker = SourcePickerModel(services: services, prefs: prefs)
+                picker.apply(sources)
+                picker.windowQuery = query
+                picker.revealOtherWindows = reveal
+                picker.selectedWindowID = "win-204"
+                picker.setMicLevelForSnapshot(0.62)
+                picker.shareAvailable = true
+                prefs.shareWhileRecording = false
+                return AnyView(SourcePickerView(model: picker, controller: nil, prefs: prefs))
+            })
+        }
+
         scenes.append(Scene(name: "picker-access", size: CGSize(width: 620, height: 640), backdrop: true) {
             prefs.sourceTab = .display
             let picker = SourcePickerModel(services: services, prefs: prefs)

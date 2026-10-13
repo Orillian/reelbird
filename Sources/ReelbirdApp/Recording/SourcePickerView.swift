@@ -142,18 +142,49 @@ struct SourcePickerView: View {
             .padding(.horizontal, 8)
             .frame(height: 26)
             .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.fieldFill))
-            ScrollView(.vertical) {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.Space.s), count: 3), spacing: Theme.Space.s) {
-                    ForEach(model.windows) { w in
-                        SourceTile(source: w, selected: model.selectedWindowID == w.id, large: false)
-                            .onTapGesture { model.selectedWindowID = w.id }
-                            .simultaneousGesture(TapGesture(count: 2).onEnded { controller?.startFromPicker() })
-                            .accessibilityAction { model.selectedWindowID = w.id }
+            let here = model.onScreenWindows
+            let other = model.offScreenWindows
+            if here.isEmpty && other.isEmpty {
+                Text(model.hasWindows ? "No windows match “\(model.windowQuery.trimmingCharacters(in: .whitespaces))”" : "No windows to record")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical) {
+                        VStack(alignment: .leading, spacing: Theme.Space.s) {
+                            // One section needs no heading; the off-screen one always says why its
+                            // tiles have no preview.
+                            if !here.isEmpty {
+                                if !other.isEmpty { WindowSectionHeader(title: "On this desktop") }
+                                windowGrid(here)
+                            }
+                            if !other.isEmpty {
+                                WindowSectionHeader(title: "Other desktops & minimized")
+                                    .padding(.top, here.isEmpty ? 0 : Theme.Space.xs)
+                                    .id(Self.otherSectionID)
+                                windowGrid(other)
+                            }
+                        }
+                        .padding(2)
                     }
+                    .scrollIndicators(.automatic)
+                    .onAppear { if model.revealOtherWindows { proxy.scrollTo(Self.otherSectionID, anchor: .top) } }
                 }
-                .padding(2)
             }
-            .scrollIndicators(.never)
+        }
+    }
+
+    private static let otherSectionID = "other-windows"
+
+    private func windowGrid(_ list: [AvailableSource]) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.Space.s), count: 3), spacing: Theme.Space.s) {
+            ForEach(list) { w in
+                SourceTile(source: w, selected: model.selectedWindowID == w.id, large: false)
+                    .onTapGesture { model.selectedWindowID = w.id }
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { controller?.startFromPicker() })
+                    .accessibilityAction { model.selectedWindowID = w.id }
+            }
         }
     }
 
@@ -385,6 +416,9 @@ struct SourceTile: View {
     let selected: Bool
     let large: Bool
 
+    /// A window on another desktop or minimized: no preview, so a shorter tile with the app icon.
+    private var offScreen: Bool { source.kind == .window && !source.isOnScreen }
+
     var body: some View {
         VStack(alignment: .leading, spacing: large ? 7 : 5) {
             ZStack {
@@ -396,18 +430,27 @@ struct SourceTile: View {
                         .clipShape(RoundedRectangle(cornerRadius: large ? 5 : 4, style: .continuous))
                         .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
                         .padding(large ? 8 : 6)
+                } else if offScreen {
+                    // ScreenCaptureKit can't take a picture of a window that isn't on screen.
+                    VStack(spacing: 3) {
+                        AppIconView(source: source).frame(width: 30, height: 30)
+                        Text("Not on screen")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    }
                 } else {
                     Image(systemName: source.kind == .display ? "display" : "macwindow")
                         .font(.system(size: 20, weight: .light)).foregroundStyle(.tertiary)
                 }
             }
-            .aspectRatio(16 / 10, contentMode: .fit)
+            .aspectRatio(offScreen ? 2 : 16 / 10, contentMode: .fit)
             .overlay(
                 RoundedRectangle(cornerRadius: large ? 9 : 7, style: .continuous)
                     .strokeBorder(selected ? Theme.accent : Color.primary.opacity(0.06), lineWidth: selected ? 2 : 0.5)
             )
             HStack(spacing: 5) {
-                if source.kind == .window { AppIconView(appName: source.appName).frame(width: 14, height: 14) }
+                // The off-screen tile already shows the icon large.
+                if source.kind == .window && !offScreen { AppIconView(source: source).frame(width: 14, height: 14) }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(source.kind == .window ? (source.appName ?? source.title) : source.title)
                         .font(.system(size: large ? 12 : 11, weight: .medium))
@@ -421,23 +464,48 @@ struct SourceTile: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(source.kind == .window ? "\(source.appName ?? "") window, \(source.title)" : source.title)
+        .accessibilityLabel(source.kind == .window
+                            ? "\(source.appName ?? "") window, \(source.title)\(source.isOnScreen ? "" : ", not on screen")"
+                            : source.title)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
 
-/// The running app's icon, or a neutral glyph.
-struct AppIconView: View {
-    let appName: String?
+/// A small heading above a group of window tiles.
+struct WindowSectionHeader: View {
+    let title: String
     var body: some View {
-        if let icon = Self.icon(for: appName) {
-            Image(nsImage: icon).resizable()
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The owning app's icon, or a neutral glyph.
+struct AppIconView: View {
+    var processID: pid_t?
+    var bundleID: String?
+    var appName: String?
+
+    init(source: AvailableSource) {
+        processID = source.processID; bundleID = source.bundleID; appName = source.appName
+    }
+
+    var body: some View {
+        if let icon = Self.icon(processID: processID, bundleID: bundleID, name: appName) {
+            Image(nsImage: icon).resizable().interpolation(.high)
         } else {
             Image(systemName: "app.dashed").resizable().foregroundStyle(.tertiary)
         }
     }
 
-    @MainActor static func icon(for name: String?) -> NSImage? {
+    /// By process (exact, even for two copies of an app), then bundle ID, then name.
+    @MainActor static func icon(processID: pid_t?, bundleID: String?, name: String?) -> NSImage? {
+        if let processID, let icon = NSRunningApplication(processIdentifier: processID)?.icon { return icon }
+        if let bundleID, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            return NSWorkspace.shared.icon(forFile: url.path)
+        }
         guard let name else { return nil }
         if let running = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name })?.icon { return running }
         let dirs = ["/Applications", "/System/Applications", "/System/Applications/Utilities",

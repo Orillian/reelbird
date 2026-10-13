@@ -115,6 +115,16 @@ struct AreaSelection: Equatable {
         guard !q.isEmpty else { return all }
         return all.filter { $0.title.localizedCaseInsensitiveContains(q) || ($0.appName ?? "").localizedCaseInsensitiveContains(q) }
     }
+    /// Windows on the current desktop, front to back (search applied).
+    var onScreenWindows: [AvailableSource] { windows.filter(\.isOnScreen) }
+    /// Windows on other desktops, in full-screen Spaces or minimized, grouped by app (search applied).
+    var offScreenWindows: [AvailableSource] { windows.filter { !$0.isOnScreen } }
+    /// Any windows at all, before search.
+    var hasWindows: Bool { sources.contains { $0.kind == .window } }
+    /// Opens the Window tab scrolled to the off-screen section (snapshots).
+    var revealOtherWindows = false
+    /// Start is waiting for an off-screen window to come on screen.
+    private(set) var bringingOnScreen = false
 
     /// Under this much free space the picker warns before you start (the control bar warns at 2 GB).
     static let lowDiskThreshold: Int64 = 5_000_000_000
@@ -194,7 +204,8 @@ struct AreaSelection: Equatable {
     /// Fills in previews for sources listed without one, displays first.
     private func loadThumbnails() {
         thumbnailTask?.cancel()
-        let pending = sources.filter { $0.thumbnail == nil }.sorted { $0.kind == .display && $1.kind != .display }
+        // Off-screen windows can't be captured (their tiles show the app icon instead).
+        let pending = sources.filter { $0.thumbnail == nil && $0.isOnScreen }.sorted { $0.kind == .display && $1.kind != .display }
         guard !pending.isEmpty else { return }
         let capture = services.capture
         thumbnailTask = Task { [weak self] in
@@ -271,6 +282,20 @@ struct AreaSelection: Equatable {
         return found
     }
 
+    /// Before recording a window that isn't on screen (another desktop, minimized), asks macOS to
+    /// bring it here and waits up to about 2 s. When it doesn't come, the picker says what to do
+    /// instead of the recording failing.
+    func bringOnScreenIfNeeded(_ source: CaptureSource) async -> Bool {
+        guard case .window(let id, _, _) = source,
+              let window = sources.first(where: { if case .window(let wid, _, _) = $0.source { wid == id } else { false } }),
+              !window.isOnScreen else { return true }
+        bringingOnScreen = true
+        defer { bringingOnScreen = false }
+        if await services.capture.bringOnScreen(window) { return true }
+        notice = "Bring “\(window.title)” onto your screen, then press Start."
+        return false
+    }
+
     /// The capture source for the current tab and selection.
     func captureSource() -> CaptureSource? {
         switch prefs.sourceTab {
@@ -289,7 +314,7 @@ struct AreaSelection: Equatable {
     }
 
     var canRecord: Bool {
-        if needsScreenPermission { return false }
+        if needsScreenPermission || bringingOnScreen { return false }
         return switch prefs.sourceTab {
         case .display: selectedDisplayID != nil
         case .window: selectedWindowID != nil

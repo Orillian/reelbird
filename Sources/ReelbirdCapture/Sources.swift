@@ -23,25 +23,60 @@ public struct AvailableSource: Identifiable, Hashable, Sendable {
     public var source: CaptureSource
     /// Optional preview; `CaptureSources.list()` leaves it `nil` (use `CaptureSources.thumbnail`).
     public var thumbnail: CGImage?
+    /// The window is on the current Space of one of the displays. `false` for windows on other
+    /// desktops, in another app's full-screen Space, minimized or in a hidden app; macOS gives no
+    /// public signal that tells these apart. Always `true` for displays.
+    public var isOnScreen: Bool
+    /// Owning app's process for windows (app icon, bringing the window on screen).
+    public var processID: pid_t?
+    /// Owning app's bundle identifier for windows.
+    public var bundleID: String?
 
     public init(id: String, kind: Kind, title: String, appName: String?, pixelSize: PixelSize,
-                frame: CGRect, source: CaptureSource, thumbnail: CGImage? = nil) {
+                frame: CGRect, source: CaptureSource, thumbnail: CGImage? = nil,
+                isOnScreen: Bool = true, processID: pid_t? = nil, bundleID: String? = nil) {
         self.id = id; self.kind = kind; self.title = title; self.appName = appName
         self.pixelSize = pixelSize; self.frame = frame; self.source = source; self.thumbnail = thumbnail
+        self.isOnScreen = isOnScreen; self.processID = processID; self.bundleID = bundleID
     }
 }
 
-/// Lists displays and on-screen windows (our own windows excluded). Needs Screen Recording permission.
+/// A window as the window server reports it, before Reelbird decides whether it is worth listing.
+public struct WindowCandidate: Hashable, Sendable {
+    public var id: CGWindowID
+    public var layer: Int
+    /// Global points, top-left origin.
+    public var frame: CGRect
+    public var title: String?
+    public var appName: String
+    public var bundleID: String
+    public var processID: pid_t
+    public var isOnScreen: Bool
+
+    public init(id: CGWindowID, layer: Int = 0, frame: CGRect, title: String?, appName: String, bundleID: String,
+                processID: pid_t, isOnScreen: Bool) {
+        self.id = id; self.layer = layer; self.frame = frame; self.title = title; self.appName = appName
+        self.bundleID = bundleID; self.processID = processID; self.isOnScreen = isOnScreen
+    }
+
+    /// The title to show: the window's own, or the app name for an untitled window.
+    public var displayTitle: String { (title?.isEmpty == false ? title : nil) ?? appName }
+}
+
+/// Lists displays and app windows (our own windows excluded). Needs Screen Recording permission.
 public enum CaptureSources {
     public static func list() async throws -> [AvailableSource] {
         let content: SCShareableContent
         do {
-            content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            // Every window, not just the current Space's: windows on other desktops, in full-screen
+            // Spaces and minimized ones are listed too (as off-screen).
+            content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
         } catch {
             throw CaptureError.permissionDenied(.screen)
         }
-        let names = await MainActor.run { displayNames() }
-        let pid = getpid()
+        let (names, regularApps) = await MainActor.run {
+            (displayNames(), Set(NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }.map(\.processIdentifier)))
+        }
         var out: [AvailableSource] = []
         for d in content.displays {
             let scale = displayScale(d.displayID)
@@ -52,39 +87,106 @@ public enum CaptureSources {
                 frame: CGDisplayBounds(d.displayID),
                 source: .display(id: d.displayID, name: name)))
         }
-        let hidden: Set<String> = ["com.apple.dock", "com.apple.WindowManager", "com.apple.controlcenter",
-                                   "com.apple.notificationcenterui", "com.apple.Spotlight"]
-        let invisible = transparentWindowIDs()
-        for w in content.windows {
-            // Real app windows only: normal layer, visible, big enough to be worth recording. Small floating
-            // helpers (tool palettes, "controls" panels, badges) and transparent overlays are left out.
-            guard w.windowLayer == 0, w.isOnScreen, w.frame.width >= 160, w.frame.height >= 100,
-                  !invisible.contains(w.windowID) else { continue }
-            guard let app = w.owningApplication, app.processID != pid, !hidden.contains(app.bundleIdentifier) else { continue }
-            let untitled = w.title?.isEmpty != false
-            if untitled && (w.frame.width < 400 || w.frame.height < 300) { continue }
-            let title = (untitled ? nil : w.title) ?? app.applicationName
-            guard !title.isEmpty else { continue }
+        let candidates = content.windows.compactMap { w -> WindowCandidate? in
+            guard let app = w.owningApplication else { return nil }
+            return WindowCandidate(id: w.windowID, layer: w.windowLayer, frame: w.frame, title: w.title,
+                                   appName: app.applicationName, bundleID: app.bundleIdentifier,
+                                   processID: app.processID, isOnScreen: w.isOnScreen)
+        }
+        let order = windowServerOrder()
+        let rules = WindowRules(ownProcessID: getpid(), ownBundleID: Bundle.main.bundleIdentifier,
+                                transparent: order.transparent, regularApps: regularApps)
+        for w in arrange(candidates, rules: rules, zOrder: order.zOrder) {
             let scale = scaleForPoint(CGPoint(x: w.frame.midX, y: w.frame.midY))
+            let title = w.displayTitle
             out.append(AvailableSource(
-                id: "window-\(w.windowID)", kind: .window, title: title, appName: app.applicationName,
+                id: "window-\(w.id)", kind: .window, title: title, appName: w.appName,
                 pixelSize: PixelSize(width: even(w.frame.width * scale), height: even(w.frame.height * scale)),
                 frame: w.frame,
-                source: .window(id: w.windowID, app: app.applicationName, title: title)))
+                source: .window(id: w.id, app: w.appName, title: title),
+                isOnScreen: w.isOnScreen, processID: w.processID, bundleID: w.bundleID))
         }
         return out
     }
 
-    /// On-screen windows the window server draws fully transparent (invisible overlays some apps keep).
-    static func transparentWindowIDs() -> Set<CGWindowID> {
-        guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-                as? [[String: Any]] else { return [] }
-        var out = Set<CGWindowID>()
-        for w in info {
-            if let alpha = w[kCGWindowAlpha as String] as? Double, alpha < 0.05,
-               let id = w[kCGWindowNumber as String] as? Int { out.insert(CGWindowID(id)) }
+    /// What `arrange` keeps.
+    public struct WindowRules: Sendable {
+        /// System UI that draws normal-layer windows nobody wants to record.
+        public static let systemBundleIDs: Set<String> = [
+            "com.apple.dock", "com.apple.WindowManager", "com.apple.controlcenter",
+            "com.apple.notificationcenterui", "com.apple.Spotlight",
+        ]
+        public var ownProcessID: pid_t
+        public var ownBundleID: String?
+        /// Windows the window server draws fully transparent (invisible overlays some apps keep).
+        public var transparent: Set<CGWindowID> = []
+        /// Processes of Dock apps. An off-screen window of anything else (menu bar apps, agents,
+        /// services) is a hidden helper, not something to record. `nil` skips the check.
+        public var regularApps: Set<pid_t>?
+
+        public init(ownProcessID: pid_t, ownBundleID: String? = nil, transparent: Set<CGWindowID> = [], regularApps: Set<pid_t>? = nil) {
+            self.ownProcessID = ownProcessID; self.ownBundleID = ownBundleID
+            self.transparent = transparent; self.regularApps = regularApps
         }
-        return out
+    }
+
+    /// Keeps real app windows and orders them for the picker: on-screen windows front to back
+    /// (`zOrder`: window ID → stacking index, 0 = frontmost), then off-screen windows grouped by app
+    /// (apps A–Z, titles A–Z within an app).
+    ///
+    /// Real means normal layer, at least 160 × 100 pt, not transparent, not ours, not system UI;
+    /// an untitled window must be at least 400 × 300 pt. Small floating helpers (tool palettes,
+    /// "controls" panels, badges) are left out. Off-screen windows must also have a title and belong
+    /// to a Dock app: apps keep plenty of hidden untitled windows that were never meant to be seen.
+    public static func arrange(_ windows: [WindowCandidate], rules: WindowRules, zOrder: [CGWindowID: Int]) -> [WindowCandidate] {
+        let kept = windows.filter { w in
+            guard w.layer == 0, w.frame.width >= 160, w.frame.height >= 100, !rules.transparent.contains(w.id) else { return false }
+            guard w.processID != rules.ownProcessID, !WindowRules.systemBundleIDs.contains(w.bundleID) else { return false }
+            if let own = rules.ownBundleID, w.bundleID == own { return false }
+            let untitled = w.title?.isEmpty != false
+            if untitled && (w.frame.width < 400 || w.frame.height < 300) { return false }
+            if !w.isOnScreen {
+                if untitled { return false }
+                if let regular = rules.regularApps, !regular.contains(w.processID) { return false }
+            }
+            return !w.displayTitle.isEmpty
+        }
+        let indexed = kept.enumerated().map { (offset: $0.offset, window: $0.element) }
+        let onScreen = indexed.filter(\.window.isOnScreen).sorted { a, b in
+            let za = zOrder[a.window.id] ?? Int.max, zb = zOrder[b.window.id] ?? Int.max
+            return za != zb ? za < zb : a.offset < b.offset
+        }
+        let offScreen = indexed.filter { !$0.window.isOnScreen }.sorted { a, b in
+            let app = a.window.appName.localizedStandardCompare(b.window.appName)
+            if app != .orderedSame { return app == .orderedAscending }
+            if a.window.processID != b.window.processID { return a.window.processID < b.window.processID }
+            let title = a.window.displayTitle.localizedStandardCompare(b.window.displayTitle)
+            return title != .orderedSame ? title == .orderedAscending : a.offset < b.offset
+        }
+        return (onScreen + offScreen).map(\.window)
+    }
+
+    /// Front-to-back stacking of on-screen windows and the transparent ones, from the window server
+    /// (no permission needed; ScreenCaptureKit doesn't promise any order).
+    static func windowServerOrder() -> (zOrder: [CGWindowID: Int], transparent: Set<CGWindowID>) {
+        guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return ([:], []) }
+        var order: [CGWindowID: Int] = [:]
+        var transparent = Set<CGWindowID>()
+        for (i, w) in info.enumerated() {
+            guard let n = w[kCGWindowNumber as String] as? Int else { continue }
+            let id = CGWindowID(n)
+            order[id] = i
+            if let alpha = w[kCGWindowAlpha as String] as? Double, alpha < 0.05 { transparent.insert(id) }
+        }
+        return (order, transparent)
+    }
+
+    /// Whether the window server currently shows this window (cheap, no permission needed).
+    public static func isOnScreen(windowID: CGWindowID) -> Bool {
+        guard let list = CGWindowListCreateDescriptionFromArray([NSNumber(value: windowID)] as CFArray) as? [[String: Any]],
+              let w = list.first else { return false }
+        return (w[kCGWindowIsOnscreen as String] as? Bool) ?? false
     }
 
     /// A preview image of a source, at most `maxPixelWidth` wide.

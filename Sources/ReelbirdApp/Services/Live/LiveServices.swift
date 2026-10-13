@@ -19,6 +19,10 @@ struct LiveCaptureSources: CaptureSourceService {
     func thumbnail(for source: AvailableSource, maxPixelWidth: Int) async -> CGImage? {
         try? await CaptureSources.thumbnail(for: source, maxPixelWidth: maxPixelWidth)
     }
+    func bringOnScreen(_ source: AvailableSource) async -> Bool {
+        guard case .window(let id, _, let title) = source.source, let pid = source.processID else { return true }
+        return await WindowActivation.bringOnScreen(windowID: id, processID: pid, title: title)
+    }
     func microphones() -> [MediaDevice] { Devices.microphones() }
     func cameras() -> [MediaDevice] { Devices.cameras() }
     func inputVolume(deviceID: String) -> Float? { Devices.inputVolume(deviceID: deviceID) }
