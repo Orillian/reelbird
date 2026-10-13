@@ -3,7 +3,7 @@ import Foundation
 
 // Entry point. `--snapshot <dir> [filter]` renders the UI to PNGs (design review) and exits;
 // `--selftest` / `--selftest-live` drive the app's models against mock / real services and exit;
-// `--probe-thumbnails <dir>` checks which off-screen windows macOS lets us capture.
+// `--probe-thumbnails <dir>` (debug builds only) checks which off-screen windows macOS lets us capture.
 let args = CommandLine.arguments
 if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
     let dir = URL(fileURLWithPath: args[i + 1], isDirectory: true)
@@ -15,6 +15,7 @@ if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
     exit(0)
 }
 
+#if DEBUG
 if let i = args.firstIndex(of: "--probe-thumbnails"), i + 1 < args.count {
     let dir = URL(fileURLWithPath: args[i + 1], isDirectory: true)
     MainActor.assumeIsolated {
@@ -23,6 +24,7 @@ if let i = args.firstIndex(of: "--probe-thumbnails"), i + 1 < args.count {
     }
     RunLoop.main.run()
 }
+#endif
 
 if args.contains("--selftest") || args.contains("--selftest-live") {
     let live = args.contains("--selftest-live")

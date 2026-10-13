@@ -1,8 +1,10 @@
+#if DEBUG
 import AppKit
 import ScreenCaptureKit
 
 /// `--probe-thumbnails <dir>`: tries to capture every off-screen app window (other Spaces, minimized)
-/// with ScreenCaptureKit and writes what it gets, to learn what macOS allows. Dev tool.
+/// with ScreenCaptureKit and writes what it gets, to learn what macOS allows. Dev tool, debug builds only:
+/// `swift run ReelbirdApp --probe-thumbnails /tmp/probe` (from a terminal with Screen Recording permission).
 enum ThumbnailProbe {
     static func run(dir: URL) async {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -53,3 +55,4 @@ enum ThumbnailProbe {
         return (sum / n, opaque / n)
     }
 }
+#endif
