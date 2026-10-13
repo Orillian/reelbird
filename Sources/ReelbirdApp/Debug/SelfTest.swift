@@ -69,6 +69,16 @@ import ReelbirdRender
                                                             destination: ShareDestination(endpoint: "https://e", bucket: "b", accessKeyID: "k", publicBaseURL: "https://p"),
                                                             secret: "s"))
         } catch { print("makeSession failed: \(error)"); return false }
+        session.updateCameraBubble(frame: CGRect(x: 1200, y: 700, width: 200, height: 200), shape: .portrait, atHostTime: nil)
+        check((session as? MockRecordingSession)?.cameraUpdates.last?.shape == .portrait, "camera bubble place reaches the session")
+        if let screen = NSScreen.screens.first {
+            let size = NSSize(width: 212, height: 212)
+            let o = CameraBubbleController.defaultOrigin(size: size, screen: screen)
+            let inset = CameraLayout().inset * min(screen.frame.width, screen.frame.height)
+            check(abs(screen.frame.minY + inset - (o.y + CameraBubbleController.padding)) < 0.5
+                  && o.x + size.width - CameraBubbleController.padding <= screen.frame.maxX - inset + 0.5,
+                  "live bubble starts bottom right at the editor's inset")
+        }
         var last = RecorderStatus()
         let watcher = Task { for await s in session.status { last = s } }
         do { try await session.start() } catch { check(false, "start: \(error)") }
@@ -119,6 +129,45 @@ import ReelbirdRender
         check(editor.edit.crop == NormRect(x: 0, y: 0.1, width: 1, height: 0.9), "Done keeps the drawn crop")
         editor.undoManager.undo()
         check(editor.edit.crop == nil, "crop undoes in one step")
+        // Camera: drag on the preview (one undo step), moves, corner presets. Each action gets its own run loop
+        // turn, so it is its own undo group as with real events.
+        func nextEvent() async { try? await Task.sleep(for: .milliseconds(20)) }
+        editor.seek(source: 0.5)
+        editor.beginCameraDrag()
+        editor.updateCameraDrag(NormPoint(x: 0.5, y: 0.5), guides: [.centerX, .centerY])
+        check(editor.previewEdit.camera.position == NormPoint(x: 0.5, y: 0.5) && editor.edit.camera.position == NormPoint(x: 1, y: 1),
+              "dragging the bubble previews without editing")
+        editor.updateCameraDrag(NormPoint(x: 0.25, y: 0.75), guides: [])
+        editor.endCameraDrag()
+        await nextEvent()
+        check(editor.edit.camera.position == NormPoint(x: 0.25, y: 0.75), "drag sets the camera place")
+        editor.undoManager.undo()
+        check(editor.edit.camera.position == NormPoint(x: 1, y: 1) && editor.cameraCorner == .bottomRight, "camera drag undoes in one step")
+        editor.undoManager.redo()
+        check(editor.edit.camera.position == NormPoint(x: 0.25, y: 0.75), "camera drag redoes")
+        editor.change("Moves") { $0.camera.moves = [CameraLayout.Move(t: 1, x: 0, y: 0), CameraLayout.Move(t: 2, x: 1, y: 0)] }
+        await nextEvent()
+        editor.seek(source: 1.5)
+        editor.beginCameraDrag()
+        editor.updateCameraDrag(NormPoint(x: 0, y: 0.5), guides: [.left])
+        editor.endCameraDrag()
+        await nextEvent()
+        check(editor.edit.camera.moves[0].position == NormPoint(x: 0, y: 0.5) && editor.edit.camera.position == NormPoint(x: 0.25, y: 0.75),
+              "dragging mid-video edits the move in effect")
+        editor.deleteCameraMove(at: 1)
+        await nextEvent()
+        check(editor.edit.camera.moves.count == 1, "a camera move deletes")
+        editor.keepCameraInOnePlace()
+        await nextEvent()
+        check(editor.edit.camera.moves.isEmpty, "Keep in One Place drops the moves")
+        editor.undoManager.undo()
+        check(editor.edit.camera.moves.count == 1, "Keep in One Place undoes")
+        editor.setCameraCorner(.topLeft)
+        await nextEvent()
+        check(editor.cameraCorner == .topLeft && editor.edit.camera.moves.isEmpty, "a corner preset pins the camera")
+        editor.undoManager.undo()
+        check(editor.edit.camera.moves.count == 1, "undo brings the moves back")
+        editor.setCameraCorner(.bottomRight)
         editor.seek(source: 1)
         editor.addZoomAtPlayhead()
         check(editor.selectedZoom?.source == .user, "manual zoom added and selected")

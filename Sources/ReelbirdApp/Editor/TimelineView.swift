@@ -249,9 +249,9 @@ struct TimelineContent: View {
                 let size = shape.glyphSize
                 Button { model.seek(source: move.t) } label: {
                     CameraBubbleShape(shape: shape)
-                        .fill(Theme.ink.opacity(0.7))
+                        .fill(Theme.ink)
                         .overlay(CameraBubbleShape(shape: shape).stroke(Theme.panel, lineWidth: 1))
-                        .frame(width: size.width * 0.8, height: size.height * 0.8)
+                        .frame(width: size.width * 0.9, height: size.height * 0.9)
                         .frame(width: 16, height: 16)
                         .contentShape(Rectangle())
                 }

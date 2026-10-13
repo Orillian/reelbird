@@ -323,17 +323,16 @@ struct CameraSection: View {
             } else {
                 Toggle("Show camera", isOn: model.binding(\.camera.visible, "Show Camera")).toggleStyle(.brand).font(.system(size: 12))
                 if model.edit.camera.visible {
-                    FieldRow(label: "Shape") { shapePicker }
+                    shapePicker
                     FieldRow(label: "Size") {
                         ValueSlider(value: model.binding(\.camera.size, "Camera Size"), range: 0.1...0.45) { "\(Int($0 * 100))%" }
                     }
                     FieldRow(label: "Position") {
-                        HStack(spacing: Theme.Space.m) {
+                        VStack(alignment: .leading, spacing: 6) {
                             cornerPicker
-                            Text("Drag the bubble on the preview to place it anywhere.")
+                            Text("Or drag it on the preview.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     if !model.edit.camera.moves.isEmpty { moves }
@@ -351,14 +350,14 @@ struct CameraSection: View {
             ForEach(CameraLayout.Shape.allCases, id: \.self) { shape in
                 let selected = shape == current
                 Button { withAnimation(Theme.snappy) { model.change("Camera Shape") { $0.camera.shape = shape } } } label: {
-                    HStack(spacing: 5) {
-                        CameraShapeGlyph(shape: shape, filled: selected)
-                            .frame(width: 12, height: 13)
-                        Text(shape.title).font(.system(size: 11.5, weight: selected ? .semibold : .medium))
+                    VStack(spacing: 4) {
+                        CameraShapeGlyph(shape: shape, filled: selected, scale: 1.3)
+                            .frame(height: 16)
+                        Text(shape.title).font(.system(size: 11, weight: selected ? .semibold : .medium))
                     }
                     .foregroundStyle(selected ? Color.primary : Color.secondary)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 24)
+                    .frame(height: 44)
                     .background {
                         if selected {
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
