@@ -59,6 +59,14 @@ public enum CameraPlacement {
     /// the same shape outside Metal. `perCorner` points per corner arc.
     public static func outline(shape: CameraLayout.Shape, width w: Double, height h: Double, perCorner: Int = 24) -> [(x: Double, y: Double)] {
         let (r, n) = corner(shape: shape, width: w, height: h)
+        return outline(width: w, height: h, radius: r, exponent: n, perCorner: perCorner)
+    }
+
+    /// The outline for any corner radius (clamped to half the shorter side) and superellipse exponent, so the
+    /// live bubble can morph smoothly between shapes (circle: half the shorter side, exponent 2).
+    public static func outline(width w: Double, height h: Double, radius: Double, exponent: Double,
+                               perCorner: Int = 24) -> [(x: Double, y: Double)] {
+        let r = min(max(0, radius), min(w, h) / 2), n = max(1, exponent)
         let k = max(2, perCorner)
         // Corner centres, going clockwise: top-right, bottom-right, bottom-left, top-left.
         let centres = [(w - r, r, 1.0, -1.0), (w - r, h - r, 1.0, 1.0), (r, h - r, -1.0, 1.0), (r, r, -1.0, -1.0)]
@@ -240,6 +248,19 @@ public enum CameraPlacement {
         }
         layout.moves = places.dropFirst().map { CameraLayout.Move(t: $0.t, x: $0.p.x, y: $0.p.y) }
     }
+}
+
+/// How the camera bubble is drawn, shared by the live bubble, the editor preview and the renderer so the
+/// bubble looks the same everywhere: a soft drop shadow and a faint hairline rim, both in proportion to the
+/// bubble's width (points live, pixels in the video). No heavy ring.
+public enum CameraBubbleStyle {
+    /// The rim: white at this opacity, drawn just inside the edge.
+    public static let rimOpacity = 0.18
+    public static func rimWidth(bubbleWidth w: Double) -> Double { max(1, 0.006 * w) }
+    /// The shadow: black at this opacity, fading out over `shadowRadius` past the edge, dropped by `shadowOffset`.
+    public static let shadowOpacity = 0.3
+    public static func shadowRadius(bubbleWidth w: Double) -> Double { 0.06 * w }
+    public static func shadowOffset(bubbleWidth w: Double) -> Double { 0.02 * w }
 }
 
 /// The bubble's place over recording time: the start place, then an eased glide for each move. Built once;

@@ -197,7 +197,7 @@ public struct CameraLayout: Codable, Hashable, Sendable {
     /// Preset place, used for whichever of `x` / `y` is `nil`.
     public var corner: Corner = .bottomRight
     /// Gap between the bubble and the canvas edge it is against, as a fraction of the shorter output side.
-    public var inset: Double = 0.035
+    public var inset: Double = 0.025
     /// Where the bubble sits, 0...1 across the room it can move in on the canvas: 0 = against the left (top)
     /// edge at `inset`, 1 = against the right (bottom) edge, 0.5 = centred. `nil` = from `corner`. Stays put
     /// relative to the frame when the aspect, padding, crop or zoom change, and never leaves the canvas.

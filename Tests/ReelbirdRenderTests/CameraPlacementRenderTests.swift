@@ -44,7 +44,7 @@ private func cameraBundle(seconds: Double = 4, events: [InputEvent]? = nil) asyn
     return try await Synthetic.makeBundle(o)
 }
 
-// Canvas 960×540: bubble 0.22 × 540 = 118.8 px, inset 0.035 × 540 = 18.9 px; room 803.3 × 383.3 px.
+// Canvas 960×540: bubble 0.22 × 540 = 118.8 px, inset 0.025 × 540 = 13.5 px; room 814.2 × 394.2 px.
 
 @Test func cameraBubbleRendersAtItsPlaceAndGlidesBetweenMoves() async throws {
     let bundle = try await cameraBundle()
@@ -53,7 +53,7 @@ private func cameraBundle(seconds: Double = 4, events: [InputEvent]? = nil) asyn
     e.camera.position = NormPoint(x: 0, y: 0)
     e.camera.moves = [CameraLayout.Move(t: 1.0, x: 1, y: 1)]
     let px = try await frames(bundle, e, at: [0.5, 1.15, 2.0])
-    let d = 0.22 * 540, inset = 0.035 * 540
+    let d = 0.22 * 540, inset = 0.025 * 540
     let tl = (x: Int(inset + d / 2), y: Int(inset + d / 2))
     let br = (x: Int(960 - inset - d / 2), y: Int(540 - inset - d / 2))
     #expect(isCamera(px[0], tl.x, tl.y), "top left before the move \(px[0][tl.x, tl.y])")
@@ -85,14 +85,14 @@ private func cameraBundle(seconds: Double = 4, events: [InputEvent]? = nil) asyn
     let cropped = try RenderPlan(bundle: bundle, manifest: manifest, edit: e)
     let cf = cropped.cameraFrame(at: 1, width: Double(cropped.canvasSize.width), height: Double(cropped.canvasSize.height))
     let short = Double(min(cropped.canvasSize.width, cropped.canvasSize.height))
-    #expect(abs(cf.maxY - (Double(cropped.canvasSize.height) - 0.035 * short)) < 1e-6, "against the bottom edge at the inset")
+    #expect(abs(cf.maxY - (Double(cropped.canvasSize.height) - 0.025 * short)) < 1e-6, "against the bottom edge at the inset")
     // 9:16: a quarter of the way across, against the bottom, inside the narrow frame.
     e.crop = nil
     e.zoom.mode = .off
     e.canvas.aspect = .vertical
     let px = try await frames(bundle, e, at: [1], width: 540)[0]
     let W = Double(px.width), H = Double(px.height), s = min(W, H)
-    let d = 0.22 * s, inset = 0.035 * s
+    let d = 0.22 * s, inset = 0.025 * s
     let cx = inset + 0.25 * (W - 2 * inset - d) + d / 2, cy = H - inset - d / 2
     #expect(isCamera(px, Int(cx), Int(cy)), "vertical canvas bubble \(px[Int(cx), Int(cy)])")
     #expect(!isCamera(px, Int(W - inset - d / 2), Int(cy)))
@@ -135,8 +135,8 @@ private func cameraBundle(seconds: Double = 4, events: [InputEvent]? = nil) asyn
 /// End to end from a recording's log: camera events as the recorder writes them become the first edit's
 /// placement, and the rendered video shows the bubble at the start place, then where it was dragged.
 @Test func recordedCameraMovesShowInTheVideo() async throws {
-    // A 1280×720 screen; the live bubble is 160 pt, inset like the editor (0.035 × 720 = 25.2).
-    let inset = 0.035 * 720, d = 160.0
+    // A 1280×720 screen; the live bubble is 160 pt, inset like the editor (0.025 × 720 = 18).
+    let inset = 0.025 * 720, d = 160.0
     func at(_ x: Double, _ y: Double) -> NormRect { NormRect(x: x / 1280, y: y / 720, width: d / 1280, height: d / 720) }
     let events: [InputEvent] = [
         .camera(0, frame: at(1280 - inset - d, 720 - inset - d), shape: .roundedSquare),
@@ -158,7 +158,7 @@ private func cameraBundle(seconds: Double = 4, events: [InputEvent]? = nil) asyn
     e.zoom.mode = .off
     e.cursor.visible = false
     let px = try await frames(bundle, e, at: [0.5, 2.5])
-    let bd = edit.camera.size * 540, bi = 0.035 * 540
+    let bd = edit.camera.size * 540, bi = 0.025 * 540
     #expect(isCamera(px[0], Int(960 - bi - bd / 2), Int(540 - bi - bd / 2)), "starts bottom right")
     #expect(isCamera(px[1], Int(bi + bd / 2), Int(bi + bd / 2)), "moved to the top left")
     #expect(!isCamera(px[1], Int(960 - bi - bd / 2), Int(540 - bi - bd / 2)))
@@ -199,7 +199,7 @@ private struct LiveBubble {
     let shape: CameraLayout.Shape
     /// Expected place on the region in points, before scaling: the live frame moved inside the region's room.
     var expectedLocal: CGRect {
-        let m = 0.035 * min(area.width, area.height)
+        let m = 0.025 * min(area.width, area.height)
         let x = min(max(frame.minX - area.minX, m), area.width - m - frame.width)
         let y = min(max(frame.minY - area.minY, m), area.height - m - frame.height)
         return CGRect(x: x, y: y, width: frame.width, height: frame.height)
@@ -249,9 +249,9 @@ private func exportedFrame(_ bundle: ProjectBundle, _ edit: EditDocument, at t: 
 
     let medium = livePoints(200, .circle), large = livePoints(280, .portrait), small = livePoints(140, .roundedSquare)
     let cases = [
-        // The default spot: bottom right of a 1600×900 pt display at the editor's inset (31.5 pt).
+        // The default spot: bottom right of a 1600×900 pt display at the editor's inset (22.5 pt).
         LiveBubble(name: "display, default corner", area: CGRect(x: 0, y: 0, width: 1600, height: 900),
-                   frame: CGRect(origin: CGPoint(x: 1600 - 31.5 - medium.width, y: 900 - 31.5 - medium.height), size: medium), shape: .circle),
+                   frame: CGRect(origin: CGPoint(x: 1600 - 22.5 - medium.width, y: 900 - 22.5 - medium.height), size: medium), shape: .circle),
         // A second display to the left of and above the main one.
         LiveBubble(name: "second display, portrait L", area: CGRect(x: -1920, y: -300, width: 1920, height: 1080),
                    frame: CGRect(origin: CGPoint(x: -1500, y: 200), size: large), shape: .portrait),
@@ -289,7 +289,7 @@ private func exportedFrame(_ bundle: ProjectBundle, _ edit: EditDocument, at t: 
                 // Same place in the frame's room; size relative to the screen card (the captured region).
                 let pad = 0.08 * H, cardH = H - 2 * pad
                 let size = CGSize(width: local.width / c.area.height * cardH, height: local.height / c.area.height * cardH)
-                let m = 0.035 * H, mLive = 0.035 * c.area.height
+                let m = 0.025 * H, mLive = 0.025 * c.area.height
                 func place(_ o: Double, _ s: Double, _ L: Double) -> Double { let room = L - 2 * mLive - s; return room > 0 ? (o - mLive) / room : 0.5 }
                 let px0 = place(local.minX, local.width, c.area.width), py0 = place(local.minY, local.height, c.area.height)
                 expected = CGRect(x: m + px0 * (W - 2 * m - size.width), y: m + py0 * (H - 2 * m - size.height),

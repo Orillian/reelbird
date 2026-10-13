@@ -273,7 +273,7 @@ final class MockShareSink: ShareSegmentSink, @unchecked Sendable {
             ctx.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
             return (Int(px[0]) + Int(px[1]) + Int(px[2])) / 3
         }
-        let d = 0.22 * 1080, inset = 0.035 * 1080
+        let d = 0.22 * 1080, inset = 0.025 * 1080
         let cx = Int(1920 - inset - d / 2), cy = Int(1080 - inset - d / 2)
         #expect(luma(cx - 60, cy - 60) < 200, "bubble shows the camera")
         #expect(luma(Int(1920 - inset - 2), Int(1080 - inset - 2)) > 200, "outside the circle stays screen")

@@ -357,12 +357,14 @@ final class Compositor {
             let x = Double(f.minX), y = Double(f.minY), w = Double(f.width), h = Double(f.height)
             let (radius, exponent) = CameraPlacement.corner(shape: cl.shape, width: w, height: h)
             var sh = SpriteUniforms()
-            let soft = w * 0.06
-            sh.rect = SIMD4(Float(x - soft * 2), Float(y - soft * 2 + w * 0.015), Float(w + soft * 4), Float(h + soft * 4))
+            // CameraBubbleStyle: the same shadow and rim as the live bubble.
+            let soft = CameraBubbleStyle.shadowRadius(bubbleWidth: w)
+            sh.rect = SIMD4(Float(x - soft * 2), Float(y - soft * 2 + CameraBubbleStyle.shadowOffset(bubbleWidth: w)),
+                            Float(w + soft * 4), Float(h + soft * 4))
             sh.mode.x = 4
             sh.mode.y = Int32(exponent)
             sh.params = SIMD4(Float(w / 2), Float(h / 2), Float(radius), Float(soft))
-            sh.color = SIMD4(0, 0, 0, 0.32)
+            sh.color = SIMD4(0, 0, 0, Float(CameraBubbleStyle.shadowOpacity))
             draw(&sh)
             var su = SpriteUniforms()
             su.rect = SIMD4(Float(x), Float(y), Float(w), Float(h))
@@ -374,8 +376,8 @@ final class Compositor {
             let v0 = fill.v0, v1 = fill.v1
             if cl.mirror { swap(&u0, &u1) }
             su.uvRect = SIMD4(Float(u0), Float(v0), Float(u1), Float(v1))
-            su.params = SIMD4(Float(w / 2), Float(h / 2), Float(radius), Float(max(1.5, 0.0035 * short)))
-            su.params2 = SIMD4(1, 1, 1, 0.35)
+            su.params = SIMD4(Float(w / 2), Float(h / 2), Float(radius), Float(CameraBubbleStyle.rimWidth(bubbleWidth: w)))
+            su.params2 = SIMD4(1, 1, 1, Float(CameraBubbleStyle.rimOpacity))
             if let y = cam.yuv { su.yuv0 = y.r0; su.yuv1 = y.r1; su.yuv2 = y.r2; su.yuvOffset = y.offset }
             draw(&su, cam.t0, cam.t1)
         }

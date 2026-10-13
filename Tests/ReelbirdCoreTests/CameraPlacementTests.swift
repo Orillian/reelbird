@@ -256,7 +256,7 @@ private func close(_ a: NormPoint, _ b: NormPoint, _ tol: Double = 1e-6) -> Bool
                                    clock: ClockInfo(originHostTime: 0), duration: 30)
     manifest.tracks = [TrackInfo(kind: .screen, directory: "screen", codec: "hevc", pixelSize: PixelSize(width: 2000, height: 1000)),
                        TrackInfo(kind: .camera, directory: "camera", codec: "h264", pixelSize: PixelSize(width: 1280, height: 720))]
-    let m = 0.035 * 1000
+    let m = 0.025 * 1000
     let d = 200.0
     func at(_ x: Double, _ y: Double) -> NormRect { NormRect(x: x / 2000, y: y / 1000, width: d / 2000, height: d / 1000) }
     let events: [InputEvent] = [
