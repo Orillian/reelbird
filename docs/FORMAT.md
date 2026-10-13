@@ -15,7 +15,8 @@ Demo.reelbird/
   share/            the quick-share stream (optional; its timeline skips paused ranges)
   captions.vtt      optional
   transcript.json   optional, word-timed transcript behind captions.vtt (source timeline)
-  analysis.json     optional cache: measured loudness of the voice (AudioAnalysis)
+  analysis.json     optional cache: loudness, noise floor and speech ranges of the audio (AudioAnalysis)
+  voice/            optional cache: the enhanced voice stem (voice-<hash>.caf + stem.json)
   exports/          rendered files
 ```
 
@@ -46,24 +47,39 @@ Positions in events and edits are normalized to the captured area: `(0, 0)` top-
 
 ## Audio
 
-`edit.json → audio` holds `autoLevel` (default `true`), `microphoneGainDB` (the Boost, added on top of auto level), `systemGainDB`, `microphoneMuted` and `systemMuted`. Export applies each track's gain, a look-ahead limiter per track, sums them, and limits the sum, with a −1.5 dBFS ceiling on samples and estimated inter-sample peaks (AAC overshoots heavily limited peaks a little; decoded exports stay under −1 dBFS). The editor's preview runs the same per-track stage, so it sounds the same.
+`edit.json → audio` holds `autoLevel` (default `true`), `microphoneGainDB` (the Boost, added on top of auto level), `systemGainDB`, `microphoneMuted`, `systemMuted`, and the voice cleanup: `enhance` (default `true`), `enhanceStrength` (`light`, `medium` (default), `strong` or `max`: noise reduction capped at 6, 12, 24 dB or uncapped), `enhanceMix` (0 = original … 1 = fully enhanced, default 1) and `duckSystemAudio` (default `true`: system audio dips about 12 dB while the voice speaks, starting 20 ms before each phrase and recovering over 600 ms). Export applies each track's gain, a look-ahead limiter per track, sums them, and limits the sum, with a −1.5 dBFS ceiling on samples and estimated inter-sample peaks (AAC overshoots heavily limited peaks a little; decoded exports stay under −1 dBFS). The editor's preview runs the same per-track stage, so it sounds the same.
 
-`analysis.json` caches the voice measurement so it is made once per recording (one decode at 16 kHz mono, about 0.3 s for 8 s of audio in a debug build):
+`analysis.json` caches the measurements so they are made once per voice file (one decode at 16 kHz mono per track, about 0.3 s for 8 s of audio in a debug build). `microphone` is the voice as it plays: the voice stem when enhance is on and a stem exists, else the raw track; `rawMicrophone` is the raw track, measured too when the stem plays (for the loudness-matched "Hear original"); `systemAudio` lets ducking skip a silent system track:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "microphone": {
-    "file": "microphone/microphone.m4a",
+    "file": "voice/voice-3f2a9c01d4.caf",
     "fileSize": 1234567,
-    "integratedLUFS": -31.4,
-    "peakDBFS": -9.8,
-    "duration": 312.5
-  }
+    "integratedLUFS": -19.4,
+    "peakDBFS": -6.8,
+    "noiseFloorDB": -71.2,
+    "duration": 312.5,
+    "speech": [{"start": 0.84, "end": 4.31}, {"start": 5.02, "end": 9.77}]
+  },
+  "rawMicrophone": {"file": "microphone/microphone.m4a", "fileSize": 2345678, "integratedLUFS": -31.4, "noiseFloorDB": -52.0, "…": "…"},
+  "systemAudio": {"file": "systemAudio/systemAudio.m4a", "…": "…"}
 }
 ```
 
 `integratedLUFS` is ITU-R BS.1770 integrated loudness (K-weighted, 400 ms blocks, −70 LUFS absolute and −10 LU relative gates) as heard on two speakers: the mono voice plays on both channels, so it is the mono measurement + 3 dB. It is `null` when the track is silent. Auto level gain = −16 − `integratedLUFS`, capped to −6…+18 dB (0 when silent). The file is ignored, and the voice measured again, when `version` differs or `file` / `fileSize` no longer match the voice file. Deleting it is always safe.
+
+`noiseFloorDB` is the 10th percentile of 10 ms frame levels (mono dBFS, after a 100 Hz high-pass). `speech` (voice only) holds where someone is speaking, in seconds from the file's first sample: an energy detector (9 dB over the noise floor, within 40 dB of the loud speech level, 30 ms onset, 150 ms hangover, gaps under 200 ms bridged). Ducking keys on it.
+
+### Voice stem (`voice/`)
+
+When `enhance` is on, the microphone track is rendered once into an enhanced copy that preview, export and auto level use instead; the raw track is never changed (captions keep transcribing it). Rendering runs after the recording opens in the editor, whenever the enhance settings change, before an export that needs it, or with `reelbird enhance`. The chain, mono at the microphone's own sample rate: 18 dB/oct high-pass at 80 Hz (100 Hz for inputs at 24 kHz or less, i.e. Bluetooth headsets) → noise removal (Apple's AUSoundIsolation, HighQualityVoice model), blended with its input so removed noise drops by at most the strength's cap → downward expander (2:1, at most 10 dB, threshold just above the remaining noise) → compressor (3:1 above the speech level, 8 ms / 120 ms) → de-esser (5–9 kHz detection, at most 6 dB) → presence EQ (+2 dB at 4 kHz, +1.5 dB shelf at 10 kHz) → blend with the raw track by `enhanceMix`. The denoiser's delay is removed exactly, so the stem lines up sample for sample with the raw track and has the same length.
+
+- `voice-<hash>.caf`: mono Apple Lossless (24-bit) at the microphone's sample rate. A new render gets a new name and older ones are deleted.
+- `stem.json` (`VoiceStemInfo`): `version` (the chain version), `engine` (`AUSoundIsolation.hq`, or `none` when no denoiser is available), `settingsHash` (strength, mix rounded to 0.01, source file and size, chain version), `strength`, `mix`, `sourceFile`, `sourceSize`, `file`, `sampleRate`, `frames`, `latencyFrames` (the delay that was removed), `highPassHz`, `renderSeconds`, `createdAt`.
+
+A stem plays while it was made from the current microphone file and chain version, even with older settings, until the new one is ready. Deleting `voice/` is always safe.
 
 ## Status
 

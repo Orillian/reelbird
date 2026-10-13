@@ -11,7 +11,8 @@ import Foundation
 ///       camera/  microphone/  systemAudio/  share/   (same layout, when recorded)
 ///       captions.vtt        optional, from transcription
 ///       transcript.json     optional, word-timed transcript (ReelbirdAI.Transcript) behind captions.vtt
-///       analysis.json       optional cache: measured loudness of the audio (AudioAnalysis)
+///       analysis.json       optional cache: loudness, noise floor and speech ranges of the audio (AudioAnalysis)
+///       voice/              optional cache: the enhanced voice stem (voice-<hash>.caf + stem.json, VoiceStemInfo)
 ///       exports/            rendered outputs
 public struct ProjectBundle: Hashable, Sendable {
     public static let pathExtension = "reelbird"

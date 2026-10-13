@@ -43,6 +43,10 @@ The viewer page is static HTML that reads `meta.json`. Safari plays HLS natively
 
 The editor's preview decodes with `AVPlayer` and renders on its own thread with a `CAMetalDisplayLink`. Export reads tracks with `AVAssetReader`, composites on the GPU and encodes with VideoToolbox through `AVAssetWriter` (H.264, HEVC, ProRes) or ImageIO (GIF).
 
+## Audio
+
+Raw is sacred: the microphone and system audio stay as recorded, and all processing is non-destructive. After a recording opens (and whenever "Enhance voice" settings change) the microphone is rendered offline into a voice stem (`ReelbirdRender/VoiceStem.swift`): high-pass → AUSoundIsolation in a manual-rendering `AVAudioEngine` (about 95× real time; its 92.5 ms latency removed exactly) → expander → compressor → de-esser → presence EQ → blend with the raw track. The denoiser sits behind a `VoiceDenoiser` protocol so ML models can replace it. Preview and export play the stem in place of the microphone; the preview also carries the raw track at zero gain for "Hear original". Both run the same per-track tap (`AudioTrackProcessor`): gain (auto level to −16 LUFS + boost), ducking of system audio from the voice's speech ranges, and a look-ahead limiter; export limits the sum too. Captions transcribe the raw microphone. Details and file layout: [FORMAT.md](FORMAT.md#audio).
+
 ## Captions and AI
 
 Captions use `SpeechAnalyzer` on macOS 26 and later, and on-device `SFSpeechRecognizer` on macOS 15. Both produce word timings, saved to `transcript.json` next to `captions.vtt`. Titles and chapters use the Foundation Models framework on Macs with Apple Intelligence. Silence detection reads the audio tracks directly. Nothing here uses the network.
