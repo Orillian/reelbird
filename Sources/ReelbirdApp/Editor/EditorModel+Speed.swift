@@ -28,9 +28,30 @@ extension EditorModel {
         }
     }
 
+    /// The speed slider's range: fine control around normal speed. Presets outside it stay in the menu and on R.
+    static let speedSliderRange = 0.5...2.0
+
+    /// The rate the speed slider shows: the selected speed segment's, 1× for a selected part, nil when it's hidden.
+    var speedSliderRate: Double? {
+        if let s = selectedSpeed { return s.rate }
+        if case .segment = selection { return 1 }
+        return nil
+    }
+
+    /// A speed slider drag: snaps to 0.05×, then sets the selected segment's rate or gives the selected part its own
+    /// speed segment. One drag is one undo step.
+    func setSpeedFromSlider(_ value: Double) {
+        let rate = (value * 20).rounded() / 20
+        if let s = selectedSpeed {
+            updateSpeed(s.id, actionName: "Change Speed", coalesce: "rate") { $0.rate = rate }
+        } else {
+            applySpeed(rate, coalesce: true)
+        }
+    }
+
     /// Sets `rate` on the selected speed segment, the selected part, or 3 seconds from the playhead (up to the next
     /// split point, cut or speed segment).
-    func applySpeed(_ rate: Double) {
+    func applySpeed(_ rate: Double, coalesce: Bool = false) {
         if selectedSpeed != nil { setSpeedRate(rate); return }
         let range: TimeRange
         if case .segment(let r) = selection {
@@ -45,7 +66,7 @@ extension EditorModel {
         }
         guard range.duration >= SpeedSegment.minDuration else { return }
         let id = ShortID.make(length: 6)
-        change("Set Speed") { $0.speed.set(range, rate: rate, source: .user, id: id) }
+        change("Set Speed", coalesce: coalesce ? "rate" + id : nil) { $0.speed.set(range, rate: rate, source: .user, id: id) }
         if edit.speed.segments.contains(where: { $0.id == id }) { selection = .speed(id) }
     }
 

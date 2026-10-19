@@ -221,7 +221,7 @@ struct QuickShareState: Equatable {
 
     func save() {
         if case .saved(let url) = state.save {
-            NSWorkspace.shared.activateFileViewerSelecting([url])
+            Finder.reveal([url])
             return
         }
         run(state.requestSave())

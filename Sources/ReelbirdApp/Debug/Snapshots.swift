@@ -204,11 +204,11 @@ import SwiftUI
             m.addZoomAtPlayhead()
             m.setPlayheadForSnapshot(13.6)
         })
-        // Speed: a slowed part, a 2× part (selected: its rate chips show), applied typing and idle suggestions.
+        // Speed: a slowed part, a 1.25× part (selected: the speed slider shows), applied typing and idle suggestions.
         scenes.append(editor(.zoom, variant: "speed") { m in
             m.change("x") { e in
                 e.speed.set(TimeRange(start: 6.2, end: 8.4), rate: 0.5)
-                e.speed.set(TimeRange(start: 14, end: 18.5), rate: 2, id: "sel")
+                e.speed.set(TimeRange(start: 14, end: 18.5), rate: 1.25, id: "sel")
                 e.speed.set(TimeRange(start: 22, end: 26.6), rate: 4, source: .typing)
                 e.speed.set(TimeRange(start: 30.4, end: 37.5), rate: 8, source: .idle)
             }

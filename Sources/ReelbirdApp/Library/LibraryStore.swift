@@ -258,7 +258,7 @@ struct LibraryItem: Identifiable, Equatable {
 
     func reveal(_ items: [LibraryItem]) {
         guard !items.isEmpty else { return }
-        NSWorkspace.shared.activateFileViewerSelecting(items.map(\.bundle.url))
+        Finder.reveal(items.map(\.bundle.url))
     }
 
     func copyLink(_ item: LibraryItem) {

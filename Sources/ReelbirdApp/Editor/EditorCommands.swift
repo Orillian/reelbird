@@ -438,7 +438,7 @@ struct EditorCommand: Identifiable {
         c.append(.init(id: "open-link", title: "Open Link in Browser", area: .file, symbol: "safari", keywords: ["share", "view"],
                        isEnabled: shared) { m.openLink() })
         c.append(.init(id: "show-in-finder", title: "Show in Finder", area: .file, symbol: "folder", shortcut: EditorKeys.showInFinder,
-                       keywords: ["reveal", "files", "bundle"]) { NSWorkspace.shared.activateFileViewerSelecting([m.bundle.url]) })
+                       keywords: ["reveal", "files", "bundle"]) { Finder.reveal([m.bundle.url]) })
         if let app {
             c.append(.init(id: "library", title: "Library", area: .file, symbol: "square.grid.2x2", shortcut: EditorKeys.library,
                            keywords: ["recordings", "all"]) { app.openLibrary() })

@@ -242,6 +242,6 @@ import ReelbirdCore
     }
     @objc private func revealRecent(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        Finder.reveal([url])
     }
 }

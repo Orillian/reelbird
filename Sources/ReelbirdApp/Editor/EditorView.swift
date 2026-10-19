@@ -75,7 +75,7 @@ struct EditorTopBar: View {
             }
             Menu {
                 Button("Library") { app?.openLibrary() }
-                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.bundle.url]) }
+                Button("Show in Finder") { Finder.reveal([model.bundle.url]) }
             } label: {
                 Image(systemName: "ellipsis.circle").font(.system(size: 15))
             }
@@ -156,7 +156,7 @@ struct PreviewStage: View {
                     Text(err).font(.system(size: 12)).foregroundStyle(.secondary)
                         .multilineTextAlignment(.center).frame(maxWidth: 380)
                     Text("Your recording files are untouched.").font(.system(size: 12)).foregroundStyle(.secondary)
-                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.bundle.url]) }
+                    Button("Show in Finder") { Finder.reveal([model.bundle.url]) }
                         .buttonStyle(SecondaryButtonStyle())
                         .padding(.top, Theme.Space.xs)
                 }
@@ -244,10 +244,11 @@ struct TransportBar: View {
                 if model.hasCamera {
                     ToolButton(symbol: "person.crop.rectangle", title: "Layout", key: "C") { model.addLayoutAtPlayhead() }
                 }
-                ToolButton(symbol: "gauge.with.dots.needle.67percent", title: "Speed", key: EditorKeys.changeSpeed.display) { model.speedKey() }
-                if let s = model.selectedSpeed {
-                    SpeedRateChips(rate: s.rate) { model.setSpeedRate($0) }
+                if let rate = model.speedSliderRate {
+                    SpeedRateSlider(rate: rate, set: { model.setSpeedFromSlider($0) }, next: { model.speedKey() })
                         .transition(.opacity)
+                } else {
+                    ToolButton(symbol: "gauge.with.dots.needle.67percent", title: "Speed", key: EditorKeys.changeSpeed.display) { model.speedKey() }
                 }
                 if model.selection == nil, !model.speedSuggestionsDismissed, case let s = model.speedSuggestions, !s.isEmpty {
                     SpeedOffer(model: model, suggestions: s)
@@ -293,31 +294,33 @@ extension TimelineSelection {
     var isSpeed: Bool { if case .speed = self { true } else { false } }
 }
 
-/// The preset speeds for the selected speed segment, the current one filled.
-struct SpeedRateChips: View {
+/// The selected speed segment's (or selected part's) speed, 0.5× to 2× in 0.05× steps, with a notch at 1×.
+/// A rate outside the range (4× typing, 0.25×) pins the knob to the end and still reads true.
+struct SpeedRateSlider: View {
     let rate: Double
     let set: (Double) -> Void
+    /// The gauge (and R): the next preset, as the Speed button does.
+    let next: () -> Void
 
     var body: some View {
-        HStack(spacing: 1) {
-            ForEach(SpeedSegment.presets, id: \.self) { r in
-                let on = abs(r - rate) < 1e-9
-                Button { set(r) } label: {
-                    Text(SpeedSegment.label(r))
-                        .font(.system(size: 11.5, weight: on ? .semibold : .medium).monospacedDigit())
-                        .foregroundStyle(on ? Theme.panel : Color.primary.opacity(0.75))
-                        .padding(.horizontal, 7)
-                        .frame(height: 22)
-                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(on ? Theme.ink.opacity(0.85) : .clear))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Play this part at \(SpeedSegment.label(r))")
-                .accessibilityAddTraits(on ? .isSelected : [])
+        let range = EditorModel.speedSliderRange
+        HStack(spacing: 6) {
+            Button(action: next) {
+                Image(systemName: "gauge.with.dots.needle.67percent").font(.system(size: 11.5, weight: .medium))
+                    .frame(width: 18, height: 26).contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .help("Next preset speed (\(EditorKeys.changeSpeed.display))")
+            .accessibilityLabel("Next preset speed")
+            ValueSlider(value: Binding(get: { min(range.upperBound, max(range.lowerBound, rate)) }, set: { set($0) }),
+                        range: range, detent: 1) { _ in SpeedSegment.label(rate) }
+                .environment(\.fieldLabel, "Speed")
+                .frame(width: 124)
         }
-        .padding(2)
-        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(0.045)))
+            .padding(.leading, 4).padding(.trailing, 7)
+            .frame(height: 26)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.primary.opacity(0.045)))
+            .help("Drag to set this part's speed. Right-click a speed segment for 0.25×, 4× or 8×.")
     }
 }
 

@@ -134,7 +134,7 @@ struct ExportSheet: View {
             Text("Exported").font(.system(size: 17, weight: .semibold))
             Text(url.lastPathComponent).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             HStack(spacing: Theme.Space.s) {
-                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                Button("Show in Finder") { Finder.reveal([url]) }
                     .buttonStyle(SecondaryButtonStyle())
                 Button("Copy File") {
                     NSPasteboard.general.clearContents()

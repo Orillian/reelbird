@@ -173,7 +173,7 @@ import ReelbirdCore
         if let e = editorNotEditingText { model.moveToTrash(e.bundle) } else if libraryHasSelection { model.moveToTrash(model.library.selectedItems.map(\.bundle)) }
     }
     @objc func revealRecording(_ sender: Any?) {
-        if let e = editor { NSWorkspace.shared.activateFileViewerSelecting([e.bundle.url]) } else if libraryHasSelection { model.library.reveal(model.library.selectedItems) }
+        if let e = editor { Finder.reveal([e.bundle.url]) } else if libraryHasSelection { model.library.reveal(model.library.selectedItems) }
     }
     @objc func togglePlay(_ sender: Any?) { editor?.togglePlay() }
     @objc func goToStart(_ sender: Any?) { editor?.seek(source: 0) }
