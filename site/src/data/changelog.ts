@@ -3,6 +3,18 @@ export interface Release { version: string; date: string; title: string; summary
 
 export const RELEASES: Release[] = [
   {
+    version: "0.1.2",
+    date: "2026-10-19",
+    title: "Any speed between 0.5× and 2×",
+    summary: "A speed slider for any part of a recording, and Show in Finder that brings Finder forward every time.",
+    notes: [
+      "Select a part between split points, or a speed segment, and drag the speed slider: anything from 0.5× to 2× in 0.05× steps, such as 1.2×.",
+      "Only the selected part changes speed. One drag is one undo step.",
+      "R still steps through the preset speeds; 0.25×, 4× and 8× stay in a speed segment's menu.",
+      "Show in Finder now brings Finder to the front, instead of sometimes opening it behind Reelbird.",
+    ],
+  },
+  {
     version: "0.1.1",
     date: "2026-10-13",
     title: "Signed and notarised download",

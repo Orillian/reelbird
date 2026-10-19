@@ -10,8 +10,8 @@ export const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues`;
 export const GITHUB_RELEASES_URL = `${GITHUB_URL}/releases`;
 export const LICENSE_NAME = "MIT";
 
-export const APP_VERSION = "0.1.1";
-export const RELEASE_DATE = "2026-10-13";
+export const APP_VERSION = "0.1.2";
+export const RELEASE_DATE = "2026-10-19";
 export const MIN_MACOS = "macOS 15";
 
 /** What it takes to build and run Reelbird. Say it the same way everywhere. */
@@ -59,7 +59,7 @@ export const PREBUILT = {
   url: `${GITHUB_RELEASES_URL}/download/v${APP_VERSION}/Reelbird-${APP_VERSION}.zip`,
   label: `Download Reelbird ${APP_VERSION} (.zip)`,
   note: "For Apple silicon Macs on macOS 15 or later. Signed and notarised by Apple, so it opens like any other app.",
-  sha256: "d3130e0f13771e71b44ba479fa457ac71d7c499a269878106903f91147d44c50",
+  sha256: "36e0d1c8855301ee55882896470be768c3a0fb762e604144d354bff701851422",
 };
 
 /** Donations. Read by the /support page and the thank-you after a download. */

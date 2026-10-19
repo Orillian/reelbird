@@ -100,7 +100,7 @@ public struct HealthWarning: Codable, Hashable, Sendable, Identifiable {
 
 public enum ReelbirdInfo {
     /// Keep in step with `CFBundleShortVersionString` in packaging/Info.plist (scripts/dist.sh checks).
-    public static let version = "0.1.1"
+    public static let version = "0.1.2"
     public static let websiteURL = "https://reelbird.app"
     public static let supportURL = "https://reelbird.app/support/"
     public static let repositoryURL = "https://github.com/btahir/reelbird"
