@@ -98,15 +98,50 @@ export function homePage(user: User | null) {
 }
 
 export function loginPage(next: string, error?: string) {
-  const devNote = config.dev
+  const devNote = config.instantLogin
     ? `<p class="note">Development server: you're signed in straight away, no email is sent.</p>`
-    : "";
+    : `<p class="note">We'll email you a link that signs you in.</p>`;
   return layout("Sign in · Reelbird Cloud", `<div class="card">
 <h1>Sign in</h1><p class="muted">Use your email address. New addresses get an account.</p>
 ${error ? `<p style="color:var(--accent-text)">${esc(error)}</p>` : ""}
 <form class="stack" method="post" action="/login"><input type="hidden" name="next" value="${esc(next)}">
 <label for="email">Email</label><input id="email" name="email" type="email" required autocomplete="email" autofocus>
 <button class="btn primary" type="submit">Continue</button></form>${devNote}</div>`, { narrow: true });
+}
+
+export function checkEmailPage(email: string) {
+  return layout("Check your email · Reelbird Cloud", `<div class="card">
+<h1>Check your email</h1>
+<p class="muted">We sent a sign-in link to <b style="color:var(--text)">${esc(email)}</b>. It works once, for 15 minutes.</p>
+<p class="note">Not there? Check spam, or <a href="/login">try another address</a>.</p></div>`, { narrow: true });
+}
+
+export function confirmLoginPage(token: string) {
+  return layout("Sign in · Reelbird Cloud", `<div class="card">
+<h1>Sign in to Reelbird</h1>
+<form method="post" action="/login/verify" style="margin-top:18px"><input type="hidden" name="token" value="${esc(token)}">
+<button class="btn primary" type="submit" style="width:100%">Continue</button></form></div>`, { narrow: true });
+}
+
+export function linkExpiredPage() {
+  return layout("Link expired · Reelbird Cloud", `<div class="card">
+<h1>That link has expired</h1>
+<p class="muted">Sign-in links work once, for 15 minutes.</p>
+<p style="margin-top:18px"><a class="btn primary" href="/login">Get a new link</a></p></div>`, { narrow: true });
+}
+
+/** The sign-in email. Plain and short; the button is the whole message. */
+export function loginEmail(url: string, minutes: number) {
+  const text = `Sign in to Reelbird:\n\n${url}\n\nThe link works once, for ${minutes} minutes. If you didn't ask for it, ignore this email.`;
+  const html = `<!doctype html><html><body style="margin:0;padding:32px 16px;background:#faf7f2;font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#1c1814">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+<table role="presentation" width="100%" style="max-width:440px;background:#fffdfa;border-radius:14px;padding:28px" cellpadding="0" cellspacing="0"><tr><td>
+<p style="margin:0 0 16px;font-size:20px;font-weight:650">Sign in to Reelbird</p>
+<p style="margin:0 0 24px;color:#6c6259">Use this button to sign in. It works once, for ${minutes} minutes.</p>
+<a href="${esc(url)}" style="display:inline-block;background:#ff8d4d;color:#221005;text-decoration:none;font-weight:600;padding:11px 20px;border-radius:10px">Sign in</a>
+<p style="margin:24px 0 0;font-size:13px;color:#978d83">If you didn't ask for this, ignore this email.</p>
+</td></tr></table></td></tr></table></body></html>`;
+  return { subject: "Your Reelbird sign-in link", text, html };
 }
 
 export function devicePage(user: User, code: string, name: string | null, state: "ask" | "done" | "invalid") {

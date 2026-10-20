@@ -10,8 +10,10 @@ export const config = {
   /** Origin that serves the viewer and the API, e.g. https://watch.reelbird.app. No trailing slash. */
   publicURL: need("PUBLIC_URL").replace(/\/+$/, ""),
   databaseURL: need("DATABASE_URL"),
-  /** Development conveniences: sign in without email, switch plans by hand. Never set in production. */
+  /** Development conveniences: switch plans by hand, and sign in without email. Never set in production. */
   dev: process.env.DEV === "1",
+  /** Development: /login signs in at once instead of emailing a link (DEV_INSTANT_LOGIN=0 tests the email path). */
+  instantLogin: process.env.DEV === "1" && process.env.DEV_INSTANT_LOGIN !== "0",
   /** Salts the daily viewer hash. */
   statsSecret: need("STATS_SECRET"),
   r2: {

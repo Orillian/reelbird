@@ -9,6 +9,8 @@ import { ingest, VIEWER_SCRIPT } from "./events";
 import { shareStats } from "./stats";
 import { billing, hasSubscription, linkOnSignIn, portalURL, upgradeURL, webhook } from "./billing";
 import * as pages from "./pages";
+import { canSendMail, sendMail } from "./mail";
+import { clientIP } from "./events";
 
 export const app = new Hono();
 
@@ -35,6 +37,18 @@ app.post("/e", ingest);
 
 app.get("/", async (c) => c.html(pages.homePage(await auth.webUser(c))));
 
+// Sign-in emails per IP: 10 an hour. (On Tiffin: Valkey's rateLimit, shared across instances.)
+const loginHits = new Map<string, number[]>();
+function loginAllowed(ip: string) {
+  const now = Date.now();
+  const recent = (loginHits.get(ip) ?? []).filter((t) => now - t < 3_600_000);
+  if (recent.length >= 10) return false;
+  recent.push(now);
+  if (loginHits.size > 50_000) loginHits.clear();
+  loginHits.set(ip, recent);
+  return true;
+}
+
 const safeNext = (n: unknown) => (typeof n === "string" && n.startsWith("/") && !n.startsWith("//") ? n : "/account");
 
 app.get("/login", async (c) => {
@@ -49,14 +63,36 @@ app.post("/login", async (c) => {
   const next = safeNext(form.next);
   const email = String(form.email ?? "").trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return c.html(pages.loginPage(next, "Enter a valid email address."), 400);
-  if (!config.dev) {
-    // Magic-link email is the next step (Tiffin auth + a mail service); until then only DEV can sign in.
-    return c.html(pages.loginPage(next, "Email sign-in isn't available yet."), 503);
+  if (config.instantLogin) {
+    const user = await auth.userByEmail(email);
+    await linkOnSignIn(user);
+    await auth.startWebSession(c, user.id);
+    return c.redirect(next);
   }
-  const user = await auth.userByEmail(email);
-  await linkOnSignIn(user);
-  await auth.startWebSession(c, user.id);
-  return c.redirect(next);
+  if (!canSendMail) return c.html(pages.loginPage(next, "Sign-in email isn't set up on this server."), 503);
+  if (!loginAllowed(clientIP(c))) return c.html(pages.loginPage(next, "Too many sign-in emails. Try again in a few minutes."), 429);
+  const link = await auth.createLoginLink(email, next);
+  // Too many links for this address: say the same thing, so the page doesn't reveal anything.
+  if (link) {
+    const m = pages.loginEmail(`${config.publicURL}/login/verify?token=${link.token}`, link.minutes);
+    await sendMail({ to: email, ...m });
+  }
+  return c.html(pages.checkEmailPage(email));
+});
+
+// Mail scanners open links to check them, so opening the link only shows a button; the button signs in.
+app.get("/login/verify", async (c) => {
+  const t = c.req.query("token") ?? "";
+  return (await auth.loginLinkValid(t)) ? c.html(pages.confirmLoginPage(t)) : c.html(pages.linkExpiredPage(), 410);
+});
+
+app.post("/login/verify", async (c) => {
+  if (!auth.sameOrigin(c)) return c.text("Bad origin", 403);
+  const r = await auth.useLoginLink(String((await c.req.parseBody()).token ?? ""));
+  if (!r) return c.html(pages.linkExpiredPage(), 410);
+  await linkOnSignIn(r.user);
+  await auth.startWebSession(c, r.user.id);
+  return c.redirect(safeNext(r.next));
 });
 
 app.post("/logout", async (c) => {

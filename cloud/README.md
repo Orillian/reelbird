@@ -11,7 +11,11 @@ Reelbird Pro: hosted share links and view analytics, $5/month. Optional: sharing
   - `POST /stripe/webhook` (signed with `STRIPE_WEBHOOK_SECRET`) only acts on checkouts from that link and on subscriptions to the Reelbird Pro product (`prod_VTSee5NkgzYUpl`, $5/month price `price_1USVjUBbj7zje3qWrQ56SdEO`). The account is Pro while that subscription is active or trialing. The open-source support tiers and anything else on the Stripe account are ignored.
   - Someone who pays through the link before having an account gets Pro when they sign in with the same email.
   - `/billing` opens Stripe's no-code customer portal (`STRIPE_PORTAL_LINK`).
-- **Sign-in:** the app and CLI use a device code. The person approves it in the browser and the app receives a token (only its SHA-256 is stored). In development, `/login` signs you in without email.
+- **Sign-in:** the app and CLI use a device code. The person approves it in the browser and the app receives a token (only its SHA-256 is stored).
+  - The browser signs in with an emailed link that works once, for 15 minutes. Opening the link shows a button, and only the button signs in, so mail scanners can't use it up.
+  - There's a limit of 5 links per address per 15 minutes, and 10 sign-in emails per IP per hour.
+  - Mail goes through the Tiffin box's relay (SendGrid) using the `SMTP_URL` and `EMAIL_FROM` that Tiffin provides, sent as `reelbird@shiptiffin.com`.
+  - In development, `/login` signs you in at once. `DEV_INSTANT_LOGIN=0` together with `MAIL_CAPTURE=1` tests the email path, and the test suite does this.
 
 ## Run locally
 
@@ -61,7 +65,7 @@ bun test        # end to end against the dev bucket and reelbird_cloud_test
 - **Launch switches.** Reelbird Cloud is hidden in released builds until these are flipped. `CloudSettings.launched` (`Sources/ReelbirdShare/Cloud.swift`) controls the app and CLI; with it off, setting `REELBIRD_CLOUD_URL` still shows Cloud for development. `PRO.launched` (`site/src/config/site.ts`) adds the Pro section to /support. Flip both only once the server is live.
 
 - **R2 key.** Replace the dev key with an R2 token limited to the hosted bucket (Object Read & Write). The temporary keys can never exceed their parent key's access.
-- **Email.** Magic-link sign-in through Tiffin auth and a mail service (Resend or similar). Until then only `DEV=1` can sign in.
+- **Email** is done: links are sent from `reelbird@shiptiffin.com` through the box's SendGrid relay, with no key of our own. A `hello@reelbird.app` sender later is one `tiffin email sending-domain set reelbird --domain reelbird.app` plus the DNS records it lists.
 - **Stripe** is set up in live mode:
   - A webhook endpoint (`we_1USXBdBbj7zje3qWfYSRjLgB`) sends `checkout.session.completed` and `customer.subscription.*` to `https://watch.reelbird.app/stripe/webhook`. Its signing secret is in `notes/deploy/cloud-prod.env` (gitignored) and goes in `STRIPE_WEBHOOK_SECRET`.
   - A customer portal configuration "Reelbird Pro" (`bpc_1USXBVBbj7zje3qWnSI9LyWF`) allows cancel at period end, card updates and invoices. Its login link is the default `STRIPE_PORTAL_LINK`.

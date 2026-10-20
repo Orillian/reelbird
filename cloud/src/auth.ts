@@ -4,7 +4,8 @@
 // approves it in the browser, and the app receives a long-lived token. Only SHA-256 hashes of
 // tokens and device codes are stored.
 //
-// Email delivery isn't wired up yet: in development (DEV=1) /login signs you in straight away.
+// Browsers sign in with an emailed link (one use, 15 minutes). In development (DEV=1) /login signs you
+// in straight away.
 import { createHash, randomBytes } from "node:crypto";
 import type { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
@@ -141,4 +142,36 @@ export async function exchangeDevice(deviceCode: string): Promise<{ status: "pen
   const t = await createSession(d.user_id, "app", d.name, APP_DAYS);
   const [u] = await sql<User[]>`select id, email, plan from users where id = ${d.user_id}`;
   return { status: "ok", token: t, user: u };
+}
+
+// MARK: Emailed sign-in links
+
+const LINK_MINUTES = 15;
+
+/** A sign-in link for this address, or null when too many were asked for recently. */
+export async function createLoginLink(email: string, next: string) {
+  const clean = email.trim().toLowerCase();
+  const [recent] = await sql<{ n: number }[]>`
+    select count(*)::int as n from login_links where email = ${clean} and created_at > now() - interval '15 minutes'`;
+  if (recent.n >= 5) return null;
+  const t = token();
+  await sql`insert into login_links (token_hash, email, next, expires_at)
+            values (${hash(t)}, ${clean}, ${next}, now() + make_interval(mins => ${LINK_MINUTES}))`;
+  return { token: t, minutes: LINK_MINUTES };
+}
+
+/** Whether a link is still good (the page shows a button; only the button spends it). */
+export async function loginLinkValid(t: string) {
+  const [r] = await sql`select 1 from login_links where token_hash = ${hash(t)} and used_at is null and expires_at > now()`;
+  return !!r;
+}
+
+/** Spends a link: the account (made on first sign-in) and where to go next. */
+export async function useLoginLink(t: string): Promise<{ user: User; next: string } | null> {
+  const [l] = await sql<{ email: string; next: string }[]>`
+    update login_links set used_at = now()
+    where token_hash = ${hash(t)} and used_at is null and expires_at > now()
+    returning email, next`;
+  if (!l) return null;
+  return { user: await userByEmail(l.email), next: l.next };
 }

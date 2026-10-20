@@ -10,6 +10,7 @@ const { app } = await import("../src/index");
 const { R2 } = await import("../src/r2");
 const { config } = await import("../src/config");
 const { signPayload, verifySignature, qualifies } = await import("../src/billing");
+const { captured } = await import("../src/mail");
 const { ShortIDForTest } = { ShortIDForTest: () => {
   const a = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
   return Array.from(crypto.getRandomValues(new Uint8Array(14)), (b) => a[b % a.length]).join("");
@@ -38,10 +39,23 @@ const call = (path: string, init: RequestInit & { cookie?: string; bearer?: stri
 };
 const json = (body: unknown) => ({ method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
 
-async function webLogin(email: string) {
-  const r = await call("/login", { method: "POST", body: new URLSearchParams({ email, next: "/account" }) });
-  expect(r.status).toBe(302);
-  return r.headers.get("set-cookie")!.split(";")[0];
+/** The sign-in link from the last email to this address. */
+function lastLink(email: string) {
+  const m = [...captured].reverse().find((x) => x.to.toLowerCase() === email.toLowerCase());
+  return m?.text.match(/https?:\/\/\S+\/login\/verify\?token=([A-Za-z0-9_-]+)/)?.[1] ?? null;
+}
+
+async function webLogin(email: string, next = "/account") {
+  const r = await call("/login", { method: "POST", body: new URLSearchParams({ email, next }) });
+  expect(r.status).toBe(200);
+  expect(await r.text()).toContain("Check your email");
+  const token = lastLink(email)!;
+  expect(token).toBeString();
+  expect((await call(`/login/verify?token=${token}`)).status).toBe(200);
+  const done = await call("/login/verify", { method: "POST", body: new URLSearchParams({ token }) });
+  expect(done.status).toBe(302);
+  expect(done.headers.get("location")).toBe(next);
+  return done.headers.get("set-cookie")!.split(";")[0];
 }
 
 async function appLogin(email: string) {
@@ -77,6 +91,39 @@ const backdate = async (id: string) => {
   await db`update shares set touched_at = now() - interval '2 days' where id = ${id}`;
   await db.end();
 };
+
+test("email sign-in: the link works once, the email is plain, opening it signs nobody in", async () => {
+  const before = captured.length;
+  const r = await call("/login", { method: "POST", body: new URLSearchParams({ email: "zoe@example.com", next: "/account" }) });
+  expect(r.status).toBe(200);
+  expect(captured.length).toBe(before + 1);
+  const mail = captured.at(-1)!;
+  expect(mail).toMatchObject({ to: "zoe@example.com", subject: "Your Reelbird sign-in link" });
+  expect(mail.html).toContain("Sign in to Reelbird");
+  const token = lastLink("zoe@example.com")!;
+  // Opening the link (or a mail scanner opening it) only shows a button.
+  expect((await call(`/login/verify?token=${token}`)).headers.get("set-cookie")).toBeNull();
+  expect((await call(`/login/verify?token=${token}`)).status).toBe(200);
+  const ok = await call("/login/verify", { method: "POST", body: new URLSearchParams({ token }) });
+  expect(ok.status).toBe(302);
+  expect(ok.headers.get("set-cookie")).toContain("rb_session=");
+  // Used: gone.
+  expect((await call("/login/verify", { method: "POST", body: new URLSearchParams({ token }) })).status).toBe(410);
+  expect((await call(`/login/verify?token=${token}`)).status).toBe(410);
+  expect((await call("/login/verify", { method: "POST", body: new URLSearchParams({ token: "nonsense" }) })).status).toBe(410);
+});
+
+test("email sign-in: expired links fail; at most five links per address per 15 minutes", async () => {
+  await call("/login", { method: "POST", body: new URLSearchParams({ email: "yan@example.com" }) });
+  const token = lastLink("yan@example.com")!;
+  const db = postgres(TEST_DB, { max: 1, onnotice: () => {} });
+  await db`update login_links set expires_at = now() - interval '1 second' where email = 'yan@example.com'`;
+  await db.end();
+  expect((await call("/login/verify", { method: "POST", body: new URLSearchParams({ token }) })).status).toBe(410);
+  const sent = () => captured.filter((m) => m.to === "yan@example.com").length;
+  for (let i = 0; i < 6; i++) await call("/login", { method: "POST", body: new URLSearchParams({ email: "yan@example.com" }), headers: { "x-forwarded-for": `198.51.100.${i}` } });
+  expect(sent()).toBe(5); // the first plus four more; the sixth asked within 15 minutes gets nothing
+});
 
 test("device sign-in gives the app a token; a new account has no plan", async () => {
   alice = await appLogin("alice@example.com");
