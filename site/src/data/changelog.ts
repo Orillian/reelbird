@@ -3,6 +3,20 @@ export interface Release { version: string; date: string; title: string; summary
 
 export const RELEASES: Release[] = [
   {
+    version: "0.2.2",
+    date: "2026-10-20",
+    title: "Updating a link really replaces it",
+    summary: "When you update a shared link with edits, blurs and removed captions now reach everyone: the earlier version's files are deleted. Plus safer edits from agents and a keystroke overlay that respects blurs.",
+    notes: [
+      "Update Link deletes the earlier version's files after publishing, including the quick stream and any captions or posters you removed. Before, someone with the link could still fetch the unblurred original.",
+      "A slow upload that finishes after you've published your edits can no longer put the original back.",
+      "The app, the command line and MCP agents can edit the same project at once without losing each other's changes.",
+      "The keystroke overlay shows shortcuts only, unless you turn on Include typed text, and never shows typing while a blur is on screen.",
+      "Find Sensitive Info says what it checks: the screen, not narration, captions or overlays.",
+      "Reelbird Pro is called Reelbird Pro everywhere, and shared pages use the brand's coral and the robin.",
+    ],
+  },
+  {
     version: "0.2.1",
     date: "2026-10-20",
     title: "Fix permissions that look on but don't work",
