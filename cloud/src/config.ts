@@ -14,6 +14,8 @@ export const config = {
   dev: process.env.DEV === "1",
   /** Development: /login signs in at once instead of emailing a link (DEV_INSTANT_LOGIN=0 tests the email path). */
   instantLogin: process.env.DEV === "1" && process.env.DEV_INSTANT_LOGIN !== "0",
+  /** Country from a proxy header (cf-ipcountry): only when a proxy we run sets it. Off: viewers could fake it. */
+  trustCountryHeader: process.env.TRUST_COUNTRY_HEADER === "1",
   /** Salts the daily viewer hash. */
   statsSecret: need("STATS_SECRET"),
   r2: {

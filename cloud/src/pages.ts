@@ -284,6 +284,23 @@ export function loginEmail(url: string, minutes: number) {
   return { subject: "Your Reelbird sign-in link", text, html };
 }
 
+/** Sent after a Mac is connected, so an approval made by mistake doesn't go unnoticed. */
+export function connectedEmail(name: string | null) {
+  const what = name ? `Reelbird on ${name}` : "A Mac";
+  const text = `${what} was just connected to your Reelbird account. It can upload, update and delete your links.\n\nIf this wasn't you, sign it out on your account page: ${config.publicURL}/account#macs\n\nReelbird · ${SITE}`;
+  const html = `<!doctype html><html><head><meta name="color-scheme" content="light"></head>
+<body style="margin:0;padding:40px 16px;background:#fff4e8;font:16px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1a1512">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+<table role="presentation" width="100%" style="max-width:440px" cellpadding="0" cellspacing="0"><tr><td>
+<img src="${config.publicURL}${asset("icon-512.png")}" width="44" height="44" alt="Reelbird" style="display:block;border:0;margin:0 0 28px">
+<p style="margin:0 0 10px;font:600 24px/1.2 Georgia,'Times New Roman',serif">${esc(what)} was connected</p>
+<p style="margin:0 0 28px;color:#6e645c">It can upload, update and delete links in your account. If this wasn't you, sign it out.</p>
+<a href="${config.publicURL}/account#macs" style="display:inline-block;background:#ff5a36;color:#1a1512;text-decoration:none;font-weight:600;padding:13px 26px;border-radius:999px">Review signed-in Macs</a>
+<p style="margin:32px 0 0;padding-top:20px;border-top:1px solid #ead9c6;font-size:13px;color:#6e645c">Reelbird · <a href="${SITE}" style="color:#6e645c">reelbird.app</a></p>
+</td></tr></table></td></tr></table></body></html>`;
+  return { subject: "A Mac was connected to your Reelbird account", text, html };
+}
+
 export function devicePage(user: User, code: string, name: string | null, state: "ask" | "done" | "invalid") {
   if (state === "invalid") {
     return layout("Connect Reelbird", solo(`<h1>That code has expired</h1>
@@ -294,7 +311,7 @@ export function devicePage(user: User, code: string, name: string | null, state:
 <p class="lede">You're signed in as ${esc(user.email)}. Go back to Reelbird; you can close this tab.</p>`), { user, narrow: true });
   }
   return layout("Connect Reelbird", solo(`<h1>Connect Reelbird${name ? ` on ${esc(name)}` : ""}</h1>
-<p class="lede">Check that this code matches the one Reelbird shows.</p>
+<p class="lede">Only connect if you just chose Sign In in Reelbird on your own Mac, and this code matches the one it shows.</p>
 <div class="code" aria-label="Code ${esc(code.split("").join(" "))}">${esc(code)}</div>
 <form method="post" action="/device"><input type="hidden" name="code" value="${esc(code)}">
 <button class="btn primary block" type="submit">Connect</button></form>
@@ -334,6 +351,7 @@ export function accountPage(
   lim: { activeLinks: number | null; storageBytes: number },
   shares: { id: string; title: string | null; created_at: Date; bytes: string; views: number; opens: number }[],
   billingState: { subscribed: boolean; paymentFailed?: boolean; portal: boolean; welcome: boolean; deleted?: boolean } = { subscribed: false, portal: false, welcome: false },
+  macs: { id: string; name: string | null; created_at: Date; last_used_at: Date }[] = [],
 ) {
   const pro = user.plan === "pro";
   // Billing shows for anyone with a subscription, Pro or not: a failed payment is when it matters most.
@@ -367,7 +385,12 @@ export function accountPage(
   return layout("Your links · Reelbird Pro", `<div class="wrap">
 <div class="pagehead"><div><h1>Your links</h1><p class="sub"><span>${esc(user.email)}</span>${pro ? `<span aria-hidden="true">·</span><span>Reelbird Pro</span>` : ""}</p></div><div class="actions">${billing}${devPlan}</div></div>
 ${notice}${welcome}${facts}
-<section class="section" aria-label="Links">${list}</section></div>`, { user, current: "links" });
+<section class="section" aria-label="Links">${list}</section>
+${macs.length ? `<section class="section danger" id="macs"><div class="sechead"><h2>Signed-in Macs</h2><p>Reelbird and scripts that can upload and delete links in this account.</p></div>
+<table><thead><tr><th scope="col">Name</th><th scope="col" class="hide">Signed in</th><th scope="col" class="hide">Last used</th><th scope="col"><span class="hide" style="position:absolute;width:1px;height:1px;overflow:hidden">Sign out</span></th></tr></thead><tbody>
+${macs.map((m) => `<tr><td>${esc(m.name || "Reelbird")}</td><td class="quiet hide">${fmtDate(m.created_at)}</td><td class="quiet hide">${fmtDate(m.last_used_at)}</td>
+<td class="go"><form method="post" action="/account/macs/${esc(m.id)}/revoke"><button class="btn ghost sm" type="submit">Sign out</button></form></td></tr>`).join("")}
+</tbody></table></section>` : ""}</div>`, { user, current: "links" });
 }
 
 function retentionSVG(retention: number[], chunkSeconds: number, duration: number | null) {

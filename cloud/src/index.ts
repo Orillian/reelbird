@@ -12,7 +12,7 @@ import { billing, linkOnSignIn, portalURL, subscriptionState, upgradeURL, webhoo
 import * as pages from "./pages";
 import { serveAsset } from "./assets";
 import { canSendMail, sendMail } from "./mail";
-import { clientIP } from "./events";
+import { clientIP, limiter } from "./events";
 
 export const app = new Hono();
 
@@ -21,6 +21,8 @@ const fail = (c: Context, status: number, error: string, message: string) =>
 
 app.use("*", async (c, next) => {
   await next();
+  // Signed-in pages and sign-in steps are per person: never cached by a browser or proxy.
+  if (/^\/(account|device|login|billing|upgrade|logout)(\/|$)/.test(c.req.path)) c.header("cache-control", "no-store");
   c.header("x-content-type-options", "nosniff");
   c.header("referrer-policy", "strict-origin-when-cross-origin");
   if (!c.req.path.startsWith("/r/")) c.header("x-frame-options", "DENY");
@@ -54,25 +56,25 @@ app.get("/", async (c) => ((await auth.webUser(c)) ? c.redirect("/account") : c.
 // Fonts and icons for the pages, so they load nothing from other hosts.
 app.get("/assets/:file", serveAsset);
 
-// Per-IP limits, in memory (one instance). Sign-in emails: 10 an hour. Device codes: 20 an hour.
-// Polling for a device token: the app asks every 2 seconds, so 60 a minute is plenty.
-function limiter(limit: number, windowMs: number) {
-  const hits = new Map<string, number[]>();
-  return (ip: string) => {
-    const now = Date.now();
-    const recent = (hits.get(ip) ?? []).filter((t) => now - t < windowMs);
-    if (recent.length >= limit) return false;
-    recent.push(now);
-    if (hits.size > 50_000) hits.clear();
-    hits.set(ip, recent);
-    return true;
-  };
-}
-const loginAllowed = limiter(10, 3_600_000);
+// Limits, in memory (one instance). Sign-in emails: 10 an hour per IP and 300 an hour in all, to
+// protect the sender's reputation. Device codes: 20 an hour. Polling for a device token: the app asks
+// every 2 seconds, so 60 a minute is plenty. Per account: 120 syncs an hour (new links: shares.ts).
+const loginPerIP = limiter(10, 3_600_000);
+const loginTotal = limiter(300, 3_600_000);
+const loginAllowed = (ip: string) => loginPerIP(ip) && loginTotal("all");
+const syncAllowed = limiter(120, 3_600_000);
 const deviceAllowed = limiter(20, 3_600_000);
 const pollAllowed = limiter(60, 60_000);
 
-const safeNext = (n: unknown) => (typeof n === "string" && n.startsWith("/") && !n.startsWith("//") ? n : "/account");
+/** A path on this site to go to after signing in. Anything that could leave the site ("//x", "/\\x", tabs) is refused. */
+const safeNext = (n: unknown) => {
+  if (typeof n !== "string" || !/^\/(?![\/\\])[^\\\x00-\x20]*$/.test(n)) return "/account";
+  try {
+    return new URL(n, config.publicURL).origin === new URL(config.publicURL).origin ? n : "/account";
+  } catch {
+    return "/account";
+  }
+};
 
 app.get("/login", async (c) => {
   const next = safeNext(c.req.query("next"));
@@ -139,7 +141,10 @@ app.post("/device", async (c) => {
   const user = await auth.webUser(c);
   if (!user) return c.redirect("/login");
   const code = auth.normalizeCode(String((await c.req.parseBody()).code ?? ""));
+  const name = code ? (await auth.deviceInfo(code))?.name ?? null : null;
   const ok = code ? await auth.approveDevice(code, user.id) : false;
+  // Tell the account's owner, so a code approved by mistake (or by phishing) doesn't go unnoticed.
+  if (ok && canSendMail) sendMail({ to: user.email, ...pages.connectedEmail(name) }).catch((e) => console.error("mail:", e));
   return c.html(pages.devicePage(user, code ?? "", null, ok ? "done" : "invalid"), ok ? 200 : 404);
 });
 
@@ -147,7 +152,16 @@ app.get("/account", async (c) => {
   const user = await auth.webUser(c);
   if (!user) return c.redirect("/login?next=/account");
   const billingState = { ...(await subscriptionState(user.id)), portal: portalURL(user) !== null, welcome: c.req.query("welcome") === "pro", deleted: c.req.query("deleted") === "1" };
-  return c.html(pages.accountPage(user, await usage(user.id), limits(user.plan), await listShares(user.id), billingState));
+  return c.html(pages.accountPage(user, await usage(user.id), limits(user.plan), await listShares(user.id), billingState, await auth.appSessions(user.id)));
+});
+
+/** Signs a Mac (or a script's token) out of this account. */
+app.post("/account/macs/:id/revoke", async (c) => {
+  if (!auth.sameOrigin(c)) return c.text("Bad origin", 403);
+  const user = await auth.webUser(c);
+  if (!user) return c.redirect("/login");
+  await auth.revokeAppSession(user.id, c.req.param("id"));
+  return c.redirect("/account#macs");
 });
 
 // MARK: Billing (Stripe Payment Link + webhook + no-code customer portal)
@@ -256,6 +270,7 @@ app.post("/api/shares/:id/credentials", async (c) => {
 });
 
 app.post("/api/shares/:id/sync", async (c) => {
+  if (!syncAllowed(me(c).id)) return fail(c, 429, "SlowDown", "Too many syncs. Try again later.");
   const ok = await syncShare(me(c), c.req.param("id"));
   return ok ? c.body(null, 204) : fail(c, 404, "NotFound", "No such link in this account.");
 });

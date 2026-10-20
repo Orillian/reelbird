@@ -59,6 +59,10 @@ async function recompute(customerId: string, q: Q = sql) {
 
 type Obj = Record<string, any>;
 
+// Two events in the same second: the later stage of a subscription's life wins.
+const RANKS: Record<string, number> = { incomplete: 0, trialing: 1, active: 2, past_due: 3, unpaid: 4, paused: 4, canceled: 5, incomplete_expired: 5 };
+const rank = (status: string) => RANKS[status] ?? 0;
+
 async function upsertSubscription(q: Q, s: Obj, eventAt: Date) {
   const items: Obj[] = s.items?.data ?? [];
   const item = items.find((i) => (i.price?.product ?? i.plan?.product) === billing.proProduct);
@@ -75,7 +79,10 @@ async function upsertSubscription(q: Q, s: Obj, eventAt: Date) {
     on conflict (id) do update set customer_id = excluded.customer_id, product_id = excluded.product_id, status = excluded.status,
       amount = excluded.amount, currency = excluded.currency, interval = excluded.interval,
       current_period_end = excluded.current_period_end, event_at = excluded.event_at, updated_at = now()
-    where subscriptions.event_at is null or subscriptions.event_at <= excluded.event_at`;
+    where subscriptions.event_at is null or subscriptions.event_at < excluded.event_at
+       or (subscriptions.event_at = excluded.event_at and ${rank(s.status)} >= (case subscriptions.status
+         when 'trialing' then 1 when 'active' then 2 when 'past_due' then 3 when 'unpaid' then 4 when 'paused' then 4
+         when 'canceled' then 5 when 'incomplete_expired' then 5 else 0 end))`;
   await recompute(s.customer, q);
 }
 
@@ -92,8 +99,16 @@ async function checkoutCompleted(q: Q, session: Obj) {
     ? await q<{ id: string }[]>`select id from users where id = ${ref}`
     : email ? await q<{ id: string }[]>`select id from users where email = ${email}` : [];
   if (!user) return; // paid before having an account: linkOnSignIn() picks it up
-  await q`update users set stripe_customer_id = null where stripe_customer_id = ${session.customer} and id <> ${user.id}`;
-  await q`update users set stripe_customer_id = ${session.customer} where id = ${user.id}`;
+  // The checkout's email isn't verified: anyone can type yours into the public link. Matched by email
+  // only, it may link an account that has no customer yet, but never replace an existing one.
+  // client_reference_id comes from /upgrade, signed in, so that match may.
+  if (!ref) {
+    const linked = await q`update users set stripe_customer_id = ${session.customer} where id = ${user.id} and stripe_customer_id is null returning 1`;
+    if (!linked.length) return;
+  } else {
+    await q`update users set stripe_customer_id = null where stripe_customer_id = ${session.customer} and id <> ${user.id}`;
+    await q`update users set stripe_customer_id = ${session.customer} where id = ${user.id}`;
+  }
   // The subscription event can arrive before or after this one. If it hasn't yet, count the paid
   // checkout for now (a 100%-off code is paid too: "no_payment_required"); the subscription event replaces it.
   if (typeof session.subscription === "string") {

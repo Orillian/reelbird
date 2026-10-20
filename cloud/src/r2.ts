@@ -84,6 +84,21 @@ export class R2 {
     return r;
   }
 
+  /** The body as text, or null when it's missing or longer than `max` bytes (decoded). Never buffers more. */
+  async getText(key: string, max: number): Promise<string | null> {
+    const r = await this.get(key);
+    if (!r?.body) return null;
+    if (Number(r.headers.get("content-length") ?? 0) > max) { await r.body.cancel(); return null; }
+    const chunks: Uint8Array[] = [];
+    let n = 0;
+    for await (const chunk of r.body) {
+      n += chunk.byteLength;
+      if (n > max) return null;
+      chunks.push(chunk);
+    }
+    return new TextDecoder().decode(Buffer.concat(chunks));
+  }
+
   async put(key: string, body: string | Uint8Array, contentType: string) {
     const r = await this.send("PUT", key, { body, headers: { "content-type": contentType } });
     if (!r.ok) throw new Error(`R2 PUT ${key}: ${r.status} ${await r.text()}`);
@@ -137,7 +152,7 @@ export class R2 {
    * A presigned GET URL. `window` rounds the signing time down so every request within it gets the
    * same URL, which lets browsers and the CDN cache the media.
    */
-  presignGet(key: string, opts: { window?: number; expires?: number; contentDisposition?: string } = {}) {
+  presignGet(key: string, opts: { window?: number; expires?: number; contentDisposition?: string; contentType?: string } = {}) {
     const window = opts.window ?? 3600;
     const expires = opts.expires ?? window * 2;
     const at = new Date(Math.floor(Date.now() / 1000 / window) * window * 1000);
@@ -152,6 +167,7 @@ export class R2 {
       ["X-Amz-SignedHeaders", "host"],
     ];
     if (opts.contentDisposition) query.push(["response-content-disposition", opts.contentDisposition]);
+    if (opts.contentType) query.push(["response-content-type", opts.contentType]);
     const canonical = ["GET", this.path(key), canonicalQuery(query), `host:${this.host}\n`, "host", "UNSIGNED-PAYLOAD"].join("\n");
     const toSign = ["AWS4-HMAC-SHA256", date, scope, sha256(canonical)].join("\n");
     const sig = createHmac("sha256", this.signingKey(day)).update(toSign).digest("hex");

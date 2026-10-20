@@ -15,7 +15,10 @@ if (cmd === "takedown" && arg) {
   } else {
     const shares = await sql<{ id: string }[]>`select id from shares where user_id = ${u.id}`;
     for (const s of shares) await takeDown(s.id);
-    await sql`delete from users where id = ${u.id}`; // sessions and shares go with it
+    // Keep the (deleted) link rows so their IDs can never be claimed again; drop everything personal.
+    await sql`delete from sessions where user_id = ${u.id}`;
+    await sql`update shares set title = null where user_id = ${u.id}`;
+    await sql`update users set email = ${`deleted-${u.id}@invalid`}, plan = 'free', stripe_customer_id = null where id = ${u.id}`;
     await sql`delete from login_links where lower(email) = ${arg.toLowerCase()}`;
     await sql`delete from stripe_customers where lower(email) = ${arg.toLowerCase()}`;
     console.log(`Deleted ${arg} and ${shares.length} link(s).`);

@@ -9,6 +9,8 @@
 import { config } from "./config";
 import { HLS_SRI, HLS_URL, VIEWER_TEMPLATE } from "./viewer-template";
 
+export { HLS_URL };
+
 export type Meta = {
   version: number;
   id: string;
@@ -154,7 +156,7 @@ export function renderViewer(meta: Meta, nonce: string) {
 export function viewerCSP(nonce: string, r2Origin: string) {
   return [
     "default-src 'none'",
-    `script-src 'nonce-${nonce}' https://cdn.jsdelivr.net`,
+    `script-src 'nonce-${nonce}' ${HLS_URL}`, // the one pinned hls.js file, not all of jsDelivr
     "style-src 'unsafe-inline'",
     `img-src 'self' data: ${r2Origin}`,
     `media-src 'self' blob: ${r2Origin}`,

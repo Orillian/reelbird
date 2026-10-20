@@ -60,17 +60,23 @@ export const VIEWER_SCRIPT = String.raw`(() => {
 `;
 
 // A small in-memory limiter per IP. (On Tiffin: Valkey's rateLimit, shared across instances.)
-const hits = new Map<string, { n: number; reset: number }>();
-function allowed(ip: string, limit = 120, windowMs = 60_000) {
-  const now = Date.now();
-  const h = hits.get(ip);
-  if (!h || h.reset < now) {
-    if (hits.size > 50_000) hits.clear();
-    hits.set(ip, { n: 1, reset: now + windowMs });
+/** Counts per IP (an IPv6 address counts per /64: one home or server has the whole block). */
+export function limiter(limit: number, windowMs: number) {
+  const hits = new Map<string, number[]>();
+  return (ip: string) => {
+    const key = ip.includes(":") ? ip.split(":").slice(0, 4).join(":") : ip;
+    const now = Date.now();
+    const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
+    if (recent.length >= limit) return false;
+    recent.push(now);
+    hits.delete(key);
+    hits.set(key, recent);
+    // Forget the oldest keys, not everyone's counts at once.
+    if (hits.size > 50_000) for (const k of [...hits.keys()].slice(0, 10_000)) hits.delete(k);
     return true;
-  }
-  return ++h.n <= limit;
+  };
 }
+const allowed = limiter(120, 60_000);
 
 /**
  * The visitor's IP. Behind the box's proxy, the last X-Forwarded-For entry is the one the proxy
@@ -116,7 +122,8 @@ export async function ingest(c: Context) {
     return c.body(null, 400);
   }
   const shareId = typeof e.s === "string" ? e.s : "";
-  const [share] = await sql<{ user_id: string }[]>`select user_id from shares where id = ${shareId} and deleted_at is null`;
+  const [share] = await sql<{ user_id: string; revision: number; duration: number | null }[]>`
+    select user_id, revision, duration from shares where id = ${shareId} and deleted_at is null`;
   if (!share) return c.body(null, 204);
   // The owner watching their own link isn't a view.
   const me = await webUser(c);
@@ -128,7 +135,12 @@ export async function ingest(c: Context) {
     return c.body(null, 204);
   }
   if (e.t !== "beat" || typeof e.v !== "string" || !/^[0-9a-f-]{36}$/i.test(e.v)) return c.body(null, 400);
+  // Reports must match what the page actually serves: no future versions, no longer videos.
+  const rev = Math.trunc(num(e.rev, 1e6) ?? 0);
+  if (rev > share.revision) return c.body(null, 204);
+  const maxSecs = share.duration ? share.duration + 2 : 6 * 3600;
   const watchedSeconds = num(e.ws, 6 * 3600) ?? 0;
+  if (watchedSeconds > maxSecs * 4) return c.body(null, 204);
   if (watchedSeconds < 3) return c.body(null, 204);
   let bitmap: Buffer;
   try {
@@ -141,10 +153,15 @@ export async function ingest(c: Context) {
   const day = new Date().toISOString().slice(0, 10);
   const viewer = createHash("sha256").update(`${config.statsSecret}|${day}|${ip}|${ua}|${shareId}`).digest("hex").slice(0, 32);
   const d = device(ua);
-  const country = c.req.header("cf-ipcountry") ?? c.req.header("x-country") ?? null;
+  const country = config.trustCountryHeader ? c.req.header("cf-ipcountry") ?? null : null;
+  // One viewer can't fill a link's stats: at most 20 views of a link per viewer per day.
+  const [seen] = await sql<{ n: number; mine: number }[]>`
+    select count(*)::int as n, count(*) filter (where id = ${e.v})::int as mine
+    from views where share_id = ${shareId} and viewer = ${viewer} and started_at > now() - interval '1 day'`;
+  if (!seen!.mine && seen!.n >= 20) return c.body(null, 204);
   await sql`
     insert into views (id, share_id, viewer, rev, duration, max_pos, watched_seconds, watched, completed, referrer, country, device, browser)
-    values (${e.v}, ${shareId}, ${viewer}, ${Math.trunc(num(e.rev, 1e6) ?? 0)}, ${num(e.d, 6 * 3600)}, ${num(e.p, 6 * 3600) ?? 0},
+    values (${e.v}, ${shareId}, ${viewer}, ${rev}, ${num(e.d, maxSecs)}, ${num(e.p, maxSecs) ?? 0},
             ${watchedSeconds}, ${bitmap}, ${e.c === true}, ${referrerHost(e.r, config.publicURL)},
             ${country?.slice(0, 2) ?? null}, ${d.kind}, ${d.browser})
     on conflict (id) do update set

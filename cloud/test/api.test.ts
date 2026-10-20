@@ -526,3 +526,97 @@ test("deleting a link deletes its view records; an operator takedown does the sa
   await q.end();
   expect((await call(`/r/${id}/`)).status).toBe(404);
 });
+
+// MARK: Review fixes
+
+test("sign-in never redirects off the site", async () => {
+  const jo = await webLogin("jo@example.com");
+  for (const bad of ["/\\evil.example", "//evil.example", "/\t/evil.example", "https://evil.example"]) {
+    const r = await call(`/login?next=${encodeURIComponent(bad)}`, { cookie: jo });
+    expect(r.headers.get("location")).toBe("/account");
+  }
+  expect((await call(`/login?next=${encodeURIComponent("/account/s/x")}`, { cookie: jo })).headers.get("location")).toBe("/account/s/x");
+});
+
+test("a checkout with someone else's email can't take over their billing link", async () => {
+  const kim = await appLogin("kim@example.com");
+  const q = db();
+  const [u] = await q`select id from users where email = 'kim@example.com'`;
+  await stripeEvent("checkout.session.completed", checkout("cus_kim", "sub_kim", { client_reference_id: u!.id }));
+  await stripeEvent("customer.subscription.created", sub("sub_kim", "cus_kim", "active"));
+  expect(await plan(kim.token)).toBe("pro");
+  // Someone else pays through the public link, typing kim's address.
+  await stripeEvent("checkout.session.completed", checkout("cus_mallory", "sub_mallory", { customer_details: { email: "kim@example.com" } }));
+  await stripeEvent("customer.subscription.deleted", sub("sub_mallory", "cus_mallory", "canceled"));
+  const [row] = await q`select stripe_customer_id from users where id = ${u!.id}`;
+  expect(row!.stripe_customer_id).toBe("cus_kim");
+  expect(await plan(kim.token)).toBe("pro");
+  await q.end();
+});
+
+test("same-second subscription events: the later stage wins", async () => {
+  const lee = await appLogin("lee@example.com");
+  const q = db();
+  const [u] = await q`select id from users where email = 'lee@example.com'`;
+  await q.end();
+  const event = (type: string, object: object, created: number) => {
+    const payload = JSON.stringify({ id: "evt_" + crypto.randomUUID().replaceAll("-", ""), type, created, data: { object } });
+    return call("/stripe/webhook", { method: "POST", body: payload, headers: { "stripe-signature": signPayload(payload, process.env.STRIPE_WEBHOOK_SECRET!) } });
+  };
+  await event("checkout.session.completed", checkout("cus_lee", "sub_lee", { client_reference_id: u!.id }), 5000);
+  await event("customer.subscription.updated", sub("sub_lee", "cus_lee", "active"), 5001);
+  await event("customer.subscription.created", sub("sub_lee", "cus_lee", "incomplete"), 5001);
+  expect(await plan(lee.token)).toBe("pro");
+});
+
+test("gateway: only media types redirect, with our content type; bad paths are 404s", async () => {
+  const mo = await appLogin("mo@example.com");
+  await call("/api/dev/plan", { ...json({ plan: "pro" }), bearer: mo.token });
+  const id = ShortIDForTest();
+  created.push(id);
+  const k = await (await call(`/api/shares/${id}/credentials`, { ...json({}), bearer: mo.token })).json();
+  const c = tempClient(k);
+  await c.put(`r/${id}/meta.json`, JSON.stringify({ revision: 0, title: "x" }), "application/json");
+  await c.put(`r/${id}/evil.html`, "<script>x</script>", "text/html");
+  await c.put(`r/${id}/sub/index.html`, "<script>x</script>", "text/html");
+  expect((await call(`/r/${id}/evil.html`)).status).toBe(404);
+  expect((await call(`/r/${id}/sub/index.html`)).status).toBe(404);
+  expect((await call(`/r/${id}/%E0%A4%A`)).status).toBe(404);
+  const mp4 = await call(`/r/${id}/video.1.mp4`);
+  expect(mp4.status).toBe(302);
+  expect(mp4.headers.get("location")).toContain("response-content-type=video%2Fmp4");
+  // A huge meta.json isn't read into memory: the link just isn't ready.
+  await c.put(`r/${id}/meta.json`, JSON.stringify({ title: "x".repeat(300 * 1024) }), "application/json");
+  expect((await call(`/r/${id}/`)).status).toBe(404);
+});
+
+test("analytics: reports for unpublished versions or one viewer's flood are ignored", async () => {
+  const ned = await appLogin("ned@example.com");
+  await call("/api/dev/plan", { ...json({ plan: "pro" }), bearer: ned.token });
+  const id = ShortIDForTest();
+  created.push(id);
+  const k = await (await call(`/api/shares/${id}/credentials`, { ...json({}), bearer: ned.token })).json();
+  await tempClient(k).put(`r/${id}/meta.json`, JSON.stringify({ revision: 2, title: "x", duration: 10 }), "application/json");
+  expect((await call(`/r/${id}/`)).status).toBe(200); // the page records revision 2, 10 s
+  const ua = { "user-agent": "Mozilla/5.0 Safari/605.1.15", "x-forwarded-for": "203.0.113.50" };
+  const bits = Buffer.from([0xff]).toString("base64");
+  const beat = (rev: number) => call("/e", { method: "POST", body: JSON.stringify({ s: id, v: crypto.randomUUID(), t: "beat", rev, d: 10, p: 9, ws: 9, w: bits }), headers: ua });
+  await beat(1000000);
+  for (let i = 0; i < 25; i++) await beat(2);
+  const stats = await (await call(`/api/shares/${id}/stats`, { bearer: ned.token })).json();
+  expect(stats.views).toBe(20);
+});
+
+test("signed-in Macs are listed and can be signed out from the browser", async () => {
+  const oz = await appLogin("oz@example.com");
+  const page = await (await call("/account", { cookie: oz.cookie })).text();
+  expect(page).toContain("Signed-in Macs");
+  expect(page).toContain("Test Mac");
+  const mac = page.match(/\/account\/macs\/([0-9a-f]{16})\/revoke/)![1];
+  expect((await call(`/account/macs/${mac}/revoke`, { method: "POST", cookie: oz.cookie })).status).toBe(302);
+  expect((await call("/api/me", { bearer: oz.token })).status).toBe(401);
+  // The approval was emailed.
+  expect(captured.some((m) => m.to === "oz@example.com" && m.subject.includes("was connected"))).toBe(true);
+  // Signed-in pages aren't cached.
+  expect((await call("/account", { cookie: oz.cookie })).headers.get("cache-control")).toBe("no-store");
+});

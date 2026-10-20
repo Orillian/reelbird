@@ -62,6 +62,9 @@ export async function credentials(user: User, id: string, title: string | null) 
       await tx`update shares set touched_at = now(), title = coalesce(${title}, title) where id = ${id}`;
       return;
     }
+    if (user.plan === "pro" && !(await newLinkAllowed(user.id))) {
+      throw new ShareRefusal(402, "SlowDown", "That's a lot of new links in an hour. Try again later.");
+    }
     if (user.plan !== "pro") {
       throw new ShareRefusal(402, "ProRequired",
         `Hosted links are part of Reelbird Pro ($5/month): ${config.publicURL}/upgrade. Or share to your own bucket for free.`);
@@ -135,12 +138,19 @@ export async function listShares(userId: string) {
 export async function syncShare(user: User, id: string) {
   const [s] = await sql`select 1 from shares where id = ${id} and user_id = ${user.id} and deleted_at is null`;
   if (!s) return false;
-  const r = await r2.get(`r/${id}/meta.json`);
-  const meta = r ? ((await r.json().catch(() => null)) as { title?: unknown } | null) : null;
+  const text = await r2.getText(`r/${id}/meta.json`, 256 * 1024);
+  let meta: { title?: unknown } | null = null;
+  try { meta = text ? JSON.parse(text) : null; } catch {}
   const title = typeof meta?.title === "string" ? meta.title.slice(0, 300) : null;
   const bytes = await r2.size(`r/${id}/`);
   await sql`update shares set title = coalesce(${title}, title), bytes = ${bytes}, sized_at = now(), touched_at = now() where id = ${id}`;
   return true;
+}
+
+// 30 new links an hour per account: a person never needs more, and it bounds what one hour of upload keys can store.
+async function newLinkAllowed(userId: string) {
+  const [r] = await sql<{ n: number }[]>`select count(*)::int as n from shares where user_id = ${userId} and created_at > now() - interval '1 hour'`;
+  return r!.n < 30;
 }
 
 export function storageInfo() {
@@ -163,5 +173,10 @@ export async function measureRecent() {
       console.error(`sizing ${id}:`, e);
     }
   }
+  // Accounts well past their storage: new uploads are already refused; flag them for the operator.
+  const over = await sql<{ email: string; bytes: string }[]>`
+    select u.email, sum(s.bytes)::bigint as bytes from shares s join users u on u.id = s.user_id
+    where s.deleted_at is null group by u.email having sum(s.bytes) > ${plans.pro.storageBytes * 1.2}`;
+  for (const o of over) console.warn(`over storage: ${o.email} has ${o.bytes} bytes`);
   return rows.length;
 }

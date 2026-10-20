@@ -14,22 +14,35 @@ import { r2, SHARE_ID } from "./shares";
 import { notFoundPage } from "./pages";
 import { renderViewer, sanitizeMeta, viewerCSP } from "./viewer";
 
-const PROXIED = /(^|\/)(index\.html|meta\.json)$|\.(m3u8|vtt)$/;
+// Only the page, its meta and the text files the player reads go through this server, each capped;
+// media is a redirect to R2, and only for the file types a share has, served with our content type.
+const PROXIED = /^(index\.html|meta\.json)$|\.(m3u8|vtt)$/;
+const MAX_META = 256 * 1024, MAX_TEXT = 4 * 1024 * 1024;
+const MEDIA: Record<string, string> = {
+  mp4: "video/mp4", m4s: "video/iso.segment", m4a: "audio/mp4", aac: "audio/aac",
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
+};
 const WINDOW = 3600;
 const TYPES: [RegExp, string][] = [[/\.m3u8$/, "application/vnd.apple.mpegurl"], [/\.vtt$/, "text/vtt; charset=utf-8"]];
 const INERT = "default-src 'none'; sandbox";
 
 async function readMeta(id: string) {
-  const r = await r2.get(`r/${id}/meta.json`);
-  if (!r) return null;
-  try { return sanitizeMeta(JSON.parse(await r.text()), id); } catch { return null; }
+  const text = await r2.getText(`r/${id}/meta.json`, MAX_META);
+  if (text === null) return null;
+  let meta;
+  try { meta = sanitizeMeta(JSON.parse(text), id); } catch { return null; }
+  // Remember what's published, so view reports for other versions or lengths can be ignored (events.ts).
+  if (meta) await sql`update shares set revision = ${meta.revision}, duration = ${meta.duration ?? null}
+                      where id = ${id} and (revision is distinct from ${meta.revision} or duration is distinct from ${meta.duration ?? null})`;
+  return meta;
 }
 
 export async function serveShare(c: Context) {
   const id = c.req.param("id") ?? "";
   if (!SHARE_ID.test(id)) return c.html(notFoundPage(), 404);
   const prefix = `/r/${id}/`;
-  const path = decodeURIComponent(new URL(c.req.url).pathname.slice(prefix.length)) || "index.html";
+  let path: string;
+  try { path = decodeURIComponent(new URL(c.req.url).pathname.slice(prefix.length)) || "index.html"; } catch { return c.html(notFoundPage(), 404); }
   if (path.split("/").some((p) => p === ".." || p === "." || p === "")) return c.html(notFoundPage(), 404);
 
   const [share] = await sql`select 1 from shares where id = ${id} and deleted_at is null`;
@@ -47,18 +60,21 @@ export async function serveShare(c: Context) {
         ...base, "content-type": "text/html; charset=utf-8", "content-security-policy": viewerCSP(nonce, r2.endpoint),
       });
     }
-    const r = await r2.get(key);
-    if (!r) return c.body(null, 404);
+    const text = await r2.getText(key, MAX_TEXT);
+    if (text === null) return c.body(null, 404);
     const type = TYPES.find(([re]) => re.test(path))?.[1] ?? "application/octet-stream";
-    return new Response(r.body, { status: 200, headers: { ...base, "content-type": type, "content-security-policy": INERT } });
+    return c.body(text, 200, { ...base, "content-type": type, "content-security-policy": INERT });
   }
 
   // A click on Download navigates to the MP4 (Sec-Fetch-Dest: document): ask R2 to send it as a file.
+  const type = MEDIA[path.split(".").pop()!.toLowerCase()];
+  if (!type) return c.body(null, 404);
   const dest = c.req.header("sec-fetch-dest");
   const download = dest === "document" && path.endsWith(".mp4");
   const url = r2.presignGet(key, {
     window: WINDOW,
     contentDisposition: download ? `attachment; filename="${id}.mp4"` : undefined,
+    contentType: type,
   });
   const left = WINDOW - (Math.floor(Date.now() / 1000) % WINDOW);
   return c.body(null, 302, { location: url, "cache-control": `private, max-age=${Math.min(600, left)}` });

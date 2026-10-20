@@ -71,7 +71,12 @@ export async function endWebSession(c: Context) {
 /** Form posts must come from our own pages (SameSite=Lax covers most of this; this covers the rest). */
 export function sameOrigin(c: Context) {
   const origin = c.req.header("origin");
-  return !origin || origin === config.publicURL || (config.dev && new URL(origin).hostname === "127.0.0.1");
+  if (!origin || origin === config.publicURL) return true;
+  try {
+    return config.dev && new URL(origin).hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
 }
 
 /** Drops expired sessions, device codes and sign-in links (a day late, so limits can still count them). */
@@ -82,6 +87,18 @@ export async function cleanUp() {
 }
 
 // MARK: App tokens
+
+/** The Macs and scripts signed in to an account. `id` is a prefix of the token's hash, never the token. */
+export async function appSessions(userId: string) {
+  return sql<{ id: string; name: string | null; created_at: Date; last_used_at: Date }[]>`
+    select left(token_hash, 16) as id, name, created_at, last_used_at from sessions
+    where user_id = ${userId} and kind = 'app' and expires_at > now() order by last_used_at desc`;
+}
+
+export async function revokeAppSession(userId: string, id: string) {
+  if (!/^[0-9a-f]{16}$/.test(id)) return;
+  await sql`delete from sessions where user_id = ${userId} and kind = 'app' and left(token_hash, 16) = ${id}`;
+}
 
 export const appUser = (c: Context) => userForToken(c.req.header("authorization")?.replace(/^Bearer\s+/i, ""), "app");
 
