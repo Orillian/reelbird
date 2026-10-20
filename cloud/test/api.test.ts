@@ -45,8 +45,10 @@ function lastLink(email: string) {
   return m?.text.match(/https?:\/\/\S+\/login\/verify\?token=([A-Za-z0-9_-]+)/)?.[1] ?? null;
 }
 
+let loginIP = 0;
 async function webLogin(email: string, next = "/account") {
-  const r = await call("/login", { method: "POST", body: new URLSearchParams({ email, next }) });
+  // Each sign-in from its own address, so the per-IP email limit doesn't trip the suite.
+  const r = await call("/login", { method: "POST", body: new URLSearchParams({ email, next }), headers: { "x-forwarded-for": `198.18.0.${++loginIP}` } });
   expect(r.status).toBe(200);
   expect(await r.text()).toContain("Check your email");
   const token = lastLink(email)!;
@@ -59,7 +61,7 @@ async function webLogin(email: string, next = "/account") {
 }
 
 async function appLogin(email: string) {
-  const start = await (await call("/api/device", json({ name: "Test Mac" }))).json();
+  const start = await (await call("/api/device", { ...json({ name: "Test Mac" }), headers: { "content-type": "application/json", "x-forwarded-for": `198.19.0.${++loginIP}` } })).json();
   expect(start.userCode).toMatch(/^[A-Z]{4}-[A-Z]{4}$/);
   expect((await call("/api/device/token", json({ deviceCode: start.deviceCode }))).status).toBe(428);
   const cookie = await webLogin(email);
@@ -88,7 +90,7 @@ let shareId: string;
 
 const backdate = async (id: string) => {
   const db = postgres(TEST_DB, { max: 1, onnotice: () => {} });
-  await db`update shares set touched_at = now() - interval '2 days' where id = ${id}`;
+  await db`update shares set touched_at = now() - interval '2 days', created_at = now() - interval '2 days' where id = ${id}`;
   await db.end();
 };
 
@@ -163,7 +165,10 @@ test("upload keys work for the share's folder only, and the gateway serves it", 
   expect(list[0].bytes).toBeGreaterThan(0);
   const page = await call(`/r/${shareId}/`);
   expect(page.status).toBe(200);
-  expect(await page.text()).toContain(`<script src="/e.js" data-share="${shareId}" defer>`);
+  const pageHTML = await page.text();
+  expect(pageHTML).toMatch(new RegExp(`<script nonce="[^"]+" src="/e.js" data-share="${shareId}" defer>`));
+  expect(pageHTML).toContain("<title>Demo from meta</title>");
+  expect(page.headers.get("content-security-policy")).toContain("script-src 'nonce-");
   expect((await call(`/r/${shareId}`)).status).toBe(301);
   expect((await call(`/r/${shareId}/meta.json`)).status).toBe(200);
   const media = await call(`/r/${shareId}/video.1.mp4`);
@@ -172,6 +177,39 @@ test("upload keys work for the share's folder only, and the gateway serves it", 
   expect(await signed.text()).toBe("fake mp4 bytes");
   expect((await call(`/r/${shareId}/..%2Fsecret`)).status).toBe(404);
   expect((await call(`/r/${ShortIDForTest()}/`)).status).toBe(404);
+});
+
+test("uploaded files never run as watch.reelbird.app: the page is rendered from checked meta", async () => {
+  const k = await (await call(`/api/shares/${shareId}/credentials`, { ...json({}), bearer: alice.token })).json();
+  const c = tempClient(k);
+  await c.put(`r/${shareId}/index.html`, `<html><body><script>steal()</script></body></html>`, "text/html");
+  await c.put(`r/${shareId}/meta.json`, JSON.stringify({
+    revision: 2, title: `</script><script>steal()</script>`, baseURL: "https://evil.example/", pageURL: "https://evil.example/",
+    video: "https://evil.example/x.mp4", poster: "../../other/poster.jpg", captions: "captions.2.vtt", width: 1920, height: 1080,
+    chapters: [{ time: 3, title: "<img src=x onerror=steal()>" }, { time: "x", title: 1 }],
+  }), "text/html");
+  await c.put(`r/${shareId}/hls/index.m3u8`, `<script>steal()</script>`, "text/html");
+  const page = await call(`/r/${shareId}/`);
+  const html = await page.text();
+  expect(html).not.toContain("<script>steal()");
+  expect(html).not.toContain("evil.example");
+  expect(html).not.toContain("<img src=x");
+  const nonce = page.headers.get("content-security-policy")!.match(/'nonce-([^']+)'/)![1];
+  for (const tag of html.match(/<script(?=[\s>])[^>]*>/g)!) expect(tag).toContain(`nonce="${nonce}"`);
+  const meta = await (await call(`/r/${shareId}/meta.json`)).json();
+  expect(meta).toMatchObject({ baseURL: `${base}/r/${shareId}/`, pageURL: `${base}/r/${shareId}/`, captions: "captions.2.vtt", revision: 2 });
+  expect(meta.video).toBeUndefined();
+  expect(meta.poster).toBeUndefined();
+  expect(meta.chapters).toEqual([{ time: 3, title: "<img src=x onerror=steal()>" }]);
+  const playlist = await call(`/r/${shareId}/hls/index.m3u8`);
+  expect(playlist.headers.get("content-type")).toBe("application/vnd.apple.mpegurl");
+  expect(playlist.headers.get("content-security-policy")).toContain("sandbox");
+  expect(playlist.headers.get("x-content-type-options")).toBe("nosniff");
+});
+
+test("the server's viewer template matches the app's", async () => {
+  const { generated, out } = await import("../scripts/sync-viewer");
+  expect(await Bun.file(out).text()).toBe(generated());
 });
 
 test("someone else's share ID is refused", async () => {
@@ -212,7 +250,7 @@ test("views are recorded; Pro sees everything, a lapsed account sees the count",
 test("when Pro ends: links keep playing, uploads in progress finish, nothing new", async () => {
   // alice is no longer Pro (previous test).
   expect((await call(`/r/${shareId}/`)).status).toBe(200);
-  // Touched in the last day (a recording that was uploading): keys still come.
+  // Made in the last day (a recording that was uploading): keys still come, and renewing doesn't extend that.
   expect((await call(`/api/shares/${shareId}/credentials`, { ...json({}), bearer: alice.token })).status).toBe(200);
   // Older than a day: no more updates.
   await backdate(shareId);
@@ -352,4 +390,122 @@ test("pages: brand assets are served with long caching; the home page sends sign
   const res = await call("/", { cookie: dave });
   expect(res.status).toBe(302);
   expect(res.headers.get("location")).toBe("/account");
+});
+
+// MARK: Hardening
+
+const db = () => postgres(TEST_DB, { max: 1, onnotice: () => {} });
+
+test("storage counts on every key renewal, not just new links", async () => {
+  const carl = await appLogin("carl@example.com");
+  await call("/api/dev/plan", { ...json({ plan: "pro" }), bearer: carl.token });
+  const id = ShortIDForTest();
+  created.push(id);
+  expect((await call(`/api/shares/${id}/credentials`, { ...json({}), bearer: carl.token })).status).toBe(200);
+  const q = db();
+  await q`update shares set bytes = ${200e9} where id = ${id}`;
+  await q.end();
+  const r = await call(`/api/shares/${id}/credentials`, { ...json({}), bearer: carl.token });
+  expect(r.status).toBe(402);
+  expect((await r.json()).error).toBe("StorageLimit");
+});
+
+test("a delete that fails in R2 is retried until the files are gone", async () => {
+  const { purgeDeleted, r2 } = await import("../src/shares");
+  const dana = await appLogin("dana@example.com");
+  await call("/api/dev/plan", { ...json({ plan: "pro" }), bearer: dana.token });
+  const id = ShortIDForTest();
+  created.push(id);
+  const k = await (await call(`/api/shares/${id}/credentials`, { ...json({}), bearer: dana.token })).json();
+  await tempClient(k).put(`r/${id}/meta.json`, "{}", "application/json");
+  const real = r2.deleteShare.bind(r2);
+  r2.deleteShare = async () => { throw new Error("R2 is down"); };
+  expect((await call(`/api/shares/${id}`, { method: "DELETE", bearer: dana.token })).status).toBe(204);
+  expect((await call(`/r/${id}/`)).status).toBe(404); // the link stops at once
+  expect((await new R2(config.r2).list(`r/${id}/`)).length).toBe(1); // files still there
+  r2.deleteShare = real;
+  expect(await purgeDeleted()).toBeGreaterThanOrEqual(1);
+  expect(await new R2(config.r2).list(`r/${id}/`)).toEqual([]);
+  const q = db();
+  const [row] = await q`select purged_at is not null as purged from shares where id = ${id}`;
+  // Purged once; another pass comes after the last keys expire.
+  expect(row!.purged).toBe(true);
+  await q`update shares set deleted_at = now() - interval '2 hours', purged_at = now() - interval '110 minutes' where id = ${id}`;
+  expect(await purgeDeleted()).toBeGreaterThanOrEqual(1);
+  const [again] = await q`select purged_at > deleted_at + interval '65 minutes' as final from shares where id = ${id}`;
+  expect(again!.final).toBe(true);
+  await q.end();
+});
+
+test("links can be deleted from the browser", async () => {
+  const erin2 = await appLogin("erin2@example.com");
+  await call("/api/dev/plan", { ...json({ plan: "pro" }), bearer: erin2.token });
+  const id = ShortIDForTest();
+  created.push(id);
+  await call(`/api/shares/${id}/credentials`, { ...json({}), bearer: erin2.token });
+  const page = await (await call(`/account/s/${id}`, { cookie: erin2.cookie })).text();
+  expect(page).toContain(`action="/account/s/${id}/delete"`);
+  // Someone else can't.
+  expect((await call(`/account/s/${id}/delete`, { method: "POST", cookie: alice.cookie })).status).toBe(404);
+  const r = await call(`/account/s/${id}/delete`, { method: "POST", cookie: erin2.cookie });
+  expect(r.headers.get("location")).toBe("/account?deleted=1");
+  expect((await call(`/r/${id}/`)).status).toBe(404);
+  expect((await call(`/account/s/${id}/delete`, { method: "POST", cookie: erin2.cookie, headers: { origin: "https://evil.example" } })).status).toBe(403);
+});
+
+test("billing: an older event can't undo a newer one; a failed event leaves no trace", async () => {
+  const hal = await appLogin("hal@example.com");
+  const me = await (await call("/api/me", { bearer: hal.token })).json();
+  expect(me.plan).toBe("free");
+  const q = db();
+  const [u] = await q`select id from users where email = 'hal@example.com'`;
+  await q.end();
+  const event = (type: string, object: object, created: number, id = "evt_" + crypto.randomUUID().replaceAll("-", "")) => {
+    const payload = JSON.stringify({ id, type, created, data: { object } });
+    return call("/stripe/webhook", { method: "POST", body: payload, headers: { "stripe-signature": signPayload(payload, process.env.STRIPE_WEBHOOK_SECRET!) } });
+  };
+  await event("checkout.session.completed", checkout("cus_hal", "sub_hal", { client_reference_id: u!.id }), 1000);
+  await event("customer.subscription.created", sub("sub_hal", "cus_hal", "active"), 1001);
+  await event("customer.subscription.deleted", sub("sub_hal", "cus_hal", "canceled"), 1003);
+  // Delivered late: the "active" update from before the cancellation.
+  await event("customer.subscription.updated", sub("sub_hal", "cus_hal", "active"), 1002);
+  expect(await plan(hal.token)).toBe("free");
+
+  // An event whose effects fail isn't recorded, so Stripe's retry runs it in full.
+  const id = "evt_fail_once";
+  const bad = { ...sub("sub_hal2", "cus_hal", "active"), status: null }; // violates a NOT NULL: the effects fail
+  const r1 = await event("customer.subscription.created", bad, 2000, id);
+  expect(r1.status).toBe(500);
+  const r2 = await event("customer.subscription.created", sub("sub_hal2", "cus_hal", "active"), 2000, id);
+  expect(await r2.json()).toEqual({ received: true });
+  expect(await plan(hal.token)).toBe("pro");
+});
+
+test("a failed payment still shows billing, so the card can be fixed", async () => {
+  const gus = await appLogin("gus@example.com");
+  const q = db();
+  const [u] = await q`select id from users where email = 'gus@example.com'`;
+  await q.end();
+  await stripeEvent("checkout.session.completed", checkout("cus_gus", "sub_gus", { client_reference_id: u!.id }));
+  await stripeEvent("customer.subscription.updated", sub("sub_gus", "cus_gus", "past_due"));
+  expect(await plan(gus.token)).toBe("free");
+  const page = await (await call("/account", { cookie: gus.cookie })).text();
+  expect(page).toContain("Manage billing");
+  expect(page).toContain("Your last payment didn't go through");
+});
+
+test("report page, readiness, and sign-in rate limits", async () => {
+  const r = await (await call("/report?link=MyR3jLKo9BGwGW")).text();
+  expect(r).toContain("mailto:hello@reelbird.app");
+  expect(r).toContain("/r/MyR3jLKo9BGwGW/");
+  expect(await (await call("/report?link=<script>")).text()).not.toContain("<script>");
+  expect((await call("/readyz")).status).toBe(200);
+  const ip = { "x-forwarded-for": "192.0.2.99" };
+  let last = 0;
+  for (let i = 0; i < 21; i++) last = (await call("/api/device", { ...json({}), headers: { ...ip, "content-type": "application/json" } })).status;
+  expect(last).toBe(429);
+  // A spoofed first entry doesn't dodge it: the proxy's (last) entry is the one that counts.
+  const spoofed = await call("/api/device", { ...json({}), headers: { "x-forwarded-for": "10.9.9.9, 192.0.2.99", "content-type": "application/json" } });
+  expect(spoofed.status).toBe(429);
+  expect((await call("/stripe/webhook", { method: "POST", body: "x".repeat(300 * 1024) })).status).toBe(413);
 });

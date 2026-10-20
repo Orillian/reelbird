@@ -1,13 +1,14 @@
 // Reelbird Cloud: hosted share links and view analytics for the Reelbird app.
 import { Hono, type Context } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { config, type Plan } from "./config";
 import { sql } from "./db";
 import * as auth from "./auth";
-import { credentials, deleteShare, limits, listShares, measureRecent, ShareRefusal, SHARE_ID, storageInfo, syncShare, usage } from "./shares";
+import { credentials, deleteShare, limits, listShares, measureRecent, purgeDeleted, ShareRefusal, SHARE_ID, storageInfo, syncShare, usage } from "./shares";
 import { serveShare } from "./gateway";
 import { ingest, VIEWER_SCRIPT } from "./events";
 import { shareStats } from "./stats";
-import { billing, hasSubscription, linkOnSignIn, portalURL, upgradeURL, webhook } from "./billing";
+import { billing, linkOnSignIn, portalURL, subscriptionState, upgradeURL, webhook } from "./billing";
 import * as pages from "./pages";
 import { serveAsset } from "./assets";
 import { canSendMail, sendMail } from "./mail";
@@ -25,7 +26,19 @@ app.use("*", async (c, next) => {
   if (!c.req.path.startsWith("/r/")) c.header("x-frame-options", "DENY");
 });
 
+// No request needs more than this: uploads go straight to R2, and Stripe events are a few KB.
+app.use("*", bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.text("Too large", 413) }));
+
 app.get("/healthz", (c) => c.text("ok"));
+// Ready to serve: the database answers. (Liveness is /healthz; this one is for monitors.)
+app.get("/readyz", async (c) => {
+  try {
+    await sql`select 1`;
+    return c.text("ok");
+  } catch {
+    return c.text("database unavailable", 503);
+  }
+});
 
 // MARK: Viewer
 
@@ -41,17 +54,23 @@ app.get("/", async (c) => ((await auth.webUser(c)) ? c.redirect("/account") : c.
 // Fonts and icons for the pages, so they load nothing from other hosts.
 app.get("/assets/:file", serveAsset);
 
-// Sign-in emails per IP: 10 an hour. (On Tiffin: Valkey's rateLimit, shared across instances.)
-const loginHits = new Map<string, number[]>();
-function loginAllowed(ip: string) {
-  const now = Date.now();
-  const recent = (loginHits.get(ip) ?? []).filter((t) => now - t < 3_600_000);
-  if (recent.length >= 10) return false;
-  recent.push(now);
-  if (loginHits.size > 50_000) loginHits.clear();
-  loginHits.set(ip, recent);
-  return true;
+// Per-IP limits, in memory (one instance). Sign-in emails: 10 an hour. Device codes: 20 an hour.
+// Polling for a device token: the app asks every 2 seconds, so 60 a minute is plenty.
+function limiter(limit: number, windowMs: number) {
+  const hits = new Map<string, number[]>();
+  return (ip: string) => {
+    const now = Date.now();
+    const recent = (hits.get(ip) ?? []).filter((t) => now - t < windowMs);
+    if (recent.length >= limit) return false;
+    recent.push(now);
+    if (hits.size > 50_000) hits.clear();
+    hits.set(ip, recent);
+    return true;
+  };
 }
+const loginAllowed = limiter(10, 3_600_000);
+const deviceAllowed = limiter(20, 3_600_000);
+const pollAllowed = limiter(60, 60_000);
 
 const safeNext = (n: unknown) => (typeof n === "string" && n.startsWith("/") && !n.startsWith("//") ? n : "/account");
 
@@ -127,7 +146,7 @@ app.post("/device", async (c) => {
 app.get("/account", async (c) => {
   const user = await auth.webUser(c);
   if (!user) return c.redirect("/login?next=/account");
-  const billingState = { subscribed: await hasSubscription(user.id), portal: portalURL(user) !== null, welcome: c.req.query("welcome") === "pro" };
+  const billingState = { ...(await subscriptionState(user.id)), portal: portalURL(user) !== null, welcome: c.req.query("welcome") === "pro", deleted: c.req.query("deleted") === "1" };
   return c.html(pages.accountPage(user, await usage(user.id), limits(user.plan), await listShares(user.id), billingState));
 });
 
@@ -159,6 +178,17 @@ app.get("/account/s/:id", async (c) => {
   return c.html(pages.statsPage(user, stats));
 });
 
+app.post("/account/s/:id/delete", async (c) => {
+  if (!auth.sameOrigin(c)) return c.text("Bad origin", 403);
+  const user = await auth.webUser(c);
+  if (!user) return c.redirect("/login");
+  const ok = SHARE_ID.test(c.req.param("id")) && (await deleteShare(user, c.req.param("id")));
+  return ok ? c.redirect("/account?deleted=1") : c.html(pages.notFoundPage(), 404);
+});
+
+/** How to report a hosted link (abuse, copyright). */
+app.get("/report", (c) => c.html(pages.reportPage(SHARE_ID.test(c.req.query("link") ?? "") ? c.req.query("link")! : null)));
+
 async function setPlan(userId: string, plan: unknown) {
   if (plan !== "free" && plan !== "pro") return false;
   await sql`update users set plan = ${plan as Plan} where id = ${userId}`;
@@ -179,11 +209,13 @@ if (config.dev) {
 // MARK: App API
 
 app.post("/api/device", async (c) => {
+  if (!deviceAllowed(clientIP(c))) return fail(c, 429, "TooMany", "Too many sign-in attempts. Try again later.");
   const body = await c.req.json().catch(() => ({}));
   return c.json(await auth.startDevice(typeof body.name === "string" ? body.name : null));
 });
 
 app.post("/api/device/token", async (c) => {
+  if (!pollAllowed(clientIP(c))) return fail(c, 429, "SlowDown", "Polling too fast.");
   const body = await c.req.json().catch(() => ({}));
   if (typeof body.deviceCode !== "string") return fail(c, 400, "BadRequest", "deviceCode is required.");
   const r = await auth.exchangeDevice(body.deviceCode);
@@ -263,6 +295,7 @@ app.onError((e, c) => {
 
 if (import.meta.main) {
   setInterval(() => measureRecent().catch((e) => console.error("measure:", e)), 5 * 60_000);
+  setInterval(() => purgeDeleted().then(auth.cleanUp).catch((e) => console.error("purge:", e)), 5 * 60_000);
   const server = Bun.serve({ port: config.port, fetch: (req, srv) => app.fetch(req, { server: srv }) });
   console.log(`Reelbird Cloud on ${config.publicURL} (port ${server.port}${config.dev ? ", DEV" : ""}${billing.webhookSecret ? "" : ", billing off: no STRIPE_WEBHOOK_SECRET"})`);
 }

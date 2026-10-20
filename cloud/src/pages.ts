@@ -12,6 +12,7 @@ export const esc = (s: unknown) =>
 
 const SITE = "https://reelbird.app";
 export const PRICE = "$5";
+export const CONTACT = "hello@reelbird.app";
 
 // The robin from brand/logo.svg, recoloured to follow the theme. The record dot stays coral.
 const BIRD = "M204 70C196 54 182 45 164 45C144 45 130 55 120 67C96 88 50 128 22 166Q15 177 28 181L72 177C86 201 108 213 132 213C176 213 206 182 210 140C212 120 210 106 205 98L230.5 88.6Q236 86.4 230.6 84.2Z";
@@ -175,6 +176,8 @@ footer.foot .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:
 footer.foot nav{display:flex;flex-wrap:wrap;gap:6px 18px}
 footer.foot a{text-decoration:none}footer.foot a:hover{color:var(--text)}
 .copied{color:var(--accent-text)}
+.danger{margin-top:24px;padding-top:32px;border-top:1px solid var(--line)}
+code{font:14px var(--mono);overflow-wrap:anywhere}
 @media (max-width:720px){
 .hide{display:none}
 .offer{grid-template-columns:1fr;padding:24px}
@@ -204,7 +207,7 @@ function layout(title: string, body: string, opts: LayoutOpts = {}) {
 <style>${CSS}</style></head>
 <body><header class="wrap top"><a class="brand" href="${u ? "/account" : "/"}" aria-label="Reelbird Pro, home">${LOGO}<span class="tag" aria-hidden="true">Pro</span></a>${nav}</header>
 <main${opts.narrow ? ' class="narrow"' : ""}>${body}</main>
-<footer class="foot"><div class="wrap"><span>Reelbird Pro${config.dev ? " · development server" : ""}</span><nav aria-label="Reelbird"><a href="${SITE}/">reelbird.app</a><a href="${SITE}/pricing/">Pricing</a><a href="${SITE}/docs/sharing/">Help</a><a href="${SITE}/privacy/#pro">Privacy</a></nav></div></footer></body></html>`;
+<footer class="foot"><div class="wrap"><span>Reelbird Pro${config.dev ? " · development server" : ""}</span><nav aria-label="Reelbird"><a href="${SITE}/">reelbird.app</a><a href="${SITE}/pricing/">Pricing</a><a href="${SITE}/docs/sharing/">Help</a><a href="${SITE}/terms/">Terms</a><a href="${SITE}/privacy/">Privacy</a><a href="mailto:${CONTACT}">Contact</a></nav></div></footer></body></html>`;
 }
 
 const solo = (inner: string) => `<div class="solo">${inner}</div>`;
@@ -232,7 +235,15 @@ ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}
 <form class="stack" method="post" action="/login"><input type="hidden" name="next" value="${esc(next)}">
 <label for="email">Email</label><input id="email" name="email" type="email" required autocomplete="email" autocapitalize="off" spellcheck="false" autofocus>
 <button class="btn primary block" type="submit">Email me a sign-in link</button></form>
-<p class="fine">${note}</p>`), { narrow: true });
+<p class="fine">${note} By signing in you agree to the <a href="${SITE}/terms/">Terms</a> and <a href="${SITE}/privacy/">Privacy policy</a>.</p>`), { narrow: true });
+}
+
+export function reportPage(link: string | null) {
+  const mail = `mailto:${CONTACT}?subject=${encodeURIComponent(`Report: ${link ? `${config.publicURL}/r/${link}/` : "a Reelbird link"}`)}`;
+  return layout("Report a link · Reelbird", solo(`<h1>Report a link</h1>
+<p class="lede">Links on watch.reelbird.app are shared by Reelbird Pro customers. If one breaks the law or our <a href="${SITE}/terms/#acceptable-use">acceptable use rules</a>, tell us and we'll look at it, usually within two working days.</p>
+<div class="stack"><a class="btn primary block" href="${esc(mail)}">Email ${CONTACT}</a></div>
+<p class="fine">Include the link${link ? ` (<code>${esc(`${config.publicURL}/r/${link}/`)}</code>)` : ""} and what's wrong. For copyright, follow the <a href="${SITE}/terms/#copyright">copyright notice steps</a> so we can act on it.</p>`), { narrow: true });
 }
 
 export function checkEmailPage(email: string) {
@@ -312,7 +323,7 @@ function offer(lead: string, note: string) {
 <ul>
 <li>${ICONS.check}<span>Share from Reelbird with nothing to set up</span></li>
 <li>${ICONS.check}<span>Unlimited links and 100 GB of video</span></li>
-<li>${ICONS.check}<span>See who watched, where they stopped and where they came from</span></li>
+<li>${ICONS.check}<span>See how many watched, where they stopped and where they came from</span></li>
 </ul></div>
 <div class="cta"><a class="btn primary" href="/upgrade">Upgrade to Pro</a><p>${note}</p></div></section>`;
 }
@@ -322,10 +333,14 @@ export function accountPage(
   usage: { activeLinks: number; storageBytes: number },
   lim: { activeLinks: number | null; storageBytes: number },
   shares: { id: string; title: string | null; created_at: Date; bytes: string; views: number; opens: number }[],
-  billingState: { subscribed: boolean; portal: boolean; welcome: boolean } = { subscribed: false, portal: false, welcome: false },
+  billingState: { subscribed: boolean; paymentFailed?: boolean; portal: boolean; welcome: boolean; deleted?: boolean } = { subscribed: false, portal: false, welcome: false },
 ) {
   const pro = user.plan === "pro";
-  const billing = pro && billingState.subscribed && billingState.portal ? `<a class="btn ghost sm" href="/billing">Manage billing</a>` : "";
+  // Billing shows for anyone with a subscription, Pro or not: a failed payment is when it matters most.
+  const billing = billingState.subscribed && billingState.portal ? `<a class="btn ghost sm" href="/billing">Manage billing</a>` : "";
+  const notice = billingState.paymentFailed && billingState.portal
+    ? `<div class="welcome" role="alert"><div><h2>Your last payment didn't go through</h2><p>Update your card in <a href="/billing">billing</a> to keep Pro. Your links keep playing either way.</p></div></div>`
+    : billingState.deleted ? `<p class="note" role="status" style="margin:0 0 16px">Link deleted. It stopped working straight away, and its video is being removed.</p>` : "";
   const devPlan = config.dev
     ? `<form method="post" action="/dev/plan" style="margin:0"><input type="hidden" name="plan" value="${pro ? "free" : "pro"}"><button class="btn ghost sm" type="submit">Dev: ${pro ? "end Pro" : "start Pro"}</button></form>`
     : "";
@@ -351,7 +366,7 @@ export function accountPage(
     : `<div class="empty">${MASCOT.sleeping}<h3>No links yet</h3><p>${pro ? "In Reelbird, press Share on any recording. Its link shows up here with its views." : "Links you share with Pro show up here with their views."}</p></div>`;
   return layout("Your links · Reelbird Pro", `<div class="wrap">
 <div class="pagehead"><div><h1>Your links</h1><p class="sub"><span>${esc(user.email)}</span>${pro ? `<span aria-hidden="true">·</span><span>Reelbird Pro</span>` : ""}</p></div><div class="actions">${billing}${devPlan}</div></div>
-${welcome}${facts}
+${notice}${welcome}${facts}
 <section class="section" aria-label="Links">${list}</section></div>`, { user, current: "links" });
 }
 
@@ -386,6 +401,11 @@ function listBlock(title: string, rows: { name: string; views: number }[]) {
   return `<section class="section"><div class="sechead"><h2>${esc(title)}</h2></div>${body}</section>`;
 }
 
+function deleteForm(id: string) {
+  return `<section class="section danger"><div class="sechead"><h2>Delete this link</h2><p>It stops working at once for everyone, and its video and stats are removed. Copies people downloaded aren't affected.</p></div>
+<form method="post" action="/account/s/${esc(id)}/delete" onsubmit="return confirm('Delete this link? It stops working for everyone. This can\\'t be undone.')"><button class="btn ghost sm" type="submit">Delete link</button></form></section>`;
+}
+
 const COPY_SCRIPT = `<script>document.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(new URL(b.dataset.copy,location.href).href);const s=b.querySelector("span"),t=s.textContent;s.textContent="Copied";b.classList.add("copied");setTimeout(()=>{s.textContent=t;b.classList.remove("copied")},1600)}catch(e){location.href=b.dataset.copy}}))</script>`;
 
 export function statsPage(user: User, s: Stats) {
@@ -393,9 +413,9 @@ export function statsPage(user: User, s: Stats) {
   const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v)}%`);
   const facts = `<div class="facts">
 <div class="fact"><b>${s.views.toLocaleString("en")}</b><span>Views</span></div>
-<div class="fact"><b>${s.locked ? "—" : s.uniqueViewers.toLocaleString("en")}</b><span>Unique viewers</span></div>
+<div class="fact"><b>${s.locked ? "—" : s.uniqueViewers.toLocaleString("en")}</b><span>Viewers</span></div>
 <div class="fact"><b>${pct(s.averagePercent)}</b><span>Watched on average</span></div>
-<div class="fact"><b>${pct(s.completionRate)}</b><span>Watched to the end</span></div>
+<div class="fact"><b>${pct(s.completionRate)}</b><span>Reached the end</span></div>
 </div>`;
   const head = `<a class="back" href="/account">${ICONS.back}Your links</a>
 <div class="pagehead" style="padding-top:0"><div><h1>${esc(title)}</h1>${s.duration ? `<p class="sub"><span class="tnum">${fmtDur(s.duration)}</span></p>` : ""}</div>
@@ -403,17 +423,17 @@ export function statsPage(user: User, s: Stats) {
   const pageTitle = `${title} · Reelbird Pro`;
   if (s.locked) {
     return layout(pageTitle, `<div class="wrap">${head}${facts}
-<div class="locked"><h2>See who's watching</h2><p>Pro shows unique viewers, where people stop watching, where they came from and every recent view.${s.views ? ` ${plural(s.views, "view is", "views are")} already counted for this link.` : ""}</p><a class="btn primary" href="/upgrade">Upgrade to Pro · ${PRICE} a month</a></div></div>${COPY_SCRIPT}`, { user });
+<div class="locked"><h2>See how it's watched</h2><p>Pro shows how many people watched, where they stopped, where they came from and every recent view.${s.views ? ` ${plural(s.views, "view is", "views are")} already counted for this link.` : ""}</p><a class="btn primary" href="/upgrade">Upgrade to Pro · ${PRICE} a month</a></div>${deleteForm(s.id)}</div>${COPY_SCRIPT}`, { user });
   }
   const maxDay = Math.max(1, ...s.byDay.map((d) => d.views));
   const bars = s.byDay.map((d) => `<i class="${d.views ? "" : "zero"}" style="height:${d.views ? Math.max(4, (d.views / maxDay) * 100) : 2}%" title="${esc(fmtDate(d.day + "T12:00:00Z"))}: ${plural(d.views, "view")}"></i>`).join("");
   const first = s.byDay[0]?.day, last = s.byDay[s.byDay.length - 1]?.day;
   const shortDay = (d: string) => new Date(d + "T12:00:00Z").toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" });
   const recent = s.recent.length
-    ? `<table><thead><tr><th scope="col">When</th><th scope="col" class="num">Watched</th><th scope="col" class="hide">Device</th><th scope="col" class="hide">From</th></tr></thead><tbody>${s.recent.map((r) => `<tr><td>${new Date(r.at).toLocaleString("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</td><td class="num">${r.percent === null ? fmtDur(r.seconds) : r.percent + "%"}</td><td class="quiet hide">${esc([r.device, r.browser].filter(Boolean).join(" · "))}</td><td class="quiet hide">${esc(r.referrer ?? "Direct")}</td></tr>`).join("")}</tbody></table>`
+    ? `<table><thead><tr><th scope="col">When</th><th scope="col" class="num">Got to</th><th scope="col" class="hide">Device</th><th scope="col" class="hide">From</th></tr></thead><tbody>${s.recent.map((r) => `<tr><td>${new Date(r.at).toLocaleString("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</td><td class="num">${r.percent === null ? fmtDur(r.seconds) : r.percent + "%"}</td><td class="quiet hide">${esc([r.device, r.browser].filter(Boolean).join(" · "))}</td><td class="quiet hide">${esc(r.referrer ?? "Direct")}</td></tr>`).join("")}</tbody></table>`
     : `<p class="none">No views yet. Send the link to someone.</p>`;
   return layout(pageTitle, `<div class="wrap">${head}${facts}
-<p class="note">${fmtWatch(s.watchSeconds)} watched in total. Your own plays and link-preview bots aren't counted.</p>
+<p class="note">${fmtWatch(s.watchSeconds)} watched in total. A view is at least 3 seconds of playing; your own plays and link previews don't count. Viewers are counted once a day, without cookies, so someone who comes back on another day counts again.</p>
 <section class="section"><div class="sechead"><h2>Where viewers stop</h2><p>Share of viewers still watching, across the current version</p></div>${retentionSVG(s.retention, s.chunkSeconds, s.duration)}</section>
 <div class="cols">
 <section class="section"><div class="sechead"><h2>Views</h2><p>Last 30 days</p></div><div class="bars" role="img" aria-label="Views per day over the last 30 days">${bars}</div>${first && last ? `<div class="axis"><span>${shortDay(first)}</span><span>${shortDay(last)}</span></div>` : ""}</section>
@@ -421,5 +441,6 @@ ${listBlock("Sources", s.referrers)}
 ${listBlock("Devices", s.devices)}
 ${s.countries.length ? listBlock("Countries", s.countries) : ""}
 </div>
-<section class="section"><div class="sechead"><h2>Recent views</h2></div>${recent}</section></div>${COPY_SCRIPT}`, { user });
+<section class="section"><div class="sechead"><h2>Recent views</h2></div>${recent}</section>
+${deleteForm(s.id)}</div>${COPY_SCRIPT}`, { user });
 }

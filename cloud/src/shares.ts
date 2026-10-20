@@ -47,11 +47,17 @@ export async function credentials(user: User, id: string, title: string | null) 
     if (s) {
       if (s.user_id !== user.id) throw new ShareRefusal(403, "NotYours", "This share belongs to another account.");
       if (s.deleted) throw new ShareRefusal(410, "Deleted", "This link was deleted.");
-      // Without Pro, uploads to an existing link may finish (a recording in progress when the
-      // subscription ended), but only within a day of its last upload: no new work on old links.
+      // Without Pro, a link made in the last day may finish uploading (a recording in progress when
+      // the subscription ended). The day counts from when the link was made, so renewing can't extend it.
       if (user.plan !== "pro") {
-        const [recent] = await tx`select 1 from shares where id = ${id} and touched_at > now() - interval '1 day'`;
+        const [recent] = await tx`select 1 from shares where id = ${id} and created_at > now() - interval '1 day'`;
         if (!recent) throw new ShareRefusal(402, "ProRequired", `Updating hosted links needs Reelbird Pro ($5/month): ${config.publicURL}/upgrade`);
+      }
+      // Storage counts on every renewal, not just for new links, so one link can't grow past the plan.
+      const [u] = await tx<{ bytes: string }[]>`
+        select coalesce(sum(bytes), 0)::bigint as bytes from shares where user_id = ${user.id} and deleted_at is null`;
+      if (Number(u.bytes) >= plans.pro.storageBytes) {
+        throw new ShareRefusal(402, "StorageLimit", "Your hosted storage is full. Delete some links to make room.");
       }
       await tx`update shares set touched_at = now(), title = coalesce(${title}, title) where id = ${id}`;
       return;
@@ -76,13 +82,31 @@ export async function credentials(user: User, id: string, title: string | null) 
   return { ...r2.tempCredentials({ prefixes: [key + "/"], objects: [key], ttlSeconds: KEY_TTL }), ...storageInfo() };
 }
 
+/**
+ * Deleting stops the link at once; the files go next. If R2 fails, purgeDeleted() retries. It also
+ * purges once more after the last upload keys could have expired, in case an upload was in flight.
+ */
 export async function deleteShare(user: User, id: string) {
   const [s] = await sql<{ id: string }[]>`
     update shares set deleted_at = now() where id = ${id} and user_id = ${user.id} and deleted_at is null returning id`;
   if (!s) return false;
-  await r2.deleteShare(`r/${id}`);
-  await sql`update shares set bytes = 0, sized_at = now() where id = ${id}`;
+  await purge(id).catch((e) => console.error(`purge ${id}:`, e));
   return true;
+}
+
+async function purge(id: string) {
+  await r2.deleteShare(`r/${id}`);
+  await sql`update shares set bytes = 0, sized_at = now(), purged_at = now() where id = ${id}`;
+}
+
+/** Deleted links whose files may still be in R2: never purged, or purged before their keys expired. */
+export async function purgeDeleted() {
+  const rows = await sql<{ id: string }[]>`
+    select id from shares where deleted_at is not null
+    and (purged_at is null or (purged_at < deleted_at + interval '65 minutes' and now() > deleted_at + interval '65 minutes'))
+    order by deleted_at limit 100`;
+  for (const { id } of rows) await purge(id).catch((e) => console.error(`purge ${id}:`, e));
+  return rows.length;
 }
 
 export async function listShares(userId: string) {

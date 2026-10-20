@@ -74,6 +74,13 @@ export function sameOrigin(c: Context) {
   return !origin || origin === config.publicURL || (config.dev && new URL(origin).hostname === "127.0.0.1");
 }
 
+/** Drops expired sessions, device codes and sign-in links (a day late, so limits can still count them). */
+export async function cleanUp() {
+  await sql`delete from sessions where expires_at < now()`;
+  await sql`delete from device_codes where expires_at < now() - interval '1 day'`;
+  await sql`delete from login_links where expires_at < now() - interval '1 day'`;
+}
+
 // MARK: App tokens
 
 export const appUser = (c: Context) => userForToken(c.req.header("authorization")?.replace(/^Bearer\s+/i, ""), "app");

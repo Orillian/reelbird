@@ -72,8 +72,12 @@ function allowed(ip: string, limit = 120, windowMs = 60_000) {
   return ++h.n <= limit;
 }
 
+/**
+ * The visitor's IP. Behind the box's proxy, the last X-Forwarded-For entry is the one the proxy
+ * added; earlier entries come from the client and can say anything.
+ */
 export function clientIP(c: Context): string {
-  const fwd = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
+  const fwd = c.req.header("x-forwarded-for")?.split(",").pop()?.trim();
   if (fwd) return fwd;
   const server = (c.env as { server?: { requestIP(r: Request): { address: string } | null } } | undefined)?.server;
   return server?.requestIP(c.req.raw)?.address ?? "0.0.0.0";
