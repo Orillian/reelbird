@@ -3,7 +3,7 @@ import { Hono, type Context } from "hono";
 import { config, type Plan } from "./config";
 import { sql } from "./db";
 import * as auth from "./auth";
-import { credentials, deleteShare, limits, listShares, measureRecent, ShareRefusal, SHARE_ID, usage } from "./shares";
+import { credentials, deleteShare, limits, listShares, measureRecent, ShareRefusal, SHARE_ID, storageInfo, syncShare, usage } from "./shares";
 import { serveShare } from "./gateway";
 import { ingest, VIEWER_SCRIPT } from "./events";
 import { shareStats } from "./stats";
@@ -141,7 +141,7 @@ const me = (c: Context) => c.get("user" as never) as unknown as auth.User;
 
 app.get("/api/me", async (c) => {
   const u = me(c);
-  return c.json({ email: u.email, plan: u.plan, limits: limits(u.plan), usage: await usage(u.id), accountURL: `${config.publicURL}/account` });
+  return c.json({ email: u.email, plan: u.plan, limits: limits(u.plan), usage: await usage(u.id), accountURL: `${config.publicURL}/account`, storage: storageInfo() });
 });
 
 app.post("/api/logout", async (c) => {
@@ -158,6 +158,11 @@ app.post("/api/shares/:id/credentials", async (c) => {
     if (e instanceof ShareRefusal) return fail(c, e.status, e.code, e.message);
     throw e;
   }
+});
+
+app.post("/api/shares/:id/sync", async (c) => {
+  const ok = await syncShare(me(c), c.req.param("id"));
+  return ok ? c.body(null, 204) : fail(c, 404, "NotFound", "No such link in this account.");
 });
 
 app.get("/api/shares", async (c) => {

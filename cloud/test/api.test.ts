@@ -91,12 +91,16 @@ test("upload keys work for the share's folder only, and the gateway serves it", 
   const c = tempClient(k);
   const html = `<!doctype html><html><body><video id="v"></video><script type="application/json" id="meta">{"revision":1}</script></body></html>`;
   await c.put(`r/${shareId}/index.html`, html, "text/html; charset=utf-8");
-  await c.put(`r/${shareId}/meta.json`, JSON.stringify({ revision: 1 }), "application/json");
+  await c.put(`r/${shareId}/meta.json`, JSON.stringify({ revision: 1, title: "Demo from meta" }), "application/json");
   await c.put(`r/${shareId}/video.1.mp4`, "fake mp4 bytes", "video/mp4");
   // Outside the folder: refused.
   const other = await c.send("PUT", `r/${ShortIDForTest()}/x.txt`, { body: "x", headers: { "content-type": "text/plain" } });
   expect(other.status).toBe(403);
 
+  expect((await call(`/api/shares/${shareId}/sync`, { method: "POST", bearer: alice.token })).status).toBe(204);
+  const list = await (await call("/api/shares", { bearer: alice.token })).json();
+  expect(list[0]).toMatchObject({ id: shareId, url: `${base}/r/${shareId}/` });
+  expect(list[0].bytes).toBeGreaterThan(0);
   const page = await call(`/r/${shareId}/`);
   expect(page.status).toBe(200);
   expect(await page.text()).toContain(`<script src="/e.js" data-share="${shareId}" defer>`);

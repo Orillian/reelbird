@@ -85,7 +85,8 @@ enum CLI {
             .flag("polished", "Render the current edit and replace the quick version (same link)"),
         ]),
         CommandSpec(name: "unshare", summary: "Delete the project's shared files and link.", positionals: ["PROJECT"]),
-        CommandSpec(name: "config", summary: "Configure sharing: `config share …` or `config show`.", positionals: ["ACTION"]),
+        CommandSpec(name: "config", summary: "Configure sharing to your own bucket: `config share …` or `config show`.", positionals: ["ACTION"]),
+        CloudCLI.spec,
         CommandSpec(name: "recover", summary: "Rebuild a project left unfinished by a crash.", positionals: ["PROJECT"]),
         CommandSpec(name: "mcp", summary: "Run a Model Context Protocol server on stdin/stdout.",
                     discussion: "Add to an MCP client as: {\"command\": \"reelbird\", \"args\": [\"mcp\"]}"),
@@ -142,6 +143,7 @@ enum CLI {
             let s = ArgumentParser.closest(name, among: commands.map(\.name)).map { " Did you mean '\($0)'?" } ?? ""
             throw CLIError.usage("Unknown command '\(name)'.\(s)", hint: "Run `reelbird help` for the list.")
         }
+        if name == "cloud" { return try await CloudCLI.run(rest) }
         var args = rest
         if name == "config" {
             switch rest.first {

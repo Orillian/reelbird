@@ -12,22 +12,26 @@ public struct SigV4Signer: Sendable, CustomStringConvertible, CustomReflectable 
     /// "auto" for Cloudflare R2.
     public var region: String
     public var service: String
+    /// Session token of temporary credentials (sent and signed as `x-amz-security-token`). Never printed.
+    public var sessionToken: String?
 
     /// SHA-256 of the empty string, the payload hash of every body-less request.
     public static let emptyPayloadHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     /// Payload hash value that tells S3 the body is not signed (TLS still protects it).
     public static let unsignedPayload = "UNSIGNED-PAYLOAD"
 
-    public init(accessKeyID: String, secretAccessKey: String, region: String, service: String = "s3") {
+    public init(accessKeyID: String, secretAccessKey: String, region: String, service: String = "s3", sessionToken: String? = nil) {
         self.accessKeyID = accessKeyID
         self.secretAccessKey = secretAccessKey
         self.region = region
         self.service = service
+        self.sessionToken = sessionToken
     }
 
     public var description: String { "SigV4Signer(accessKeyID: \(accessKeyID), region: \(region), service: \(service), secretAccessKey: <redacted>)" }
     public var customMirror: Mirror {
-        Mirror(self, children: ["accessKeyID": accessKeyID, "secretAccessKey": "<redacted>", "region": region, "service": service])
+        Mirror(self, children: ["accessKeyID": accessKeyID, "secretAccessKey": "<redacted>", "region": region, "service": service,
+                                "sessionToken": sessionToken == nil ? "nil" : "<redacted>"])
     }
 
     public struct Signature: Sendable {

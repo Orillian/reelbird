@@ -41,6 +41,8 @@ public struct S3Object: Hashable, Sendable {
 public final class S3Client: Sendable {
     public let destination: ShareDestination
     let signer: SigV4Signer
+    /// Reelbird Cloud: per-share keys from the server instead of `signer`.
+    let cloud: CloudKeys?
     let session: URLSession
     let gate: AsyncGate
     let maxAttempts: Int
@@ -62,8 +64,9 @@ public final class S3Client: Sendable {
     public init(destination: ShareDestination, secret: String, session: URLSession? = nil,
                 maxConcurrent: Int = 6, maxAttempts: Int = 5, baseDelay: Double = 0.4) {
         self.destination = destination
-        self.signer = SigV4Signer(accessKeyID: destination.accessKeyID, secretAccessKey: secret,
-                                  region: destination.region.isEmpty ? "auto" : destination.region)
+        let region = destination.region.isEmpty ? "auto" : destination.region
+        self.signer = SigV4Signer(accessKeyID: destination.accessKeyID, secretAccessKey: secret, region: region)
+        self.cloud = destination.cloudServer.map { CloudKeys.shared(server: $0, token: secret, region: region) }
         self.session = session ?? S3Client.makeSession()
         self.gate = AsyncGate(limit: maxConcurrent)
         self.maxAttempts = max(1, maxAttempts)
@@ -300,9 +303,13 @@ public final class S3Client: Sendable {
 
         var attempt = 0
         var clockFixed = false
+        var keysRenewed = false
+        // Cloud keys are per share: a listing is scoped by its prefix.
+        let scope = key ?? query.first(where: { $0.0 == "prefix" })?.1 ?? ""
         while true {
             attempt += 1
             try Task.checkCancellation()
+            let signer = try await cloud?.signer(for: scope) ?? self.signer
             // One timestamp for both the header and the signature (two Date() calls could straddle
             // a second boundary and fail with SignatureDoesNotMatch).
             let date = now
@@ -310,6 +317,7 @@ public final class S3Client: Sendable {
             signed["host"] = hostHeader
             signed["x-amz-date"] = SigV4Signer.amzDate(date)
             signed["x-amz-content-sha256"] = payloadHash
+            if let token = signer.sessionToken { signed["x-amz-security-token"] = token }
             let sig = signer.sign(method: method, canonicalURI: canonicalURI, query: query,
                                   headers: signed, payloadHash: payloadHash, date: date)
             var req = URLRequest(url: url)
@@ -334,7 +342,17 @@ public final class S3Client: Sendable {
                 guard let http = result.1 as? HTTPURLResponse else {
                     throw ShareError(status: 0, message: "Unexpected response from the storage service.", key: key)
                 }
-                if (200..<300).contains(http.statusCode) { return Response(data: result.0, response: http) }
+                if (200..<300).contains(http.statusCode) {
+                    if let cloud, let key, method == "PUT", key.hasSuffix("/meta.json") { cloud.didUpdate(key) }
+                    return Response(data: result.0, response: http)
+                }
+                if let cloud, http.statusCode == 403, !keysRenewed {
+                    // Keys revoked or expired early: fetch fresh ones once.
+                    keysRenewed = true
+                    cloud.invalidate(scope)
+                    attempt -= 1
+                    continue
+                }
                 let err = Self.describe(status: http.statusCode, code: XMLValue.first("Code", in: result.0),
                                         serverMessage: XMLValue.first("Message", in: result.0),
                                         key: key, bucket: destination.bucket, endpoint: endpoint)

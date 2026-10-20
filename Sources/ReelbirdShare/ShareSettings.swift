@@ -13,30 +13,57 @@ import Security
 public enum ShareSettings {
     public static let keychainService = "app.reelbird.share"
 
-    /// The configured destination: environment first, then share.json. `nil` if not set up.
+    /// The destination for new shares: environment first, then Reelbird Cloud when signed in and
+    /// turned on, then your own bucket (share.json). `nil` if not set up.
     public static func load() -> ShareDestination? {
         if let env = fromEnvironment() { return env }
+        if let cloud = CloudSettings.load(), cloud.enabled { return cloud.destination }
+        return ownBucket()
+    }
+
+    /// Your own bucket from share.json, whether or not Cloud is on.
+    public static func ownBucket() -> ShareDestination? {
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
         return try? JSONCoding.decoder.decode(ShareDestination.self, from: data)
     }
 
-    /// Saves the destination and stores the secret in the Keychain (replacing any previous one).
+    /// Saves your own bucket and stores the secret in the Keychain (replacing any previous one).
+    /// New shares then go to this bucket, not to Reelbird Cloud.
     public static func save(_ d: ShareDestination, secret: String) throws {
-        let clean = normalized(d)
+        var clean = normalized(d)
+        clean.cloudServer = nil
         try validate(clean, secret: secret)
         try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONCoding.writeAtomically(clean, to: fileURL)
         try Keychain.deleteAll(service: keychainService)
         try Keychain.set(secret, service: keychainService, account: clean.accessKeyID)
+        try? CloudSettings.setEnabled(false)
     }
 
-    /// The secret access key: `REELBIRD_S3_SECRET_ACCESS_KEY` if set, else the Keychain item
-    /// for the configured access key.
+    /// The secret for `load()`: `REELBIRD_S3_SECRET_ACCESS_KEY` if set, the account token for
+    /// Reelbird Cloud, else the Keychain item for your bucket's access key.
     public static func secret() -> String? {
         let env = ProcessInfo.processInfo.environment
         if let s = env["REELBIRD_S3_SECRET_ACCESS_KEY"] ?? env["REELBIRD_S3_SECRET"], !s.isEmpty { return s }
         guard let d = load() else { return nil }
+        return secret(for: d)
+    }
+
+    static func secret(for d: ShareDestination) -> String? {
+        if let server = d.cloudServer { return CloudSettings.token(for: server) }
         return Keychain.get(service: keychainService, account: d.accessKeyID)
+    }
+
+    /// Where an existing share lives, so updating or deleting it works after switching between
+    /// Reelbird Cloud and your own bucket.
+    public static func destination(for share: ShareInfo) -> (destination: ShareDestination, secret: String)? {
+        if fromEnvironment() == nil, let cloud = CloudSettings.load(),
+           share.url.hasPrefix(cloud.storage.publicBaseURL + "/"), let t = CloudSettings.token(for: cloud.server) {
+            return (cloud.destination, t)
+        }
+        if let env = fromEnvironment(), let s = secret() { return (env, s) }
+        guard let own = ownBucket(), let s = secret(for: own) else { return nil }
+        return (own, s)
     }
 
     /// Removes share.json and the Keychain secret.
@@ -85,7 +112,8 @@ public enum ShareSettings {
         return ShareDestination(endpoint: url(d.endpoint), bucket: d.bucket.trimmingCharacters(in: .whitespacesAndNewlines),
                                 region: region.isEmpty ? "auto" : region,
                                 accessKeyID: d.accessKeyID.trimmingCharacters(in: .whitespacesAndNewlines),
-                                publicBaseURL: url(d.publicBaseURL), prefix: prefix)
+                                publicBaseURL: url(d.publicBaseURL), prefix: prefix,
+                                cloudServer: d.cloudServer.map(CloudSettings.normalizedServer))
     }
 
     /// Checks that every field is filled in and the URLs parse.

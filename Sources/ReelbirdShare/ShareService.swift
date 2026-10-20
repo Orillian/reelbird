@@ -12,6 +12,10 @@ public enum ShareService {
     }
 
     static func testConnection(_ d: ShareDestination, secret: String, session: URLSession?) async throws {
+        if let server = d.cloudServer {
+            _ = try await CloudAPI(server: server, token: secret).me()
+            return
+        }
         let d = ShareSettings.normalized(d)
         try ShareSettings.validate(d, secret: secret)
         let client = S3Client(destination: d, secret: secret, session: session, maxAttempts: 2)
@@ -160,6 +164,11 @@ public enum ShareService {
         let d = ShareSettings.normalized(destination)
         guard let layout = ShareLayout(info: info, destination: d), !layout.id.isEmpty else {
             throw ShareError(status: 0, code: "InvalidShare", message: "This share has no key to delete.")
+        }
+        if let server = d.cloudServer {
+            // The server deletes the files and frees the link from the plan's count.
+            do { try await CloudAPI(server: server, token: secret).delete(layout.id) } catch let e as ShareError where e.status == 404 {}
+            return
         }
         let client = S3Client(destination: d, secret: secret, session: session)
         try await client.deletePrefix(layout.folder)

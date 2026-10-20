@@ -63,14 +63,7 @@ export async function credentials(user: User, id: string, title: string | null) 
     await tx`insert into shares (id, user_id, title) values (${id}, ${user.id}, ${title})`;
   });
   const key = `r/${id}`;
-  return {
-    ...r2.tempCredentials({ prefixes: [key + "/"], objects: [key], ttlSeconds: KEY_TTL }),
-    endpoint: r2.endpoint,
-    bucket: config.r2.bucket,
-    region: "auto",
-    prefix: "r",
-    publicBaseURL: config.publicURL,
-  };
+  return { ...r2.tempCredentials({ prefixes: [key + "/"], objects: [key], ttlSeconds: KEY_TTL }), ...storageInfo() };
 }
 
 export async function deleteShare(user: User, id: string) {
@@ -89,6 +82,22 @@ export async function listShares(userId: string) {
       (select coalesce(sum(n), 0)::int from opens o where o.share_id = s.id) as opens
     from shares s where s.user_id = ${userId} and s.deleted_at is null
     order by s.created_at desc`;
+}
+
+/** Re-reads a share's title and duration from meta.json and measures it. Called after the app uploads meta.json. */
+export async function syncShare(user: User, id: string) {
+  const [s] = await sql`select 1 from shares where id = ${id} and user_id = ${user.id} and deleted_at is null`;
+  if (!s) return false;
+  const r = await r2.get(`r/${id}/meta.json`);
+  const meta = r ? ((await r.json().catch(() => null)) as { title?: unknown } | null) : null;
+  const title = typeof meta?.title === "string" ? meta.title.slice(0, 300) : null;
+  const bytes = await r2.size(`r/${id}/`);
+  await sql`update shares set title = coalesce(${title}, title), bytes = ${bytes}, sized_at = now(), touched_at = now() where id = ${id}`;
+  return true;
+}
+
+export function storageInfo() {
+  return { endpoint: r2.endpoint, bucket: config.r2.bucket, region: "auto", prefix: "r", publicBaseURL: config.publicURL };
 }
 
 /**

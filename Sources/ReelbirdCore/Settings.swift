@@ -42,12 +42,19 @@ public struct ShareDestination: Codable, Hashable, Sendable {
     public var publicBaseURL: String
     /// Key prefix for every share, e.g. "r".
     public var prefix: String = "r"
+    /// Set for Reelbird Cloud: the server that hands out upload keys for each share (the "secret"
+    /// is then the account token). `nil` for your own bucket.
+    public var cloudServer: String?
 
     public init(endpoint: String, bucket: String, region: String = "auto", accessKeyID: String,
-                publicBaseURL: String, prefix: String = "r") {
+                publicBaseURL: String, prefix: String = "r", cloudServer: String? = nil) {
         self.endpoint = endpoint; self.bucket = bucket; self.region = region
         self.accessKeyID = accessKeyID; self.publicBaseURL = publicBaseURL; self.prefix = prefix
+        self.cloudServer = cloudServer
     }
+
+    /// Whether this is a Reelbird Cloud destination.
+    public var isCloud: Bool { cloudServer != nil }
 }
 
 /// Live state reported by the recorder (HUD, CLI progress, health warnings).

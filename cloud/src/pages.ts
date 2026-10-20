@@ -125,8 +125,9 @@ export function devicePage(user: User, code: string, name: string | null, state:
 <p class="note">Reelbird can then create and delete links in this account.</p></div>`, { user, narrow: true });
 }
 
+// Decimal units, like Finder.
 const fmtBytes = (n: number) =>
-  n < 1024 ** 2 ? `${Math.round(n / 1024)} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(0)} MB` : `${(n / 1024 ** 3).toFixed(1)} GB`;
+  n < 1e6 ? `${Math.round(n / 1e3)} KB` : n < 1e9 ? `${(n / 1e6).toFixed(0)} MB` : `${+(n / 1e9).toFixed(1)} GB`;
 const fmtDur = (s: number) => {
   s = Math.max(0, Math.round(s));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;

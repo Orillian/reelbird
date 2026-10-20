@@ -161,8 +161,9 @@ struct LiveEngine: Engine {
     /// captions. Updates the existing link in place when the project already has one.
     func share(bundle: ProjectBundle, edit: EditDocument, polished: Bool,
                progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo {
-        let (destination, secret) = try configuredShare()
         let manifest = try bundle.readManifest()
+        // An existing link is updated where it lives (Cloud or your bucket), whatever new shares use.
+        let (destination, secret) = try manifest.share.flatMap(ShareSettings.destination(for:)) ?? configuredShare()
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("reelbird-share-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
@@ -183,7 +184,7 @@ struct LiveEngine: Engine {
     }
 
     func unshare(bundle: ProjectBundle, info: ShareInfo) async throws {
-        let (destination, secret) = try configuredShare()
+        let (destination, secret) = try ShareSettings.destination(for: info) ?? configuredShare()
         do { try await ShareService.unpublish(info, destination: destination, secret: secret) } catch {
             throw CLIError("Couldn't remove the share: \(Self.shareMessage(error))")
         }
@@ -207,7 +208,7 @@ struct LiveEngine: Engine {
     private func configuredShare() throws -> (ShareDestination, String) {
         guard let d = ShareSettings.load() else {
             throw CLIError("Sharing isn't set up.", code: .unavailable,
-                           hint: "Run `reelbird config share --endpoint URL --bucket NAME --access-key ID --public-base URL --secret-stdin`, or set REELBIRD_S3_* variables.")
+                           hint: "Run `reelbird cloud login` for Reelbird Cloud, or `reelbird config share --endpoint URL --bucket NAME --access-key ID --public-base URL --secret-stdin` for your own bucket.")
         }
         guard let secret = ShareSettings.secret() else {
             throw CLIError("The share secret access key is missing from the Keychain.", code: .unavailable,

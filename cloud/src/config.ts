@@ -6,7 +6,7 @@ function need(name: string): string {
 }
 
 export const config = {
-  port: Number(process.env.PORT ?? 8787),
+  port: Number(process.env.PORT ?? 8788),
   /** Origin that serves the viewer and the API, e.g. https://watch.reelbird.app. No trailing slash. */
   publicURL: need("PUBLIC_URL").replace(/\/+$/, ""),
   databaseURL: need("DATABASE_URL"),
@@ -24,7 +24,7 @@ export const config = {
 
 /** What each plan allows. Pro is "don't think about it": no link cap, a storage ceiling only. */
 export const plans = {
-  free: { activeLinks: 5, storageBytes: 5 * 1024 ** 3, analytics: false },
-  pro: { activeLinks: Infinity, storageBytes: 100 * 1024 ** 3, analytics: true },
+  free: { activeLinks: 5, storageBytes: 5e9, analytics: false },
+  pro: { activeLinks: Infinity, storageBytes: 100e9, analytics: true },
 } as const;
 export type Plan = keyof typeof plans;
