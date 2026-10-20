@@ -1,6 +1,6 @@
 // View analytics without cookies. The viewer page loads /e.js, which reports:
 //   "open": the page loaded (counted per share per day)
-//   "beat": playback progress, once at least 3 seconds have been watched, then every ~10 s and when
+//   "beat": playback progress, once 3 seconds (or most of a shorter video) have been watched, then every ~10 s and when
 //           the tab is hidden. Each beat carries the whole bitmap of 2-second chunks watched so far
 //           in this page load, so the server only ever replaces it.
 // A viewer is a daily hash of IP + browser + share (like Plausible): unique per day, never stored raw.
@@ -37,7 +37,9 @@ export const VIEWER_SCRIPT = String.raw`(() => {
     if (beacon && navigator.sendBeacon) navigator.sendBeacon("/e", body);
     else fetch("/e", { method: "POST", body, keepalive: true }).catch(() => {});
   };
-  const flush = beacon => { if (!dirty || watched < 3) return; dirty = false; sentAt = Date.now(); send("beat", beacon); };
+  // A view is 3 seconds of playing, or most of a video shorter than that.
+  const enough = () => watched >= Math.min(3, isFinite(v.duration) && v.duration > 0 ? v.duration * 0.8 : 3);
+  const flush = beacon => { if (!dirty || !enough()) return; dirty = false; sentAt = Date.now(); send("beat", beacon); };
   send("open");
   v.addEventListener("timeupdate", () => {
     const t = v.currentTime;
@@ -49,7 +51,7 @@ export const VIEWER_SCRIPT = String.raw`(() => {
     last = t;
     if (t > maxPos) maxPos = t;
     if (v.duration && isFinite(v.duration) && t >= v.duration - 1) completed = true;
-    if (dirty && watched >= 3 && Date.now() - sentAt > 10000) flush(false);
+    if (dirty && enough() && Date.now() - sentAt > 10000) flush(false);
   });
   v.addEventListener("seeking", () => { last = null; });
   v.addEventListener("pause", () => flush(false));
@@ -141,7 +143,7 @@ export async function ingest(c: Context) {
   const maxSecs = share.duration ? share.duration + 2 : 6 * 3600;
   const watchedSeconds = num(e.ws, 6 * 3600) ?? 0;
   if (watchedSeconds > maxSecs * 4) return c.body(null, 204);
-  if (watchedSeconds < 3) return c.body(null, 204);
+  if (watchedSeconds < Math.min(3, share.duration ? share.duration * 0.8 : 3)) return c.body(null, 204);
   let bitmap: Buffer;
   try {
     bitmap = Buffer.from(typeof e.w === "string" ? e.w : "", "base64");

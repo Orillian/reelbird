@@ -620,3 +620,19 @@ test("signed-in Macs are listed and can be signed out from the browser", async (
   // Signed-in pages aren't cached.
   expect((await call("/account", { cookie: oz.cookie })).headers.get("cache-control")).toBe("no-store");
 });
+
+test("short clips count views; robots, favicon and legal links resolve", async () => {
+  const pat = await appLogin("pat@example.com");
+  await call("/api/dev/plan", { ...json({ plan: "pro" }), bearer: pat.token });
+  const id = ShortIDForTest();
+  created.push(id);
+  const k = await (await call(`/api/shares/${id}/credentials`, { ...json({}), bearer: pat.token })).json();
+  await tempClient(k).put(`r/${id}/meta.json`, JSON.stringify({ revision: 0, title: "clip", duration: 1.5 }), "application/json");
+  await call(`/r/${id}/`);
+  const bits = Buffer.from([0b1]).toString("base64");
+  await call("/e", { method: "POST", body: JSON.stringify({ s: id, v: crypto.randomUUID(), t: "beat", rev: 0, d: 1.5, p: 1.5, ws: 1.4, w: bits, c: true }), headers: { "user-agent": "Mozilla/5.0 Safari/605.1.15", "x-forwarded-for": "203.0.113.77" } });
+  expect((await (await call(`/api/shares/${id}/stats`, { bearer: pat.token })).json()).views).toBe(1);
+  expect(await (await call("/robots.txt")).text()).toContain("Disallow: /account");
+  expect((await call("/favicon.ico")).status).toBe(301);
+  expect((await call("/terms")).headers.get("location")).toBe("https://reelbird.app/terms/");
+});

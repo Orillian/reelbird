@@ -70,8 +70,8 @@ export const PRICING_FAQ: Faq[] = [
   {
     id: "analytics-privacy",
     q: "How private are the viewer analytics?",
-    a: "They're anonymous: you see how many people watched and how far, never who. They use no cookies. A view counts once at least 3 seconds have played. A viewer is counted with a daily hash of IP address and browser, so no IP address is stored and nobody can be followed across days or links; it also means one person who watches on three different days counts as three viewers. Your own views while signed in and link-preview bots aren't counted.",
-    html: `They're anonymous: you see how many people watched and how far, never who. They use no cookies. A view counts once at least 3 seconds have played. A viewer is counted with a daily hash of IP address and browser, so no IP address is stored and nobody can be followed across days or links; it also means one person who watches on three different days counts as three viewers. Your own views while signed in and link-preview bots aren't counted. More on the <a href="/privacy/#pro">privacy page</a>.`,
+    a: "They're anonymous: you see how many people watched and how far, never who. They use no cookies. A view counts once at least 3 seconds have played (or most of a shorter video). A viewer is counted with a daily hash of IP address and browser, so no IP address is stored and nobody can be followed across days or links; it also means one person who watches on three different days counts as three viewers. Your own views while signed in and link-preview bots aren't counted.",
+    html: `They're anonymous: you see how many people watched and how far, never who. They use no cookies. A view counts once at least 3 seconds have played (or most of a shorter video). A viewer is counted with a daily hash of IP address and browser, so no IP address is stored and nobody can be followed across days or links; it also means one person who watches on three different days counts as three viewers. Your own views while signed in and link-preview bots aren't counted. More on the <a href="/privacy/#pro">privacy page</a>.`,
   },
   {
     id: "what-counts",

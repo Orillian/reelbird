@@ -10,7 +10,7 @@ import { ingest, VIEWER_SCRIPT } from "./events";
 import { shareStats } from "./stats";
 import { billing, linkOnSignIn, portalURL, subscriptionState, upgradeURL, webhook } from "./billing";
 import * as pages from "./pages";
-import { serveAsset } from "./assets";
+import { asset, serveAsset } from "./assets";
 import { canSendMail, sendMail } from "./mail";
 import { clientIP, limiter } from "./events";
 
@@ -32,6 +32,10 @@ app.use("*", async (c, next) => {
 app.use("*", bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.text("Too large", 413) }));
 
 app.get("/healthz", (c) => c.text("ok"));
+// Link previews (Slack, X, iMessage) must reach /r/; account pages have nothing to crawl.
+app.get("/robots.txt", (c) => c.text("User-agent: *\nDisallow: /account\nDisallow: /login\nDisallow: /device\nDisallow: /api/\n"));
+app.get("/favicon.ico", (c) => c.redirect(asset("favicon.ico"), 301));
+for (const page of ["terms", "privacy"]) app.get(`/${page}`, (c) => c.redirect(`https://reelbird.app/${page}/`, 301));
 // Ready to serve: the database answers. (Liveness is /healthz; this one is for monitors.)
 app.get("/readyz", async (c) => {
   try {

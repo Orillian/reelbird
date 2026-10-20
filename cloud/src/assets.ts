@@ -9,6 +9,7 @@ const TYPES: Record<string, string> = {
   "instrument-sans.woff2": "font/woff2",
   "commit-mono.woff2": "font/woff2",
   "favicon.svg": "image/svg+xml",
+  "favicon.ico": "image/x-icon",
   "apple-touch-icon.png": "image/png",
   "icon-512.png": "image/png",
 };
