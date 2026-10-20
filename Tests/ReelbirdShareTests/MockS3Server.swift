@@ -27,6 +27,8 @@ final class MockS3Server: @unchecked Sendable {
     private var delays: [String: Double] = [:]
     private var offline = false
     var listPageSize = 1000
+    /// false: listings are refused (keys scoped to objects, as some temporary credentials are).
+    var listingAllowed = true
     /// Server clock minus real time; requests signed more than 15 minutes off get RequestTimeTooSkewed.
     var clockSkew: Double = 0
     /// Path the server is mounted under (a reverse proxy in front of MinIO), e.g. "/minio".
@@ -248,6 +250,7 @@ final class MockS3Server: @unchecked Sendable {
 
             switch (r.method, key) {
             case ("GET", nil) where authed, ("GET", "") where authed:
+                guard listingAllowed else { return xmlError(403, "AccessDenied") }
                 return list(prefix: q["prefix"] ?? "", token: q["continuation-token"], max: Int(q["max-keys"] ?? "") ?? 1000)
             case ("PUT", let k?) where authed:
                 if let id = q["uploadId"], let n = Int(q["partNumber"] ?? "") {

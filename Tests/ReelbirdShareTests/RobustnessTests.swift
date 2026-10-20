@@ -104,7 +104,7 @@ extension LiveShareUploader {
         edit.chapters = [Chapter(time: 12, title: "Later"), Chapter(time: 2, title: "Intro"),
                          Chapter(time: 5, title: "Inside the cut"), Chapter(time: 0.5, title: "Trimmed away")]
         try bundle.writeEdit(edit)
-        let info = try await ShareService.publish(bundle: bundle, video: nil, poster: nil, captions: nil,
+        let info = try await ShareService.publish(bundle: bundle, video: nil, poster: .keep, captions: .keep,
                                                   destination: server.destination(), secret: server.secret,
                                                   session: nil) { _ in }
         let layout = try #require(ShareLayout(info: info, destination: server.destination()))

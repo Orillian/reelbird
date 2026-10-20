@@ -142,10 +142,26 @@ public struct ShareInfo: Codable, Hashable, Sendable {
     /// Whether the polished render has replaced the quick stream.
     public var polished: Bool
     public var updatedAt: Date
-    public init(key: String, url: String, polished: Bool = false, updatedAt: Date = Date()) {
-        self.key = key; self.url = url; self.polished = polished; self.updatedAt = updatedAt
+    /// `meta.json`'s revision when this was published: 0 for the live stream, 1+ for each Update Link.
+    /// A writer never replaces a newer revision. `nil` in projects shared before revisions were kept here.
+    public var revision: Int?
+    public init(key: String, url: String, polished: Bool = false, updatedAt: Date = Date(), revision: Int? = nil) {
+        self.key = key; self.url = url; self.polished = polished; self.updatedAt = updatedAt; self.revision = revision
     }
 }
+
+/// What a publish does with an optional file of the share (poster, captions). Every publish is a
+/// complete snapshot of what the link shows; files it no longer references are deleted.
+public enum ShareAsset<Value> {
+    /// Leave the share's current one as it is.
+    case keep
+    /// Publish this one instead (the old file is deleted).
+    case replace(Value)
+    /// Take it off the share and delete it.
+    case remove
+}
+
+extension ShareAsset: Sendable where Value: Sendable {}
 
 /// Short, URL-safe, unambiguous IDs (base58, 10 characters, ~58 bits).
 public enum ShortID {

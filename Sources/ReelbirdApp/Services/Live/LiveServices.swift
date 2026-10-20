@@ -156,7 +156,7 @@ struct LiveShare: ShareServiceProtocol {
     func testConnection(_ d: ShareDestination, secret: String) async throws {
         try await ShareService.testConnection(d, secret: secret)
     }
-    func publish(bundle: ProjectBundle, video: URL?, poster: CGImage?, captions: URL?, destination: ShareDestination,
+    func publish(bundle: ProjectBundle, video: URL?, poster: ShareAsset<CGImage>, captions: ShareAsset<URL>, destination: ShareDestination,
                  secret: String, progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo {
         try await ShareService.publish(bundle: bundle, video: video, poster: poster, captions: captions,
                                        destination: destination, secret: secret, progress: progress)

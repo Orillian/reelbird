@@ -47,18 +47,24 @@ public enum ShareService {
     /// Publishes the polished render, creating the share or updating it in place (same link)
     /// when `bundle`'s manifest already has one. Store the returned `ShareInfo` in the manifest.
     ///
+    /// Each publish is a complete snapshot of what the link shows, under a new revision: new files go
+    /// up first, then `meta.json` and the page, and only then is everything the new revision doesn't
+    /// reference deleted (earlier revisions' files, removed captions and, once there is a polished MP4,
+    /// the stream uploaded while recording). A cleanup cut short is finished by the next publish.
+    ///
     /// - Parameters:
     ///   - video: the exported MP4 (H.264 recommended for playback everywhere). `nil` updates
     ///     only the title, chapters, poster or captions of an existing share.
+    ///   - poster: `.keep` with a new video takes a frame from that video; the old one never stays.
     ///   - captions: WebVTT on the output timeline.
-    public static func publish(bundle: ProjectBundle, video: URL?, poster: CGImage?, captions: URL?,
+    public static func publish(bundle: ProjectBundle, video: URL?, poster: ShareAsset<CGImage>, captions: ShareAsset<URL>,
                                destination: ShareDestination, secret: String,
                                progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo {
         try await publish(bundle: bundle, video: video, poster: poster, captions: captions, destination: destination,
                           secret: secret, session: nil, progress: progress)
     }
 
-    static func publish(bundle: ProjectBundle, video: URL?, poster: CGImage?, captions: URL?,
+    static func publish(bundle: ProjectBundle, video: URL?, poster: ShareAsset<CGImage>, captions: ShareAsset<URL>,
                         destination: ShareDestination, secret: String, session: URLSession?,
                         progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo {
         let d = ShareSettings.normalized(destination)
@@ -70,8 +76,8 @@ public enum ShareService {
             ?? ShareLayout(id: ShortID.make(length: 14), destination: d)
         var previous: ViewerMeta?
         if manifest.share != nil {
-            // Only a missing meta.json means "start over at revision 1". Any other failure (offline,
-            // 403) stops here: carrying on would overwrite the immutable video.1.mp4 that caches keep.
+            // Only a missing meta.json means "start over". Any other failure (offline, 403) stops
+            // here: carrying on would overwrite the immutable video.<n>.mp4 that caches keep.
             do {
                 let data = try await client.get(layout.metaKey)
                 previous = try? JSONCoding.decoder.decode(ViewerMeta.self, from: data)
@@ -80,7 +86,8 @@ public enum ShareService {
         }
 
         let now = Date()
-        let rev = (previous?.revision ?? 0) + 1
+        // Above both the live meta.json and the project's own record, so it only ever goes up.
+        let rev = max(previous?.revision ?? 0, manifest.share?.revision ?? 0) + 1
         let title = (edit.title?.isEmpty == false ? edit.title : nil) ?? manifest.title
         var meta = previous ?? ViewerMeta(id: layout.id, title: title, status: .ready, createdAt: manifest.createdAt,
                                           pageURL: layout.pageURL, baseURL: layout.baseURL)
@@ -95,7 +102,6 @@ public enum ShareService {
             timeline.outputTime(forSource: c.time).map { Chapter(time: $0, title: c.title) }
         }.sorted { $0.time < $1.time }
 
-        var uploads: [String] = []   // new asset names, to protect from cleanup
         progress(0)
 
         if let video {
@@ -108,27 +114,45 @@ public enum ShareService {
             meta.duration = info.duration ?? (timeline.duration > 0 ? timeline.duration : meta.duration)
             meta.width = info.width
             meta.height = info.height
-            uploads.append(name)
         } else if meta.duration == nil, timeline.duration > 0 {
             meta.duration = timeline.duration
         }
+        // The polished MP4 replaces the stream uploaded while recording for good (that stream may show
+        // what the edit blurred or cut); its files are deleted below.
+        if meta.video != nil { meta.hls = nil }
         progress(0.9)
 
-        var poster = poster
-        if poster == nil, let video { poster = await posterFrame(video) }
-        if let poster, let jpeg = TitleCard.jpeg(downscaled(poster, maxWidth: 1600), quality: 0.84) {
+        var image: CGImage?
+        switch poster {
+        case .keep:
+            // The old poster is a frame of the old video, so a new video gets one of its own.
+            if let video {
+                image = await posterFrame(video)
+                meta.poster = nil
+            }
+        case .replace(let i):
+            image = i
+            meta.poster = nil
+        case .remove:
+            meta.poster = nil
+        }
+        if let image, let jpeg = TitleCard.jpeg(downscaled(image, maxWidth: 1600), quality: 0.84) {
             let name = "poster.\(rev).jpg"
             try await client.put(layout.key(name), data: jpeg, contentType: "image/jpeg", cacheControl: ShareLayout.immutable)
             meta.poster = name
-            uploads.append(name)
         }
-        if let captions {
-            let data = try Data(contentsOf: captions)
+        switch captions {
+        case .keep:
+            break
+        case .replace(let url):
+            let data = try Data(contentsOf: url)
             let name = "captions.\(rev).vtt"
             try await client.put(layout.key(name), data: data, contentType: "text/vtt; charset=utf-8", cacheControl: ShareLayout.immutable)
             meta.captions = name
             meta.captionsLanguage = meta.captionsLanguage ?? Locale.current.language.languageCode?.identifier ?? "en"
-            uploads.append(name)
+        case .remove:
+            meta.captions = nil
+            meta.captionsLanguage = nil
         }
         if meta.card == nil || previous?.title != meta.title, let card = TitleCard.jpeg(title: meta.title) {
             try await client.put(layout.cardKey, data: card, contentType: "image/jpeg", cacheControl: ShareLayout.revalidate)
@@ -136,6 +160,10 @@ public enum ShareService {
         }
         progress(0.95)
 
+        // A live upload of this share still running here (its last segments, or a resume) stops first,
+        // so none of its writes can land on top of this revision or bring the stream back.
+        var live: UploadState?
+        if meta.video != nil { live = await LiveUploads.retire(layout.key) }
         try await client.put(layout.metaKey, data: meta.jsonData, contentType: "application/json", cacheControl: ShareLayout.noStore)
         let html = Data(ViewerPage.html(meta).utf8)
         try await withThrowingTaskGroup(of: Void.self) { g in
@@ -144,15 +172,46 @@ public enum ShareService {
             }
             try await g.waitForAll()
         }
+        await live?.superseded()
 
-        // Remove assets from earlier revisions that nothing references any more.
-        if let previous {
-            let keep = Set([meta.video, meta.poster, meta.captions].compactMap { $0 })
-            let stale = [previous.video, previous.poster, previous.captions].compactMap { $0 }.filter { !keep.contains($0) }
-            for name in stale { try? await client.delete(layout.key(name)) }
-        }
+        // The new revision is live: delete what it doesn't reference.
+        await removeUnreferenced(meta, layout: layout, client: client)
         progress(1)
-        return ShareInfo(key: layout.key, url: layout.pageURL, polished: meta.video != nil, updatedAt: now)
+        return ShareInfo(key: layout.key, url: layout.pageURL, polished: meta.video != nil, updatedAt: now, revision: rev)
+    }
+
+    /// Deletes the share's files that `meta` doesn't reference: every earlier revision's video, poster
+    /// and captions, and the recorded stream once `meta` plays a polished MP4. Best effort and idempotent
+    /// (deleting a missing object succeeds), so whatever a failure leaves behind the next publish deletes.
+    static func removeUnreferenced(_ meta: ViewerMeta, layout: ShareLayout, client: S3Client) async {
+        let keep = Set([meta.video, meta.poster, meta.captions].compactMap { $0 })
+        let stale = (1..<max(1, meta.revision)).flatMap { r in ["video.\(r).mp4", "poster.\(r).jpg", "captions.\(r).vtt"] }
+            .filter { !keep.contains($0) }
+        await withTaskGroup(of: Void.self) { g in
+            for name in stale { g.addTask { try? await client.delete(layout.key(name)) } }
+        }
+        if meta.video != nil { try? await removeStream(layout, client: client) }
+    }
+
+    /// Deletes the stream uploaded while recording (`hls/`). Lists the folder when the store allows it,
+    /// which also catches segments the playlist never listed; otherwise the playlist names them. The
+    /// playlist goes last, so an attempt cut short can be repeated.
+    static func removeStream(_ layout: ShareLayout, client: S3Client) async throws {
+        let folder = layout.folder + "hls/"
+        if (try? await client.deletePrefix(folder)) != nil { return }
+        let text: String
+        do {
+            text = String(decoding: try await client.get(layout.playlistKey), as: UTF8.self)
+        } catch let e as ShareError where e.status == 404 {
+            return
+        }
+        let names = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") && !$0.contains("/") }
+        try await withThrowingTaskGroup(of: Void.self) { g in
+            for name in names + ["init.mp4"] { g.addTask { try await client.delete(folder + name) } }
+            try await g.waitForAll()
+        }
+        try await client.delete(layout.playlistKey)
     }
 
     /// Deletes everything under the share's prefix. The link stops working.
