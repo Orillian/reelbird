@@ -1,8 +1,9 @@
-// Stripe billing without an SDK or a secret key. People pay through a Stripe Payment Link (the
-// $5/month "Supporter" one, or any monthly tier above it); Stripe's webhooks tell us who pays, and
-// Stripe's no-code customer portal handles cancelling. The only secret is the webhook signing secret.
+// Stripe billing without an SDK or a secret key. People pay through the "Reelbird Pro" Payment Link
+// ($5/month, prod_VTSee5NkgzYUpl); Stripe's webhooks tell us who pays, and Stripe's no-code customer
+// portal handles cancelling. The only secret is the webhook signing secret.
 //
-// Pro = any subscription that is active (or trialing) and pays at least $5 a month ($48 a year).
+// Pro = any subscription on the account that is active (or trialing) and pays at least $5 a month
+// ($48 a year). That includes the open-source support tiers, as a thank-you to supporters.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Context } from "hono";
 import { sql } from "./db";
@@ -10,7 +11,7 @@ import { sql } from "./db";
 export const billing = {
   webhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.trim() || null,
   /** Payment Link for Pro. Gets ?client_reference_id=<account id>&prefilled_email=… appended. */
-  proLink: process.env.STRIPE_PRO_LINK?.trim() || "https://buy.stripe.com/9B68wOewEaXsgJxdiH3ks01",
+  proLink: process.env.STRIPE_PRO_LINK?.trim() || "https://buy.stripe.com/5kQ8wO88gaXs9h57Yn3ks05",
   /** Stripe's no-code customer portal login link (Settings › Billing › Customer portal). */
   portalLink: process.env.STRIPE_PORTAL_LINK?.trim() || null,
 };
