@@ -80,6 +80,6 @@ bun test        # end to end against the dev bucket and reelbird_cloud_test
   - The Pro Payment Link is live but unused until launch. Deactivate it in the Dashboard if it shouldn't take payments before then.
   - For local tests: `stripe listen --forward-to localhost:8788/stripe/webhook` in test mode.
   - `/dev/plan` only exists with `DEV=1`.
-- **Legal.** Done: [terms](https://reelbird.app/terms/), [privacy](https://reelbird.app/privacy/), report link and takedown script. Still to do by hand: register a DMCA designated agent with the US Copyright Office, and set up the `hello@reelbird.app` inbox.
+- **Legal.** Done: [terms](https://reelbird.app/terms/), [privacy](https://reelbird.app/privacy/), report link and takedown script.
 - **Deploy.** Add this as an app in the `reelbird` Tiffin project on its own host, e.g. `watch.reelbird.app`. That's an A record at Namecheap, like the site, so no Cloudflare DNS is needed because the bucket is never public. Set the release command to `bun run migrate`, use Tiffin Postgres for `DATABASE_URL` and Valkey for the event rate limit, and run `measureRecent` from a cron instead of `setInterval`. Then point `CloudSettings.defaultServer` at the production URL.
 - **Country.** Countries need a GeoIP lookup (DB-IP Lite, as Tiffin's analytics uses). Today they're empty unless a proxy sends `cf-ipcountry`.

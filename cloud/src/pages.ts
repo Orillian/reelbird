@@ -241,9 +241,9 @@ ${error ? `<p class="error" role="alert">${esc(error)}</p>` : ""}
 export function reportPage(link: string | null) {
   const mail = `mailto:${CONTACT}?subject=${encodeURIComponent(`Report: ${link ? `${config.publicURL}/r/${link}/` : "a Reelbird link"}`)}`;
   return layout("Report a link · Reelbird", solo(`<h1>Report a link</h1>
-<p class="lede">Links on watch.reelbird.app are shared by Reelbird Pro customers. If one breaks the law or our <a href="${SITE}/terms/#acceptable-use">acceptable use rules</a>, tell us and we'll look at it, usually within two working days.</p>
+<p class="lede">Links on watch.reelbird.app are shared by Reelbird Pro customers. If one breaks the law or our <a href="${SITE}/terms/#acceptable-use">acceptable use rules</a>, tell us and we'll look at it.</p>
 <div class="stack"><a class="btn primary block" href="${esc(mail)}">Email ${CONTACT}</a></div>
-<p class="fine">Include the link${link ? ` (<code>${esc(`${config.publicURL}/r/${link}/`)}</code>)` : ""} and what's wrong. For copyright, follow the <a href="${SITE}/terms/#copyright">copyright notice steps</a> so we can act on it.</p>`), { narrow: true });
+<p class="fine">Include the link${link ? ` (<code>${esc(`${config.publicURL}/r/${link}/`)}</code>)` : ""} and what's wrong.</p>`), { narrow: true });
 }
 
 export function checkEmailPage(email: string) {
