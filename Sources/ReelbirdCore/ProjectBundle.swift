@@ -15,6 +15,7 @@ import Foundation
 ///       voice/              optional cache: the enhanced voice stem (voice-<hash>.caf + stem.json, VoiceStemInfo)
 ///       exports/            rendered outputs
 ///       .lock               BundleLock (recorder / recovery)
+///       .edit.lock          EditLock (held only while `edit.json` is checked and written)
 public struct ProjectBundle: Hashable, Sendable {
     public static let pathExtension = "reelbird"
 
@@ -102,8 +103,27 @@ public struct ProjectBundle: Hashable, Sendable {
 
     /// Like `writeEdit(_:)`, but only if `edit.json` is still at `expected` (0 = no file yet); otherwise
     /// throws `EditConflict` and writes nothing, so the caller can merge the other writer's changes first.
+    /// The read, check and write happen under `EditLock`, so of two writers (in any process) starting
+    /// from the same revision exactly one succeeds.
     @discardableResult
     public func writeEdit(_ e: EditDocument, ifRevision expected: Int?) throws -> Int {
+        try EditLock.withLock(self) { try writeEditLocked(e, ifRevision: expected) }
+    }
+
+    /// Reads `edit.json`, lets `body` change it and writes it back, holding `EditLock` throughout so no
+    /// other writer (the editor, another CLI or MCP call) can slip in between and have its change lost.
+    /// `body` must not write `edit.json` itself. Returns what `body` returns.
+    public func updateEdit<T>(_ body: (inout EditDocument) throws -> T) throws -> T {
+        try EditLock.withLock(self) {
+            var (edit, revision) = try readEditStamped()
+            let result = try body(&edit)
+            try writeEditLocked(edit, ifRevision: revision)
+            return result
+        }
+    }
+
+    @discardableResult
+    private func writeEditLocked(_ e: EditDocument, ifRevision expected: Int?) throws -> Int {
         let current = readEditRevision()
         if let expected, current != expected { throw EditConflict(expected: expected, found: current) }
         let next = current + 1

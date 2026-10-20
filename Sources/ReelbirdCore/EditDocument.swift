@@ -148,6 +148,10 @@ public struct CursorSettings: Codable, Hashable, Sendable {
     public var hideWhenIdleAfter: Double = 0
     /// Show a keystroke overlay (needs key events in the log).
     public var showKeystrokes = false
+    /// Also show plain typing in the keystroke overlay, not only shortcuts (⌘/⌃/⌥ held) and special keys
+    /// (Return, Esc, Tab, arrows). Off by default, since typing can include passwords. Absent in older files
+    /// = what they showed then (every key, when the overlay was on).
+    public var showTypedText = false
 
     public init() {}
     public init(from decoder: any Decoder) throws {
@@ -159,6 +163,7 @@ public struct CursorSettings: Codable, Hashable, Sendable {
         clickEffect = try c.decodeIfPresent(ClickEffect.self, forKey: .clickEffect) ?? d.clickEffect
         hideWhenIdleAfter = try c.decodeIfPresent(Double.self, forKey: .hideWhenIdleAfter) ?? d.hideWhenIdleAfter
         showKeystrokes = try c.decodeIfPresent(Bool.self, forKey: .showKeystrokes) ?? d.showKeystrokes
+        showTypedText = try c.decodeIfPresent(Bool.self, forKey: .showTypedText) ?? showKeystrokes
     }
 }
 

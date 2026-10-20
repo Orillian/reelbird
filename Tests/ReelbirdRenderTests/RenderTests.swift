@@ -166,9 +166,11 @@ private func render(_ bundle: ProjectBundle, _ edit: EditDocument, at t: Double,
     log.close()
     var e = plainEdit(try bundle.readManifest())
     e.cursor.showKeystrokes = true
+    e.cursor.showTypedText = true
+    // The blur starts after the typing: typed keys never show while a blur is on screen.
     e.annotations = [Annotation(kind: .box, range: TimeRange(start: 0, end: 3), rect: NormRect(x: 0.1, y: 0.6, width: 0.2, height: 0.2),
                                 color: RGBA(0, 1, 0)),
-                     Annotation(kind: .blur, range: TimeRange(start: 0, end: 3), rect: NormRect(x: 0.4, y: 0.4, width: 0.2, height: 0.2))]
+                     Annotation(kind: .blur, range: TimeRange(start: 1.5, end: 3), rect: NormRect(x: 0.4, y: 0.4, width: 0.2, height: 0.2))]
     let px = try await render(bundle, e, at: 1.2)
     // Box stroke: left edge at card x + 0.1 × 768 = 172.8, y inside 54 + 0.7 × 432.
     let edge = px[173, 356]
@@ -212,6 +214,7 @@ private func render(_ bundle: ProjectBundle, _ edit: EditDocument, at t: Double,
     let manifest = try bundle.readManifest()
     var e = EditDocument.initial(for: manifest)
     e.cursor.showKeystrokes = true
+    e.cursor.showTypedText = true
     e.annotations = [Annotation(kind: .arrow, range: TimeRange(start: 0, end: 4), rect: NormRect(x: 0.6, y: 0.2, width: 0.15, height: 0.15)),
                      Annotation(kind: .text, range: TimeRange(start: 0, end: 4), rect: NormRect(x: 0.6, y: 0.1, width: 0.3, height: 0.06), text: "Click here")]
     let plan = try RenderPlan(bundle: bundle, manifest: manifest, edit: e)

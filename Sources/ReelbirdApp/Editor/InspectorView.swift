@@ -217,6 +217,10 @@ struct CursorSection: View {
             }
             Divider().padding(.vertical, 2)
             Toggle("Show keystrokes", isOn: model.binding(\.cursor.showKeystrokes, "Keystrokes")).toggleStyle(.brand).font(.system(size: 12))
+            if model.edit.cursor.showKeystrokes {
+                Toggle("Include typed text", isOn: model.binding(\.cursor.showTypedText, "Typed Text")).toggleStyle(.brand).font(.system(size: 12))
+                    .help("Off: only shortcuts and keys like Return, Esc and the arrows. Typed text is never shown while a blur is on screen.")
+            }
             if model.edit.cursor.showKeystrokes && !model.events.contains(where: { $0.type == .key }) {
                 StatusLine(tone: .info, text: "No keys were recorded. Turn on keystrokes in Settings → Recording before your next take.")
             }
