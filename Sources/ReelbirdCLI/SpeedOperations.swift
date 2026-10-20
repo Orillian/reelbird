@@ -41,8 +41,10 @@ extension Operations {
         let found = SpeedSuggester.suggest(events: events, silences: silences, duration: manifest.duration, edit: edit, options: options)
         let before = EditTimeline(manifest: manifest, edit: edit).duration
         if apply, !found.isEmpty {
-            for s in found { edit.speed.set(s.range, rate: s.rate, source: s.segment.source) }
-            try bundle.writeEdit(edit)
+            edit = try bundle.updateEdit { edit in
+                for s in found { edit.speed.set(s.range, rate: s.rate, source: s.segment.source) }
+                return edit
+            }
         }
         let after = EditTimeline(manifest: manifest, edit: edit).duration
         let sum = SpeedSuggester.summary(found)

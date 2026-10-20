@@ -14,6 +14,7 @@ Demo.reelbird/
   systemAudio/      same layout, audio only (optional)
   share/            the quick-share stream (optional; its timeline skips paused ranges)
   .lock             empty lock file (see Recovery)
+  .edit.lock        empty lock file, held while edit.json is checked and written
   captions.vtt      optional
   transcript.json   optional, word-timed transcript behind captions.vtt (source timeline)
   analysis.json     optional cache: loudness, noise floor and speech ranges of the audio (AudioAnalysis)
@@ -22,7 +23,7 @@ Demo.reelbird/
   exports/          rendered files
 ```
 
-`edit.json` also carries `revision`, a counter every writer (the editor, `reelbird edit`, MCP `set_edit`) raises by one, so an editor with the project open notices outside changes. It picks them up straight away when it has no unsaved changes of its own, and merges them setting by setting when it does. Where both changed the same setting, the editor's choice stays and the other version is saved next to it as `edit.outside-<date>-<time>.json`. Closing the editor writes `edit.json` only if something changed there.
+`edit.json` also carries `revision`, a counter every writer (the editor, `reelbird edit`, MCP `set_edit`) raises by one, so an editor with the project open notices outside changes. Every writer takes an advisory `flock` on `.edit.lock` (waiting up to 10 s) while it reads the revision, checks it and writes, so two writers starting from the same revision can't both succeed; `reelbird` and MCP changes read `edit.json`, apply their change and write under that lock, so they never overwrite a change saved in between. It picks them up straight away when it has no unsaved changes of its own, and merges them setting by setting when it does. Where both changed the same setting, the editor's choice stays and the other version is saved next to it as `edit.outside-<date>-<time>.json`. Closing the editor writes `edit.json` only if something changed there.
 
 The Swift types in `Sources/ReelbirdCore` are the schema: `ProjectManifest` for `project.json`, `EditDocument` for `edit.json`, `InputEvent` for each line of `events.jsonl`. Readers ignore unknown keys and fill missing keys with defaults, so files written by older or newer versions still open.
 
@@ -165,6 +166,8 @@ Find Sensitive Info (the editor's Overlays panel, `reelbird redact --auto`, MCP 
 - **Custom words**, without regard to case.
 
 Sightings in neighbouring samples are the same finding when they are the same kind with the same text (one misread character in ten allowed) or in the same place. A finding is hidden from the sample before it was first seen to the sample after it was last seen; its boxes are padded by about a third of a line. Text shown for less than half a second, or partly scrolled off the edge, can be missed: check the result before sharing. On a 60 s 1920 × 1200 test recording with ten fake secrets (static, scrolling and typed), the scan finds all ten, with no false positives, in about 6–8 s on Apple silicon. The first scan by a newly built or installed copy of Reelbird takes about half a minute longer while macOS prepares its text recognizer.
+
+The scan reads the screen video only, not narration, captions or overlays. The keystroke overlay (`cursor.showKeystrokes`) shows shortcuts (⌘, ⌃ or ⌥ held) and special keys (Return, Esc, Tab, arrows); plain typing only with `cursor.showTypedText` (off by default; files from before it existed read it as `showKeystrokes`, which is what they showed). Typed text is never shown while a blur is on screen, nor for keys typed during one.
 
 ## Crop
 

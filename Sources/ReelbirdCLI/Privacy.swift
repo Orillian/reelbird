@@ -129,26 +129,13 @@ extension Operations {
         }
     }
 
-    /// Read, change and write edit.json, starting again if someone else wrote it in between (MCP calls run
-    /// concurrently; the editor may be saving too), so no change is lost. Returns what `body` returns.
+    /// Read, change and write edit.json under the bundle's edit lock (MCP calls run concurrently; the editor
+    /// may be saving too), so no change is lost. Returns what `body` returns.
     private func mutateEdit<T>(_ bundle: ProjectBundle, _ body: (inout EditDocument) throws -> T) throws -> T {
-        try Self.editLock.withLock {
-            for _ in 0..<8 {
-                var (edit, revision) = try bundle.readEditStamped()
-                let result = try body(&edit)
-                do {
-                    try bundle.writeEdit(edit, ifRevision: revision)
-                    return result
-                } catch is EditConflict {
-                    continue
-                } catch {
-                    throw CLIError("Can't write edit.json: \(error.localizedDescription)")
-                }
-            }
-            throw CLIError("edit.json kept changing while saving; try again.")
+        do { return try bundle.updateEdit(body) } catch let e as CLIError { throw e } catch {
+            throw CLIError("Can't write edit.json: \(error.localizedDescription)")
         }
     }
-    private static let editLock = NSLock()
 
     static func json(_ a: Annotation) -> JSONValue {
         var o: [String: JSONValue] = [

@@ -19,7 +19,8 @@ extension Operations {
         do { edit = try bundle.readEdit() } catch {
             throw CLIError("Can't read edit.json: \(error.localizedDescription)", code: .dataError)
         }
-        let markers = Markers.resolve(edit: edit, events: (try? bundle.readEvents()) ?? [])
+        let events = (try? bundle.readEvents()) ?? []
+        let markers = Markers.resolve(edit: edit, events: events)
         let timeline = EditTimeline(manifest: manifest, edit: edit)
         var json: [String: JSONValue] = ["markers": .array(markers.map { Self.markerJSON($0, timeline: timeline) })]
         var lines: [String] = []
@@ -32,8 +33,13 @@ extension Operations {
         }
         if asChapters {
             guard !markers.isEmpty else { throw CLIError("This project has no markers to turn into chapters.", code: .dataError) }
-            edit.chapters = Markers.chapters(from: markers, timeline: timeline)
-            do { try bundle.writeEdit(edit) } catch {
+            // From edit.json as it is under the edit lock, so a change saved meanwhile is kept.
+            do {
+                edit = try bundle.updateEdit { e in
+                    e.chapters = Markers.chapters(from: Markers.resolve(edit: e, events: events), timeline: EditTimeline(manifest: manifest, edit: e))
+                    return e
+                }
+            } catch {
                 throw CLIError("Couldn't save edit.json: \(error.localizedDescription)", code: .failure)
             }
             json["chapters"] = .array(edit.chapters.map { ["time": JSONValue($0.time), "title": .string($0.title)] })

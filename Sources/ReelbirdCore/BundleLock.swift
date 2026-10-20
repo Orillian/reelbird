@@ -64,3 +64,29 @@ public final class BundleLock: @unchecked Sendable {
         fd = -1
     }
 }
+
+/// A short exclusive lock (`flock` on the bundle's `.edit.lock`) held while `edit.json` is checked and
+/// written, so the app, the CLI and the MCP server can't both write from the same revision. Separate from
+/// `BundleLock`, which a recorder holds for a whole take. Waits at most `timeout` seconds, then throws.
+public enum EditLock {
+    public static func url(for bundle: ProjectBundle) -> URL { bundle.url.appendingPathComponent(".edit.lock") }
+
+    public static func withLock<T>(_ bundle: ProjectBundle, timeout: TimeInterval = 10, _ body: () throws -> T) throws -> T {
+        let lockURL = url(for: bundle)
+        let fd = open(lockURL.path, O_RDWR | O_CREAT | O_CLOEXEC, 0o644)
+        guard fd >= 0 else { throw DurableFile.posixError(errno, lockURL) }
+        defer { close(fd) }
+        let deadline = Date().addingTimeInterval(timeout)
+        var pause: useconds_t = 500
+        while flock(fd, LOCK_EX | LOCK_NB) != 0 {
+            let e = errno
+            if e == EINTR { continue }
+            guard e == EWOULDBLOCK else { throw DurableFile.posixError(e, lockURL) }
+            guard Date() < deadline else { throw DurableFile.posixError(ETIMEDOUT, lockURL) }
+            usleep(pause)
+            pause = min(pause * 2, 20_000)
+        }
+        defer { flock(fd, LOCK_UN) }
+        return try body()
+    }
+}

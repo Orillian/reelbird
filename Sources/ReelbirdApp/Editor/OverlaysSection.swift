@@ -246,6 +246,9 @@ struct SensitiveInfoPanel: View {
                     }
                     .padding(.top, 2)
                 }
+                Text("The scan reads the screen only, not narration, captions or overlays such as keystrokes.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

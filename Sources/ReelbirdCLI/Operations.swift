@@ -172,60 +172,64 @@ struct Operations: Sendable {
         }
         let changed = !sets.isEmpty || trim != nil || !cuts.isEmpty || clearCuts || cropChange != nil || clearCameraMoves
             || !layouts.isEmpty || clearLayouts || !speeds.isEmpty || clearSpeed
-        let cropBefore = edit.crop
-        if !sets.isEmpty {
-            let zoomsBefore = edit.zoom.regions
-            edit = try EditSetter.apply(sets, to: edit)
-            // An automatic zoom changed by hand (turned off, made instant, deeper) is kept when zooms are planned again.
-            edit.zoom.regions = ZoomEditing.markingEdited(edit.zoom.regions, before: zoomsBefore)
-        }
-        // A corner is a preset: it pins the bubble there for the whole video, unless a place is set too.
-        let keys = Set(sets.map(\.path))
-        if keys.contains("camera.corner"), keys.isDisjoint(with: ["camera.x", "camera.y", "camera.moves"]) {
-            edit.camera.pin(to: edit.camera.corner)
-        }
-        if clearCameraMoves { edit.camera.moves = [] }
-        switch cropChange {
-        case .set(let r)?: edit.crop = r.sanitizedCrop
-        case .clear?: edit.crop = nil
-        case nil: break
-        }
-        // Automatic zooms follow the crop (clicks in a hidden toolbar no longer zoom).
-        if edit.crop != cropBefore, edit.zoom.mode == .auto, edit.zoom.regions.contains(where: { $0.source == .auto }) {
-            let events = (try? bundle.readEvents()) ?? []
-            edit.zoom.regions = AutoZoomPlanner.merged(existing: edit.zoom.regions, events: events, duration: manifest.duration,
-                                                       intensity: edit.zoom.intensity, crop: edit.crop)
-        }
-        let duration = manifest.duration > 0 ? manifest.duration : nil
-        if let trim {
-            if ["none", "off", "clear"].contains(trim.lowercased()) { edit.trim = nil } else {
-                let r = try TimeParsing.range(trim, duration: duration)
-                if let duration, r.start >= duration {
-                    throw CLIError.usage("Trim starts at \(Format.seconds(r.start))s but the recording is \(Format.seconds(duration))s long.")
+        // Applied to edit.json as it is once the edit lock is held, so a change someone else saved meanwhile
+        // (the editor, another CLI or MCP call) is kept.
+        func apply(_ edit: inout EditDocument) throws {
+            let cropBefore = edit.crop
+            if !sets.isEmpty {
+                let zoomsBefore = edit.zoom.regions
+                edit = try EditSetter.apply(sets, to: edit)
+                // An automatic zoom changed by hand (turned off, made instant, deeper) is kept when zooms are planned again.
+                edit.zoom.regions = ZoomEditing.markingEdited(edit.zoom.regions, before: zoomsBefore)
+            }
+            // A corner is a preset: it pins the bubble there for the whole video, unless a place is set too.
+            let keys = Set(sets.map(\.path))
+            if keys.contains("camera.corner"), keys.isDisjoint(with: ["camera.x", "camera.y", "camera.moves"]) {
+                edit.camera.pin(to: edit.camera.corner)
+            }
+            if clearCameraMoves { edit.camera.moves = [] }
+            switch cropChange {
+            case .set(let r)?: edit.crop = r.sanitizedCrop
+            case .clear?: edit.crop = nil
+            case nil: break
+            }
+            // Automatic zooms follow the crop (clicks in a hidden toolbar no longer zoom).
+            if edit.crop != cropBefore, edit.zoom.mode == .auto, edit.zoom.regions.contains(where: { $0.source == .auto }) {
+                let events = (try? bundle.readEvents()) ?? []
+                edit.zoom.regions = AutoZoomPlanner.merged(existing: edit.zoom.regions, events: events, duration: manifest.duration,
+                                                           intensity: edit.zoom.intensity, crop: edit.crop)
+            }
+            let duration = manifest.duration > 0 ? manifest.duration : nil
+            if let trim {
+                if ["none", "off", "clear"].contains(trim.lowercased()) { edit.trim = nil } else {
+                    let r = try TimeParsing.range(trim, duration: duration)
+                    if let duration, r.start >= duration {
+                        throw CLIError.usage("Trim starts at \(Format.seconds(r.start))s but the recording is \(Format.seconds(duration))s long.")
+                    }
+                    edit.trim = TimeRange(start: r.start, end: duration.map { min($0, r.end) } ?? r.end)
                 }
-                edit.trim = TimeRange(start: r.start, end: duration.map { min($0, r.end) } ?? r.end)
+            }
+            if !layouts.isEmpty, manifest.track(.camera) == nil {
+                throw CLIError("This recording has no camera, so it has no camera layouts.", code: .dataError)
+            }
+            if clearLayouts { edit.layouts = [] }
+            for l in layouts {
+                let segment = try Self.layoutSegment(l, duration: duration)
+                edit.layouts = LayoutSegment.inserting(segment, into: edit.layouts)
+            }
+            if clearCuts { edit.cuts = [] }
+            for c in cuts {
+                let r = try TimeParsing.range(c, duration: duration)
+                edit.cuts = Self.mergingCut(r, into: edit.cuts)
+            }
+            if clearSpeed { edit.speed.segments = [] }
+            for s in speeds {
+                let (r, rate) = try Self.speedChange(s, duration: duration)
+                edit.speed.set(TimeRange(start: r.start, end: duration.map { min($0, r.end) } ?? r.end), rate: rate)
             }
         }
-        if !layouts.isEmpty, manifest.track(.camera) == nil {
-            throw CLIError("This recording has no camera, so it has no camera layouts.", code: .dataError)
-        }
-        if clearLayouts { edit.layouts = [] }
-        for l in layouts {
-            let segment = try Self.layoutSegment(l, duration: duration)
-            edit.layouts = LayoutSegment.inserting(segment, into: edit.layouts)
-        }
-        if clearCuts { edit.cuts = [] }
-        for c in cuts {
-            let r = try TimeParsing.range(c, duration: duration)
-            edit.cuts = Self.mergingCut(r, into: edit.cuts)
-        }
-        if clearSpeed { edit.speed.segments = [] }
-        for s in speeds {
-            let (r, rate) = try Self.speedChange(s, duration: duration)
-            edit.speed.set(TimeRange(start: r.start, end: duration.map { min($0, r.end) } ?? r.end), rate: rate)
-        }
         if changed {
-            do { try bundle.writeEdit(edit) } catch {
+            do { edit = try bundle.updateEdit { try apply(&$0); return $0 } } catch let e as CLIError { throw e } catch {
                 throw CLIError("Can't write edit.json: \(error.localizedDescription)")
             }
         }
@@ -304,11 +308,12 @@ struct Operations: Sendable {
         guard manifest.track(.microphone)?.file != nil else {
             throw CLIError("This recording has no microphone track to enhance.", code: .dataError)
         }
-        var edit = try bundle.readEdit()
-        edit.audio.enhance = true
-        if let strength { edit.audio.enhanceStrength = strength }
-        if let mix { edit.audio.enhanceMix = mix }
-        try bundle.writeEdit(edit)
+        let edit = try bundle.updateEdit { edit in
+            edit.audio.enhance = true
+            if let strength { edit.audio.enhanceStrength = strength }
+            if let mix { edit.audio.enhanceMix = mix }
+            return edit
+        }
         let info = try await engine.renderVoiceStem(bundle: bundle, settings: edit.audio, progress: progress)
         let duration = Double(info.frames) / max(1, info.sampleRate)
         let json: JSONValue = [
@@ -369,9 +374,7 @@ struct Operations: Sendable {
                 try Data(Captions.srt(transcript).utf8).write(to: u, options: .atomic)
                 srtPath = u.path
             }
-            var edit = try bundle.readEdit()
-            edit.captions.file = bundle.captionsURL.lastPathComponent
-            try bundle.writeEdit(edit)
+            try bundle.updateEdit { $0.captions.file = bundle.captionsURL.lastPathComponent }
             let cues = Captions.cues(transcript).count
             let words = transcript.allWords.count
             let preview = String(transcript.text.prefix(160))
@@ -409,10 +412,10 @@ struct Operations: Sendable {
             }
         }
         if apply {
-            var edit = try bundle.readEdit()
-            edit.title = story.title
-            edit.chapters = story.chapters
-            try bundle.writeEdit(edit)
+            try bundle.updateEdit { edit in
+                edit.title = story.title
+                edit.chapters = story.chapters
+            }
         }
         var lines = [story.title]
         for c in story.chapters { lines.append("  \(Format.duration(c.time).padding(toLength: 8, withPad: " ", startingAt: 0)) \(c.title)") }
@@ -435,9 +438,9 @@ struct Operations: Sendable {
         let duration = (try? bundle.readManifest().duration) ?? nil
         let cuts = SilenceDetector.trimCuts(silences: ranges, padding: padding, duration: duration)
         if apply, !cuts.isEmpty {
-            var edit = try bundle.readEdit()
-            for c in cuts { edit.cuts = Self.mergingCut(c, into: edit.cuts) }
-            try bundle.writeEdit(edit)
+            try bundle.updateEdit { edit in
+                for c in cuts { edit.cuts = Self.mergingCut(c, into: edit.cuts) }
+            }
         }
         let total = cuts.reduce(0) { $0 + $1.duration }
         let rangeJSON: (TimeRange) -> JSONValue = { ["start": JSONValue($0.start), "end": JSONValue($0.end)] }

@@ -162,6 +162,41 @@ private func tempDir() throws -> URL {
 
 // MARK: - edit / info / list
 
+/// `reelbird edit` processes and in-process writers changing edit.json at once: every change lands (each
+/// revision has exactly one writer), none is silently overwritten.
+@Test func concurrentEditProcessesLoseNoChange() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let bundle = try makeProject(in: dir)
+    try bundle.writeEdit(EditDocument.initial(for: try bundle.readManifest()))
+    final class Failures: @unchecked Sendable {
+        let lock = NSLock()
+        var list: [String] = []
+        func add(_ s: String) { lock.withLock { list.append(s) } }
+    }
+    let failures = Failures()
+    let processes = 8, threads = 4, each = 5
+    DispatchQueue.concurrentPerform(iterations: processes + threads) { i in
+        if i < processes {
+            // Separate cuts (2i to 2i+1 s) that never merge.
+            guard let r = try? CLI.run(["edit", bundle.url.path, "--cut", "\(2 * i)-\(2 * i + 1)"]), r.code == 0 else {
+                return failures.add("process \(i) failed")
+            }
+        } else {
+            for n in 0..<each {
+                do { try bundle.updateEdit { $0.chapters.append(Chapter(time: Double(i * 10 + n), title: "t\(i)-\(n)")) } } catch {
+                    failures.add("thread \(i): \(error)")
+                }
+            }
+        }
+    }
+    #expect(failures.list.isEmpty, "\(failures.list)")
+    let (edit, revision) = try bundle.readEditStamped()
+    #expect(edit.cuts == (0..<processes).map { TimeRange(start: Double(2 * $0), end: Double(2 * $0 + 1)) })
+    #expect(edit.chapters.count == threads * each)
+    #expect(revision == 1 + processes + threads * each)
+}
+
 @Test func editSetsDottedKeysTrimAndCuts() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }

@@ -234,8 +234,18 @@ public final class RenderPlan: Sendable {
         return u * u * (3 - 2 * u)
     }
 
+    /// Special keys shown even when plain typing is hidden (Return, Enter, Esc, Tab, arrows, Home/End, Page Up/Down).
+    static let specialKeys: Set<String> = ["⏎", "⌤", "⎋", "⇥", "←", "→", "↓", "↑", "↖", "↘", "⇞", "⇟"]
+
+    /// Whether a blur covers part of the screen at recording time `t`.
+    func isBlurred(at t: Double) -> Bool {
+        edit.annotations.contains { $0.kind == .blur && t >= $0.range.start && t <= $0.range.end }
+    }
+
     /// Recent keystroke text to show at recording time `t`, with its opacity, or `nil`.
-    /// A shortcut (⌘/⌃/⌥ held) shows alone; plain typing shows the last few characters.
+    /// A shortcut (⌘/⌃/⌥ held) shows alone; plain typing shows the last few characters, but only with
+    /// `showTypedText`, and never while a blur is on screen or for keys typed under one (a password
+    /// blurred on screen must not be readable here); special keys still show alone then.
     func keystrokeText(at t: Double) -> (text: String, opacity: Double)? {
         guard edit.cursor.showKeystrokes, !keyTimes.isEmpty else { return nil }
         var i = upperBoundD(keyTimes, t) - 1
@@ -250,11 +260,14 @@ public final class RenderPlan: Sendable {
         }
         let last = keyEvents[i]
         if isShortcut(last) { return (label(last), opacity) }
+        guard edit.cursor.showTypedText, !isBlurred(at: t), !isBlurred(at: last.t) else {
+            return Self.specialKeys.contains(last.chars ?? "") ? (label(last), opacity) : nil
+        }
         var chars: [String] = []
         var prevT = last.t
         while i >= 0, chars.count < 24 {
             let e = keyEvents[i]
-            if isShortcut(e) || prevT - e.t > 1.0 { break }
+            if isShortcut(e) || prevT - e.t > 1.0 || isBlurred(at: e.t) { break }
             chars.append(e.chars ?? "")
             prevT = e.t
             i -= 1
