@@ -458,9 +458,9 @@ import SwiftUI
         let cloudScenes: [(String, CloudStatus?, SharingSettingsModel.CloudPhase)] = [
             ("signed-out", nil, .idle),
             ("waiting", nil, .waiting(code: "BKTW-QRNX", url: URL(string: "https://watch.reelbird.app/device?code=BKTW-QRNX")!)),
-            ("free", CloudStatus(email: "sam@example.com", isPro: false, enabled: true, linksUsed: 3, linkLimit: 5,
-                                 storageUsed: 820_000_000, storageLimit: 5_000_000_000, accountURL: nil,
-                                 upgradeURL: URL(string: "https://watch.reelbird.app/upgrade")), .idle),
+            ("no-plan", CloudStatus(email: "sam@example.com", isPro: false, enabled: true, linksUsed: 0, linkLimit: 0,
+                                    storageUsed: 0, storageLimit: 0, accountURL: nil,
+                                    upgradeURL: URL(string: "https://watch.reelbird.app/upgrade")), .idle),
             ("pro", CloudStatus(email: "sam@example.com", isPro: true, enabled: true, linksUsed: 42, linkLimit: nil,
                                 storageUsed: 18_400_000_000, storageLimit: 100_000_000_000, accountURL: nil), .idle),
         ]

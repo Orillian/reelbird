@@ -421,8 +421,8 @@ final class MockCloud: CloudService, @unchecked Sendable {
         try await Task.sleep(for: .milliseconds(300))
         return CloudSignInCode(userCode: "BKTW-QRNX", verifyURL: URL(string: "https://watch.reelbird.app/device?code=BKTW-QRNX")!) { [self] in
             try await Task.sleep(for: .seconds(2))
-            let s = CloudStatus(email: "you@example.com", isPro: false, enabled: true, linksUsed: 1, linkLimit: 5,
-                                storageUsed: 48_000_000, storageLimit: 5_000_000_000, accountURL: URL(string: "https://watch.reelbird.app/account"))
+            let s = CloudStatus(email: "you@example.com", isPro: true, enabled: true, linksUsed: 1, linkLimit: nil,
+                                storageUsed: 48_000_000, storageLimit: 100_000_000_000, accountURL: URL(string: "https://watch.reelbird.app/account"))
             lock.withLock { current = s }
             return s
         }

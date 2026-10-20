@@ -1,4 +1,4 @@
-// Per-share analytics. Free accounts see the view count; Pro sees everything.
+// Per-share analytics. Pro sees everything; an account without Pro sees the view count.
 import { sql } from "./db";
 
 export const CHUNK_SECONDS = 2;

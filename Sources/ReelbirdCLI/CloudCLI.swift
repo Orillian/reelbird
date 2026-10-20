@@ -4,7 +4,7 @@ import ReelbirdShare
 
 /// `reelbird cloud …`: sign in to Reelbird Cloud, choose where new shares go, read link stats.
 enum CloudCLI {
-    static let spec = CommandSpec(name: "cloud", summary: "Reelbird Cloud: `cloud login`, `status`, `use`, `links`, `stats`, `logout`.",
+    static let spec = CommandSpec(name: "cloud", summary: "Reelbird Pro hosted links: `cloud login`, `status`, `use`, `links`, `stats`, `logout`.",
                                   positionals: ["ACTION", "ARG?"], options: [
         .value("server", "URL", "Cloud server (default \(CloudSettings.defaultServer), or $REELBIRD_CLOUD_URL)"),
         .flag("no-open", "Don't open the browser; print the sign-in link instead"),
@@ -14,7 +14,7 @@ enum CloudCLI {
       status           Account, plan and usage
       use cloud|bucket Send new shares to Reelbird Cloud or to your own bucket (`config share`)
       links            Your hosted links with view counts
-      stats PROJECT|ID Views, unique viewers, retention and sources of one link (Pro: everything)
+      stats PROJECT|ID Views, unique viewers, retention and sources of one link
       logout           Sign out on this Mac
     """)
 
@@ -69,15 +69,20 @@ enum CloudCLI {
             Console.err("Open \(start.verifyURL.absoluteString) and approve the code.")
         }
         let account = try await wrap { try await start.wait() }
+        let text = account.isPro
+            ? "Signed in as \(account.email) (Pro). New shares go to Reelbird Cloud."
+            : "Signed in as \(account.email). Hosted links need Reelbird Pro ($5/month): \(account.server)/upgrade"
         return Report(json: ["signedIn": true, "email": .string(account.email), "plan": .string(account.plan), "server": .string(account.server)],
-                      text: "Signed in as \(account.email) (\(account.isPro ? "Pro" : "Free")). New shares go to Reelbird Cloud.")
+                      text: text)
     }
 
     static func status() async throws -> Report {
         _ = try signedIn()
         guard let (account, me) = try await wrap({ try await CloudSettings.refresh() }) else { throw CLIError("Not signed in.") }
-        let links = me.limits.activeLinks.map { "\(me.usage.activeLinks) of \($0)" } ?? "\(me.usage.activeLinks)"
-        let target = ShareSettings.fromEnvironment() != nil ? "REELBIRD_S3_* variables" : account.enabled ? "Reelbird Cloud" : "your own bucket"
+        let links = "\(me.usage.activeLinks)"
+        let target = ShareSettings.fromEnvironment() != nil ? "REELBIRD_S3_* variables"
+            : account.enabled && account.isPro ? "Reelbird Cloud"
+            : ShareSettings.ownBucket() != nil ? "your own bucket" : "nowhere yet (Pro or `config share`)"
         return Report(json: [
             "email": .string(me.email), "plan": .string(me.plan), "server": .string(account.server), "enabled": .bool(account.enabled),
             "links": .int(me.usage.activeLinks), "linkLimit": me.limits.activeLinks.map { .int($0) } ?? .null,
@@ -85,20 +90,21 @@ enum CloudCLI {
             "accountURL": .string(me.accountURL),
         ], text: """
         Reelbird Cloud
-          Account   \(me.email) (\(me.plan == "pro" ? "Pro" : "Free"))
+          Account   \(me.email) (\(me.plan == "pro" ? "Pro" : "no plan"))
           Links     \(links)
-          Storage   \(Format.bytes(me.usage.storageBytes)) of \(Format.bytes(me.limits.storageBytes))
+          Storage   \(Format.bytes(me.usage.storageBytes))\(me.plan == "pro" ? " of \(Format.bytes(me.limits.storageBytes))" : "")
           Shares to \(target)
-          Manage    \(me.accountURL)
+          \(me.plan == "pro" ? "Manage    \(me.accountURL)" : "Upgrade   \(me.upgradeURL ?? me.accountURL)  ($5/month)")
         """)
     }
 
     static func use(_ target: String?) throws -> Report {
         switch target {
         case "cloud":
-            _ = try signedIn()
+            let (_, account) = try signedIn()
             try CloudSettings.setEnabled(true)
-            return Report(json: ["target": "cloud"], text: "New shares go to Reelbird Cloud.")
+            return Report(json: ["target": "cloud", "pro": .bool(account.isPro)],
+                          text: account.isPro ? "New shares go to Reelbird Cloud." : "Reelbird Cloud is on; it hosts links once the account has Pro ($5/month): \(account.server)/upgrade")
         case "bucket":
             guard ShareSettings.ownBucket() != nil else {
                 throw CLIError("No bucket is set up.", code: .unavailable, hint: "Run `reelbird config share …` first.")

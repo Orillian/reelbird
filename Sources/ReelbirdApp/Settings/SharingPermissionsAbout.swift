@@ -62,6 +62,7 @@ import SwiftUI
         guard let app, cloud != nil else { return }
         Task {
             if let s = try? await app.services.cloud.refresh() { cloud = s }
+            app.refreshShareState()
         }
     }
 
@@ -174,7 +175,7 @@ struct SharingSettings: View {
                         .init(value: .bucket, title: "Your own bucket", symbol: "externaldrive"),
                     ])
                     Text(model.target == .cloud
-                         ? "Reelbird hosts your links. Nothing to set up: sign in and Share just works."
+                         ? "With Reelbird Pro, Reelbird hosts your links. Nothing to set up: Share just works."
                          : "Links upload to a storage bucket you own. Nothing goes through Reelbird's servers. Free forever.")
                         .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
@@ -197,47 +198,43 @@ struct SharingSettings: View {
                         PlanBadge(pro: c.isPro)
                     }
                 }
-                if let used = c.linksUsed {
-                    LabeledContent("Links") {
-                        Text(c.linkLimit.map { "\(used) of \($0)" } ?? "\(used) · unlimited").monospacedDigit()
+                if c.isPro {
+                    if let used = c.linksUsed {
+                        LabeledContent("Links") { Text("\(used)").monospacedDigit() }
                     }
-                }
-                if let used = c.storageUsed, let limit = c.storageLimit, limit > 0 {
-                    LabeledContent("Storage") {
-                        HStack(spacing: 8) {
-                            ProgressView(value: min(1, Double(used) / Double(limit))).frame(width: 120).tint(Theme.accent)
-                            Text("\(Self.bytes(used)) of \(Self.bytes(limit))").monospacedDigit().foregroundStyle(.secondary)
+                    if let used = c.storageUsed, let limit = c.storageLimit, limit > 0 {
+                        LabeledContent("Storage") {
+                            HStack(spacing: 8) {
+                                ProgressView(value: min(1, Double(used) / Double(limit))).frame(width: 120).tint(Theme.accent)
+                                Text("\(Self.bytes(used)) of \(Self.bytes(limit))").monospacedDigit().foregroundStyle(.secondary)
+                            }
                         }
                     }
-                }
-                LabeledContent("Analytics") {
-                    Text(c.isPro ? "Views, retention and sources for every link" : "View counts · Pro adds who watched and for how long")
-                        .foregroundStyle(.secondary)
+                    LabeledContent("Analytics") {
+                        Text("Views, retention and sources for every link").foregroundStyle(.secondary)
+                    }
+                } else {
+                    proPitch
                 }
             }
             Section {
                 HStack(spacing: Theme.Space.s) {
-                    if !c.enabled { StatusLine(tone: .info, text: "New links go to your own bucket.") }
+                    if c.isPro && !c.enabled { StatusLine(tone: .info, text: "New links go to your own bucket.") }
+                    if !c.isPro { StatusLine(tone: .info, text: "Hosted links need Pro. Your own bucket stays free.") }
                     Spacer()
                     Button("Sign Out…") { confirmSignOut() }
-                    if c.isPro || c.upgradeURL == nil {
+                    if c.isPro {
                         Button("Manage Account") { model.openAccount() }
                             .buttonStyle(PrimaryButtonStyle())
                     } else {
-                        Button("Manage Account") { model.openAccount() }
-                        Button("Upgrade to Pro · $5/month") { model.upgrade() }
+                        Button("Upgrade to Pro") { model.upgrade() }
                             .buttonStyle(PrimaryButtonStyle())
+                            .disabled(c.upgradeURL == nil)
                     }
                 }
             }
         } else {
-            Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    planLine("Free", "5 hosted links, view counts")
-                    planLine("Pro · $5 a month", "Unlimited links, viewer analytics: who watched, where they stopped, where they came from")
-                }
-                .padding(.vertical, 2)
-            }
+            Section { proPitch.padding(.vertical, 2) }
             Section {
                 switch model.cloudPhase {
                 case .waiting(let code, let url):
@@ -270,17 +267,19 @@ struct SharingSettings: View {
         }
     }
 
-    private func planLine(_ name: String, _ detail: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(name).font(.system(size: 12, weight: .semibold)).frame(width: 110, alignment: .leading)
-            Text(detail).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+    /// What Pro is, in one place (signed out, and signed in without Pro).
+    private var proPitch: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Reelbird Pro · $5 a month").font(.system(size: 12, weight: .semibold))
+            Text("Unlimited hosted links, 100 GB of storage, and analytics that show who watched, where they stopped and where they came from.")
+                .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private func confirmSignOut() {
         let alert = NSAlert()
         alert.messageText = "Sign out of Reelbird Cloud?"
-        alert.informativeText = "Your hosted links keep working. To share again, sign back in or set up your own bucket."
+        alert.informativeText = "Your hosted links keep playing. To share to Reelbird Cloud again, sign back in."
         alert.addButton(withTitle: "Sign Out")
         alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn { model.signOut() }
@@ -372,7 +371,7 @@ struct SharingSettings: View {
 struct PlanBadge: View {
     let pro: Bool
     var body: some View {
-        Text(pro ? "Pro" : "Free")
+        Text(pro ? "Pro" : "No plan")
             .font(.system(size: 10.5, weight: .semibold))
             .padding(.horizontal, 7).padding(.vertical, 2)
             .foregroundStyle(pro ? Theme.accentText : .secondary)

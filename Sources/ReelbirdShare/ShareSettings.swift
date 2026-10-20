@@ -13,11 +13,11 @@ import Security
 public enum ShareSettings {
     public static let keychainService = "app.reelbird.share"
 
-    /// The destination for new shares: environment first, then Reelbird Cloud when signed in and
-    /// turned on, then your own bucket (share.json). `nil` if not set up.
+    /// The destination for new shares: environment first, then Reelbird Cloud when signed in to a Pro
+    /// account and turned on, then your own bucket (share.json). `nil` if not set up.
     public static func load() -> ShareDestination? {
         if let env = fromEnvironment() { return env }
-        if let cloud = CloudSettings.load(), cloud.enabled { return cloud.destination }
+        if let cloud = CloudSettings.load(), cloud.enabled, cloud.isPro { return cloud.destination }
         return ownBucket()
     }
 

@@ -92,7 +92,7 @@ export function notFoundPage(message = "This link doesn't exist, or its owner de
 export function homePage(user: User | null) {
   return layout("Reelbird Cloud", `<div class="card">
 <h1>Share without setting up storage</h1>
-<p class="muted">Reelbird Cloud hosts your links, so Share just works. Pro adds unlimited links and full viewer analytics.</p>
+<p class="muted">Reelbird Pro hosts your links, so Share just works, and shows who watched them. $5/month.</p>
 <p style="margin-top:18px">${user ? `<a class="btn primary" href="/account">Your links</a>` : `<a class="btn primary" href="/login">Sign in</a>`}</p>
 </div>`, { user, narrow: true });
 }
@@ -151,22 +151,24 @@ export function accountPage(
       ? `<div class="card" style="margin-top:16px"><b>Welcome to Pro.</b> <span class="muted">Unlimited links and full analytics are on. Thank you for supporting Reelbird.</span></div>`
       : `<div class="card" style="margin-top:16px"><b>Thanks! Finishing up…</b> <span class="muted">Stripe is confirming the payment. Refresh in a few seconds.</span></div>`
     : "";
-  const linksLine = lim.activeLinks === null ? `${usage.activeLinks} links` : `${usage.activeLinks} of ${lim.activeLinks} links`;
-  const pct = Math.min(100, (usage.storageBytes / lim.storageBytes) * 100);
+  const linksLine = `${usage.activeLinks} link${usage.activeLinks === 1 ? "" : "s"}`;
+  const pct = lim.storageBytes ? Math.min(100, (usage.storageBytes / lim.storageBytes) * 100) : 0;
   const rows = shares.length
     ? shares.map((s) => `<tr><td><a href="/account/s/${esc(s.id)}">${esc(s.title || "Untitled recording")}</a></td>
 <td class="num">${s.views}</td><td class="num hide">${fmtBytes(Number(s.bytes))}</td><td class="hide faint">${fmtDate(s.created_at)}</td>
 <td class="num"><a class="btn small" href="/r/${esc(s.id)}/" target="_blank" rel="noopener">Open</a></td></tr>`).join("")
-    : `<tr><td colspan="5" class="empty">No hosted links yet. In Reelbird, choose Share on any recording.</td></tr>`;
+    : `<tr><td colspan="5" class="empty">${pro ? "No hosted links yet. In Reelbird, choose Share on any recording." : "No hosted links."}</td></tr>`;
   const devPlan = config.dev
-    ? `<form method="post" action="/dev/plan" style="margin:0"><input type="hidden" name="plan" value="${pro ? "free" : "pro"}"><button class="btn small" type="submit">Dev: switch to ${pro ? "Free" : "Pro"}</button></form>`
+    ? `<form method="post" action="/dev/plan" style="margin:0"><input type="hidden" name="plan" value="${pro ? "free" : "pro"}"><button class="btn small" type="submit">Dev: ${pro ? "end Pro" : "start Pro"}</button></form>`
     : "";
   return layout("Your links · Reelbird Cloud", `
-<div class="row"><div><h1>Your links</h1><p class="muted" style="margin:0">${esc(user.email)} <span class="pill${pro ? " pro" : ""}">${pro ? "Pro" : "Free"}</span></p></div><div class="row">${planAction}${devPlan}</div></div>${welcome}
-<div class="grid2">
-<div class="card"><h2>Links</h2><b style="font-size:22px">${linksLine}</b>${pro ? `<p class="faint" style="margin:4px 0 0">Unlimited on Pro</p>` : `<p class="faint" style="margin:4px 0 0">Pro removes the limit</p>`}</div>
+<div class="row"><div><h1>Your links</h1><p class="muted" style="margin:0">${esc(user.email)} <span class="pill${pro ? " pro" : ""}">${pro ? "Pro" : "No plan"}</span></p></div><div class="row">${planAction}${devPlan}</div></div>${welcome}
+${pro ? `<div class="grid2">
+<div class="card"><h2>Links</h2><b style="font-size:22px">${linksLine}</b><p class="faint" style="margin:4px 0 0">Unlimited on Pro</p></div>
 <div class="card"><h2>Storage</h2><b style="font-size:22px">${fmtBytes(usage.storageBytes)}</b><span class="faint"> of ${fmtBytes(lim.storageBytes)}</span><div class="meter"><i style="width:${pct.toFixed(1)}%"></i></div></div>
-</div>
+</div>` : `<div class="card" style="margin-top:16px"><h2>Reelbird Pro · $5/month</h2>
+<p style="margin:0 0 4px">Share without setting anything up: unlimited hosted links, 100 GB of storage, and analytics that show who watched, where they stopped and where they came from.</p>
+<p class="faint" style="margin:0">Sharing to your own bucket stays free.${usage.activeLinks ? " Your existing links keep playing." : ""}</p></div>`}
 <div class="card" style="margin-top:16px;padding-bottom:10px"><table><thead><tr><th>Recording</th><th class="num">Views</th><th class="num hide">Size</th><th class="hide">Created</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`, { user });
 }
 

@@ -7,7 +7,7 @@ import { credentials, deleteShare, limits, listShares, measureRecent, ShareRefus
 import { serveShare } from "./gateway";
 import { ingest, VIEWER_SCRIPT } from "./events";
 import { shareStats } from "./stats";
-import { billing, hasSubscription, portalURL, upgradeURL, webhook } from "./billing";
+import { billing, hasSubscription, linkOnSignIn, portalURL, upgradeURL, webhook } from "./billing";
 import * as pages from "./pages";
 
 export const app = new Hono();
@@ -54,6 +54,7 @@ app.post("/login", async (c) => {
     return c.html(pages.loginPage(next, "Email sign-in isn't available yet."), 503);
   }
   const user = await auth.userByEmail(email);
+  await linkOnSignIn(user);
   await auth.startWebSession(c, user.id);
   return c.redirect(next);
 });

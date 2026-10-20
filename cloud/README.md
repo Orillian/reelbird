@@ -1,16 +1,16 @@
 # Reelbird Cloud
 
-Hosted share links and view analytics for Reelbird. Optional: sharing to your own bucket stays free and needs none of this.
+Reelbird Pro: hosted share links and view analytics, $5/month. Optional: sharing to your own bucket stays free and needs none of this.
 
 - **Links** live in one private R2 bucket. The server serves the viewer page at `<PUBLIC_URL>/r/<id>/` and redirects video, segments and images to short-lived signed R2 URLs, so video bytes go straight from R2 to the viewer.
 - **Uploads** come from the app, using the same code as for your own bucket. The server hands out R2 temporary keys limited to one share's folder (`r/<id>/`), valid for an hour and signed locally.
 - **Analytics** come from `/e.js`, which the server adds to the viewer page. It has no cookies. A viewer is a daily hash of IP, browser and link. It records views, unique viewers, a retention curve (2-second chunks), sources and devices. The owner's own views and link-preview bots don't count.
-- **Plans:** Free gets 5 links, 5 GB and view counts. Pro gets unlimited links, 100 GB and full analytics. In development, `/dev/plan` (or `reelbird cloud plan pro`) also switches plans.
-- **Billing** uses the existing Stripe setup, with no SDK and no secret key:
-  - `/upgrade` sends a signed-in person to the "Reelbird Pro" Payment Link (`STRIPE_PRO_LINK`, default `buy.stripe.com/5kQ8wO88gaXs9h57Yn3ks05`: product `prod_VTSee5NkgzYUpl`, price `price_1USVjUBbj7zje3qWrQ56SdEO`, $5/month). The link is tagged with `client_reference_id` and `prefilled_email`. After payment it returns to `https://watch.reelbird.app/account?welcome=pro`.
-  - `POST /stripe/webhook` (signed with `STRIPE_WEBHOOK_SECRET`) links the Stripe customer to the account. Any active subscription of at least $5/month or $48/year makes it Pro; when the subscription is cancelled or past due, the account goes back to Free.
+- **Pro only.** Hosted links need Reelbird Pro ($5/month): unlimited links, 100 GB and full analytics. There is no free hosted tier; sharing to your own bucket is the free option. An account without Pro can sign in and pay, and its existing links keep playing. An upload that was in progress (touched in the last day) may finish, but it can't create or update links. In development, `/dev/plan` (or `reelbird cloud plan pro`) switches Pro on and off.
+- **Billing** uses one Stripe product and one link, with no SDK and no secret key:
+  - `/upgrade` sends a signed-in person to the Reelbird Pro Payment Link (`STRIPE_PRO_LINK`, default `buy.stripe.com/5kQ8wO88gaXs9h57Yn3ks05`, ID `plink_1USVjtBbj7zje3qW3ZISlMYw`). The link is tagged with `client_reference_id` and `prefilled_email`, and after payment it returns to `https://watch.reelbird.app/account?welcome=pro`.
+  - `POST /stripe/webhook` (signed with `STRIPE_WEBHOOK_SECRET`) only acts on checkouts from that link and on subscriptions to the Reelbird Pro product (`prod_VTSee5NkgzYUpl`, $5/month price `price_1USVjUBbj7zje3qWrQ56SdEO`). The account is Pro while that subscription is active or trialing. The open-source support tiers and anything else on the Stripe account are ignored.
+  - Someone who pays through the link before having an account gets Pro when they sign in with the same email.
   - `/billing` opens Stripe's no-code customer portal (`STRIPE_PORTAL_LINK`).
-  - A supporter with no Reelbird account is treated as a donation and changes nothing.
 - **Sign-in:** the app and CLI use a device code. The person approves it in the browser and the app receives a token (only its SHA-256 is stored). In development, `/login` signs you in without email.
 
 ## Run locally
@@ -63,7 +63,7 @@ bun test        # end to end against the dev bucket and reelbird_cloud_test
 - **Stripe.** In the Dashboard:
   - Add a webhook endpoint `<PUBLIC_URL>/stripe/webhook` for `checkout.session.completed` and `customer.subscription.*`, and put its signing secret in `STRIPE_WEBHOOK_SECRET`.
   - Turn on the no-code customer portal and set `STRIPE_PORTAL_LINK`.
-  - The Reelbird Pro link exists (live). Its return URL assumes the production host `watch.reelbird.app`; change it in the Dashboard if the host differs. Support-tier subscribers ($5/month and up) also get Pro. On 2026-10-19 there were none, so there was nothing to import.
+  - The Reelbird Pro link exists (live). Its return URL assumes the production host `watch.reelbird.app`; change it in the Dashboard if the host differs.
   - For local tests: `stripe listen --forward-to localhost:8788/stripe/webhook` in test mode.
   - `/dev/plan` goes away in production (it only exists with `DEV=1`).
 - **Legal.** Terms, privacy page, DMCA agent, a report link on the viewer page, and an admin kill switch.

@@ -72,15 +72,29 @@ let alice: { token: string; cookie: string };
 let bob: { token: string; cookie: string };
 let shareId: string;
 
-test("device sign-in gives the app a token", async () => {
+const backdate = async (id: string) => {
+  const db = postgres(TEST_DB, { max: 1, onnotice: () => {} });
+  await db`update shares set touched_at = now() - interval '2 days' where id = ${id}`;
+  await db.end();
+};
+
+test("device sign-in gives the app a token; a new account has no plan", async () => {
   alice = await appLogin("alice@example.com");
   bob = await appLogin("bob@example.com");
   const me = await (await call("/api/me", { bearer: alice.token })).json();
-  expect(me).toMatchObject({ email: "alice@example.com", plan: "free", limits: { activeLinks: 5 } });
+  expect(me).toMatchObject({ email: "alice@example.com", plan: "free", limits: { activeLinks: 0, analytics: false } });
   expect((await call("/api/me", { bearer: "nope" })).status).toBe(401);
 });
 
+test("hosted links need Pro", async () => {
+  const r = await call(`/api/shares/${ShortIDForTest()}/credentials`, { ...json({}), bearer: alice.token });
+  expect(r.status).toBe(402);
+  expect(await r.json()).toMatchObject({ error: "ProRequired" });
+  expect(await (await call("/account", { cookie: alice.cookie })).text()).toContain("Upgrade to Pro");
+});
+
 test("upload keys work for the share's folder only, and the gateway serves it", async () => {
+  expect((await call("/api/dev/plan", { ...json({ plan: "pro" }), bearer: alice.token })).status).toBe(204);
   shareId = ShortIDForTest();
   created.push(shareId);
   const r = await call(`/api/shares/${shareId}/credentials`, { ...json({ title: "Demo" }), bearer: alice.token });
@@ -118,7 +132,7 @@ test("someone else's share ID is refused", async () => {
   expect(r.status).toBe(403);
 });
 
-test("views are recorded; free sees the count, Pro sees everything", async () => {
+test("views are recorded; Pro sees everything, a lapsed account sees the count", async () => {
   const view = crypto.randomUUID();
   const ua = { "user-agent": "Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/26.0 Safari/605.1.15", "x-forwarded-for": "203.0.113.7" };
   const beat = (body: object, extra: Record<string, string> = {}) =>
@@ -135,10 +149,6 @@ test("views are recorded; free sees the count, Pro sees everything", async () =>
   await beat({ s: shareId, v: crypto.randomUUID(), t: "beat", rev: 1, d: 20, p: 9, ws: 9, w: bits }, { "user-agent": "Slackbot-LinkExpanding 1.0" });
   await beat({ s: shareId, v: crypto.randomUUID(), t: "beat", rev: 1, d: 20, p: 9, ws: 9, w: bits }, { cookie: alice.cookie });
 
-  const free = await (await call(`/api/shares/${shareId}/stats`, { bearer: alice.token })).json();
-  expect(free).toMatchObject({ views: 1, locked: true, retention: [] });
-
-  expect((await call("/api/dev/plan", { ...json({ plan: "pro" }), bearer: alice.token })).status).toBe(204);
   const pro = await (await call(`/api/shares/${shareId}/stats`, { bearer: alice.token })).json();
   expect(pro).toMatchObject({ views: 1, uniqueViewers: 1, locked: false, completionRate: 100, averagePercent: 100, duration: 20 });
   expect(pro.retention).toEqual(new Array(10).fill(1));
@@ -146,27 +156,33 @@ test("views are recorded; free sees the count, Pro sees everything", async () =>
   expect(pro.devices).toEqual([{ name: "Desktop", views: 1 }]);
   expect((await call(`/account/s/${shareId}`, { cookie: alice.cookie })).status).toBe(200);
   expect((await call(`/api/shares/${shareId}/stats`, { bearer: bob.token })).status).toBe(404);
+
+  await call("/api/dev/plan", { ...json({ plan: "free" }), bearer: alice.token });
+  const lapsed = await (await call(`/api/shares/${shareId}/stats`, { bearer: alice.token })).json();
+  expect(lapsed).toMatchObject({ views: 1, locked: true, retention: [] });
 });
 
-test("free plan stops at 5 links; Pro doesn't", async () => {
-  const ids = Array.from({ length: 5 }, ShortIDForTest);
-  created.push(...ids);
-  for (const id of ids.slice(0, 4)) expect((await call(`/api/shares/${id}/credentials`, { ...json({}), bearer: bob.token })).status).toBe(200);
-  expect((await call(`/api/shares/${ids[4]}/credentials`, { ...json({}), bearer: bob.token })).status).toBe(200);
-  const sixth = ShortIDForTest();
-  const r = await call(`/api/shares/${sixth}/credentials`, { ...json({}), bearer: bob.token });
-  expect(r.status).toBe(402);
-  expect((await r.json()).error).toBe("LinkLimit");
-  await call("/api/dev/plan", { ...json({ plan: "pro" }), bearer: bob.token });
-  created.push(sixth);
-  expect((await call(`/api/shares/${sixth}/credentials`, { ...json({}), bearer: bob.token })).status).toBe(200);
+test("when Pro ends: links keep playing, uploads in progress finish, nothing new", async () => {
+  // alice is no longer Pro (previous test).
+  expect((await call(`/r/${shareId}/`)).status).toBe(200);
+  // Touched in the last day (a recording that was uploading): keys still come.
+  expect((await call(`/api/shares/${shareId}/credentials`, { ...json({}), bearer: alice.token })).status).toBe(200);
+  // Older than a day: no more updates.
+  await backdate(shareId);
+  const stale = await call(`/api/shares/${shareId}/credentials`, { ...json({}), bearer: alice.token });
+  expect(stale.status).toBe(402);
+  expect((await stale.json()).error).toBe("ProRequired");
+  // And no new links.
+  expect((await call(`/api/shares/${ShortIDForTest()}/credentials`, { ...json({}), bearer: alice.token })).status).toBe(402);
+  expect(await (await call("/account", { cookie: alice.cookie })).text()).toContain("Your existing links keep playing");
 });
 
-test("deleting a link removes its files and the page", async () => {
+test("deleting a link removes its files and the page (with or without Pro)", async () => {
   expect((await call(`/api/shares/${shareId}`, { method: "DELETE", bearer: alice.token })).status).toBe(204);
   expect((await call(`/r/${shareId}/`)).status).toBe(404);
   expect(await new R2(config.r2).list(`r/${shareId}/`)).toEqual([]);
   // A deleted ID can't be reused.
+  await call("/api/dev/plan", { ...json({ plan: "pro" }), bearer: alice.token });
   expect((await call(`/api/shares/${shareId}/credentials`, { ...json({}), bearer: alice.token })).status).toBe(410);
 });
 
@@ -181,9 +197,14 @@ const stripeEvent = async (type: string, object: object, id = "evt_" + crypto.ra
   const payload = JSON.stringify({ id, type, data: { object } });
   return call("/stripe/webhook", { method: "POST", body: payload, headers: { "stripe-signature": signPayload(payload, "whsec_test_reelbird"), "content-type": "application/json" } });
 };
-const sub = (id: string, customer: string, status: string, amount = 500, interval = "month") => ({
+const PRO = "prod_VTSee5NkgzYUpl", PRO_LINK = "plink_1USVjtBbj7zje3qW3ZISlMYw", DONATION = "prod_VKMxHgIqwzOiCj";
+const sub = (id: string, customer: string, status: string, product = PRO) => ({
   id, object: "subscription", customer, status,
-  items: { data: [{ quantity: 1, current_period_end: 1_800_000_000, price: { unit_amount: amount, currency: "usd", recurring: { interval } } }] },
+  items: { data: [{ quantity: 1, current_period_end: 1_800_000_000, price: { unit_amount: 500, currency: "usd", product, recurring: { interval: "month" } } }] },
+});
+const checkout = (customer: string, subscription: string, extra: object = {}) => ({
+  object: "checkout.session", mode: "subscription", customer, subscription, payment_link: PRO_LINK,
+  payment_status: "paid", amount_total: 500, currency: "usd", ...extra,
 });
 const plan = async (bearer: string) => (await (await call("/api/me", { bearer })).json()).plan;
 
@@ -197,41 +218,39 @@ test("signatures: Stripe's scheme, within five minutes", () => {
   expect(verifySignature(body, undefined, "s")).toBe(false);
 });
 
-test("which subscriptions make Pro", () => {
-  expect(qualifies({ status: "active", amount: 500, interval: "month" })).toBe(true);
-  expect(qualifies({ status: "trialing", amount: 1500, interval: "month" })).toBe(true);
-  expect(qualifies({ status: "active", amount: 4800, interval: "year" })).toBe(true);
-  expect(qualifies({ status: "active", amount: 300, interval: "month" })).toBe(false);
-  expect(qualifies({ status: "past_due", amount: 500, interval: "month" })).toBe(false);
-  expect(qualifies({ status: "canceled", amount: 500, interval: "month" })).toBe(false);
+test("only an active Reelbird Pro subscription makes Pro", () => {
+  expect(qualifies({ status: "active", product_id: PRO })).toBe(true);
+  expect(qualifies({ status: "trialing", product_id: PRO })).toBe(true);
+  expect(qualifies({ status: "past_due", product_id: PRO })).toBe(false);
+  expect(qualifies({ status: "canceled", product_id: PRO })).toBe(false);
+  expect(qualifies({ status: "active", product_id: DONATION })).toBe(false);
+  expect(qualifies({ status: "active", product_id: null })).toBe(false);
 });
 
-test("paying through the link makes the account Pro; cancelling makes it Free", async () => {
+test("paying through the Pro link makes the account Pro; cancelling ends it", async () => {
   const carol = await appLogin("carol@example.com");
   const me = await (await call("/api/me", { bearer: carol.token })).json();
   expect(me.upgradeURL).toBe(`${base}/upgrade`);
 
-  // /upgrade sends the signed-in person to the Payment Link, tagged with their account.
+  // /upgrade sends the signed-in person to the Pro Payment Link, tagged with their account.
   const up = await call("/upgrade", { cookie: carol.cookie });
   expect(up.status).toBe(302);
   const link = new URL(up.headers.get("location")!);
-  expect(link.hostname).toBe("buy.stripe.com");
+  expect(link.toString()).toStartWith("https://buy.stripe.com/5kQ8wO88gaXs9h57Yn3ks05?");
   const ref = link.searchParams.get("client_reference_id")!;
   expect(link.searchParams.get("prefilled_email")).toBe("carol@example.com");
 
-  // The subscription event can come first: nothing to link yet, the plan stays Free.
+  // The subscription event can come first: nothing to link yet.
   expect((await stripeEvent("customer.subscription.created", sub("sub_carol", "cus_carol", "active"))).status).toBe(200);
   expect(await plan(carol.token)).toBe("free");
   // Checkout links the customer to the account → Pro.
-  const done = { object: "checkout.session", mode: "subscription", customer: "cus_carol", subscription: "sub_carol",
-                 client_reference_id: ref, payment_status: "paid", amount_total: 500, currency: "usd", customer_details: { email: "carol@example.com" } };
-  expect((await stripeEvent("checkout.session.completed", done)).status).toBe(200);
+  expect((await stripeEvent("checkout.session.completed", checkout("cus_carol", "sub_carol", { client_reference_id: ref, customer_details: { email: "carol@example.com" } }))).status).toBe(200);
   expect(await plan(carol.token)).toBe("pro");
   expect((await call("/upgrade", { cookie: carol.cookie })).headers.get("location")).toBe("/account");
   expect(await (await call("/account", { cookie: carol.cookie })).text()).toContain("Manage subscription");
   expect((await call("/billing", { cookie: carol.cookie })).headers.get("location")).toContain("billing.stripe.com/p/login/test_portal?prefilled_email=carol%40example.com");
 
-  // Payment fails → past_due → Free; paid again → Pro; cancelled → Free.
+  // Payment fails → past_due → no Pro; paid again → Pro; cancelled → no Pro.
   await stripeEvent("customer.subscription.updated", sub("sub_carol", "cus_carol", "past_due"));
   expect(await plan(carol.token)).toBe("free");
   await stripeEvent("customer.subscription.updated", sub("sub_carol", "cus_carol", "active"));
@@ -240,24 +259,27 @@ test("paying through the link makes the account Pro; cancelling makes it Free", 
   expect(await plan(carol.token)).toBe("free");
 });
 
-test("checkout without a reference links by email; tiers under $5 don't unlock Pro", async () => {
-  const dan = await appLogin("Dan@Example.com");
-  await stripeEvent("checkout.session.completed", { mode: "subscription", customer: "cus_dan", subscription: "sub_dan_small",
-    payment_status: "paid", amount_total: 300, customer_details: { email: "dan@example.com" } });
-  await stripeEvent("customer.subscription.created", sub("sub_dan_small", "cus_dan", "active", 300));
+test("open-source support tiers and other links grant nothing", async () => {
+  const dan = await appLogin("dan@example.com");
+  // A checkout through a donation link, even with Dan's account reference, links nothing.
+  const ref = new URL((await call("/upgrade", { cookie: dan.cookie })).headers.get("location")!).searchParams.get("client_reference_id")!;
+  await stripeEvent("checkout.session.completed", checkout("cus_dan", "sub_dan_donation", { payment_link: "plink_1UJiDnBbj7zje3qWA0UXs9Hn", client_reference_id: ref, customer_details: { email: "dan@example.com" } }));
+  await stripeEvent("customer.subscription.created", sub("sub_dan_donation", "cus_dan", "active", DONATION));
   expect(await plan(dan.token)).toBe("free");
-  await stripeEvent("customer.subscription.created", sub("sub_dan_big", "cus_dan", "active", 1500));
-  expect(await plan(dan.token)).toBe("pro");
-  // A supporter with no Reelbird account is just a donation: accepted, nothing changes.
-  expect((await stripeEvent("checkout.session.completed", { mode: "subscription", customer: "cus_x", subscription: "sub_x",
-    payment_status: "paid", amount_total: 500, customer_details: { email: "nobody@example.com" } })).status).toBe(200);
+});
+
+test("a payment made before signing up turns into Pro at sign-in", async () => {
+  await stripeEvent("checkout.session.completed", checkout("cus_erin", "sub_erin", { customer_details: { email: "erin@example.com" } }));
+  await stripeEvent("customer.subscription.created", sub("sub_erin", "cus_erin", "active"));
+  const erin = await appLogin("Erin@Example.com");
+  expect(await plan(erin.token)).toBe("pro");
 });
 
 test("webhooks: bad signatures are refused, repeats are ignored", async () => {
   const payload = JSON.stringify({ id: "evt_forged", type: "customer.subscription.created", data: { object: sub("sub_f", "cus_f", "active") } });
   const forged = await call("/stripe/webhook", { method: "POST", body: payload, headers: { "stripe-signature": signPayload(payload, "wrong") } });
   expect(forged.status).toBe(400);
-  const again = await stripeEvent("customer.subscription.updated", sub("sub_dan_big", "cus_dan", "active", 1500), "evt_same");
+  const again = await stripeEvent("customer.subscription.updated", sub("sub_erin", "cus_erin", "active"), "evt_same");
   expect(again.status).toBe(200);
-  expect(await (await stripeEvent("customer.subscription.updated", sub("sub_dan_big", "cus_dan", "canceled", 1500), "evt_same")).json()).toMatchObject({ duplicate: true });
+  expect(await (await stripeEvent("customer.subscription.updated", sub("sub_erin", "cus_erin", "canceled"), "evt_same")).json()).toMatchObject({ duplicate: true });
 });

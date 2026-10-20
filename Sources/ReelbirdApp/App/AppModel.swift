@@ -24,6 +24,17 @@ import ReelbirdCore
         self._windows = WindowManager(app: self)
         self._recording = RecordingController(app: self)
         refreshShareState()
+        refreshCloudPlan()
+    }
+
+    /// Picks up a Pro subscription started or ended elsewhere (the browser, another Mac).
+    func refreshCloudPlan() {
+        guard services.cloud.status() != nil else { return }
+        let cloud = services.cloud
+        Task {
+            _ = try? await cloud.refresh()
+            refreshShareState()
+        }
     }
 
     func refreshShareState() {

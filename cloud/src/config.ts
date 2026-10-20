@@ -22,9 +22,12 @@ export const config = {
   },
 };
 
-/** What each plan allows. Pro is "don't think about it": no link cap, a storage ceiling only. */
+/**
+ * What each plan allows. Hosted links are Pro only; "free" means no subscription (signed in, not
+ * paying: it can pay, and its existing links keep playing, but it can't create new ones).
+ */
 export const plans = {
-  free: { activeLinks: 5, storageBytes: 5e9, analytics: false },
+  free: { activeLinks: 0, storageBytes: 0, analytics: false },
   pro: { activeLinks: Infinity, storageBytes: 100e9, analytics: true },
 } as const;
 export type Plan = keyof typeof plans;

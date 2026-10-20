@@ -47,15 +47,25 @@ export async function credentials(user: User, id: string, title: string | null) 
     if (s) {
       if (s.user_id !== user.id) throw new ShareRefusal(403, "NotYours", "This share belongs to another account.");
       if (s.deleted) throw new ShareRefusal(410, "Deleted", "This link was deleted.");
+      // Without Pro, uploads to an existing link may finish (a recording in progress when the
+      // subscription ended), but only within a day of its last upload: no new work on old links.
+      if (user.plan !== "pro") {
+        const [recent] = await tx`select 1 from shares where id = ${id} and touched_at > now() - interval '1 day'`;
+        if (!recent) throw new ShareRefusal(402, "ProRequired", `Updating hosted links needs Reelbird Pro ($5/month): ${config.publicURL}/upgrade`);
+      }
       await tx`update shares set touched_at = now(), title = coalesce(${title}, title) where id = ${id}`;
       return;
+    }
+    if (user.plan !== "pro") {
+      throw new ShareRefusal(402, "ProRequired",
+        `Hosted links are part of Reelbird Pro ($5/month): ${config.publicURL}/upgrade. Or share to your own bucket for free.`);
     }
     const p = plans[user.plan];
     const [u] = await tx<{ n: number; bytes: string }[]>`
       select count(*)::int as n, coalesce(sum(bytes), 0)::bigint as bytes
       from shares where user_id = ${user.id} and deleted_at is null`;
     if (u.n >= p.activeLinks) {
-      throw new ShareRefusal(402, "LinkLimit", `The free plan includes ${p.activeLinks} hosted links. Delete one, or upgrade to Pro for unlimited links.`);
+      throw new ShareRefusal(402, "LinkLimit", "You've reached the link limit. Delete a link to make room.");
     }
     if (Number(u.bytes) >= p.storageBytes) {
       throw new ShareRefusal(402, "StorageLimit", "Your hosted storage is full. Delete some links to make room.");
