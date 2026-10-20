@@ -10,6 +10,9 @@ import SwiftUI
     /// Where new links go.
     enum Target: Hashable { case cloud, bucket }
     var target: Target = .cloud
+    /// The tab to show next time the pane opens (or now, with `showTarget`), from a share prompt.
+    static var requestedTarget: Target?
+    static let showTarget = Notification.Name("app.reelbird.sharing.showTarget")
 
     // Reelbird Cloud
     private(set) var cloud: CloudStatus?
@@ -31,9 +34,12 @@ import SwiftUI
     private(set) var hasSaved = false
 
     @ObservationIgnored private let app: AppModel?
+    /// Reelbird Cloud is offered (hidden until the hosted service launches).
+    let cloudAvailable: Bool
 
     init(app: AppModel?) {
         self.app = app
+        cloudAvailable = app?.services.cloud.isAvailable ?? true
         if let (d, secret) = app?.services.share.ownBucket() {
             endpoint = d.endpoint; bucket = d.bucket; region = d.region; accessKeyID = d.accessKeyID
             publicBaseURL = d.publicBaseURL; prefix = d.prefix
@@ -42,8 +48,14 @@ import SwiftUI
         }
         cloud = app?.services.cloud.status()
         // Show what new links use: your bucket only when it's set up and Cloud is off.
-        target = (cloud?.enabled ?? false) || !hasSaved ? .cloud : .bucket
+        target = cloudAvailable && ((cloud?.enabled ?? false) || !hasSaved) ? .cloud : .bucket
+        showRequestedTarget()
         refreshCloud()
+    }
+
+    /// Shows the tab a share prompt asked for. Only shows it: choosing happens in the pane.
+    func showRequestedTarget() {
+        if let t = Self.requestedTarget { target = cloudAvailable ? t : .bucket; Self.requestedTarget = nil }
     }
 
     func choose(_ t: Target) {
@@ -170,13 +182,17 @@ struct SharingSettings: View {
         SettingsForm {
             Section {
                 VStack(alignment: .leading, spacing: 10) {
-                    PillTabs(selection: Binding(get: { model.target }, set: { model.choose($0) }), items: [
-                        .init(value: .cloud, title: "Reelbird Cloud", symbol: "cloud"),
-                        .init(value: .bucket, title: "Your own bucket", symbol: "externaldrive"),
-                    ])
+                    if model.cloudAvailable {
+                        PillTabs(selection: Binding(get: { model.target }, set: { model.choose($0) }), items: [
+                            .init(value: .cloud, title: "Reelbird Cloud", symbol: "cloud"),
+                            .init(value: .bucket, title: "Your own bucket", symbol: "externaldrive"),
+                        ])
+                    }
                     Text(model.target == .cloud
                          ? "With Reelbird Pro, Reelbird hosts your links. Nothing to set up: Share just works."
-                         : "Links upload to a storage bucket you own. Nothing goes through Reelbird's servers. Free forever.")
+                         : model.cloudAvailable
+                            ? "Links upload to a storage bucket you own. Nothing goes through Reelbird's servers. Free forever."
+                            : "Links upload to a storage bucket you own. Nothing goes through Reelbird's servers, because there aren't any.")
                         .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -185,6 +201,7 @@ struct SharingSettings: View {
         .onChange(of: model.destination) { _, _ in model.saved = false; if model.test != .testing { model.test = .idle } }
         // Back from the browser (after upgrading or managing the account): show the new plan.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refreshCloud() }
+        .onReceive(NotificationCenter.default.publisher(for: SharingSettingsModel.showTarget)) { _ in model.showRequestedTarget() }
     }
 
     // MARK: Reelbird Cloud

@@ -267,15 +267,31 @@ struct SharePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
-            if !model.shareConfigured {
+            if !model.shareConfigured, !(app?.services.cloud.isAvailable ?? true) {
                 Text("Share with a link").font(.system(size: 14, weight: .semibold))
-                Text("Reelbird Pro hosts your links for you, with view analytics ($5/month). Or connect your own storage bucket for free. Exporting and saving the video is always free.")
+                Text("Links upload to your own storage bucket. Cloudflare R2 is free to start and takes about ten minutes to set up, once.")
                     .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Button("Set Up Sharing…") {
                     model.showShare = false
                     app?.openSettings(.sharing)
                 }
                 .buttonStyle(PrimaryButtonStyle())
+            } else if !model.shareConfigured {
+                Text("Share with a link").font(.system(size: 14, weight: .semibold))
+                Text("Reelbird Pro hosts your links and shows who watched, for $5 a month. Or connect your own storage bucket, free. Exporting and saving the video is always free.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: Theme.Space.s) {
+                    Button("Get Reelbird Pro") {
+                        model.showShare = false
+                        app?.openSharing(.cloud)
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    Button("Use My Own Bucket") {
+                        model.showShare = false
+                        app?.openSharing(.bucket)
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                }
             } else if let info = model.shareInfo {
                 Text("Shared").font(.system(size: 14, weight: .semibold))
                 HStack(spacing: 6) {

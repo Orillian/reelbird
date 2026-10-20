@@ -212,6 +212,7 @@ main{padding:0 0 16px}
 .actions .btn.grow{flex:1 1 0;min-width:0}
 #cc span{display:none}
 .foot{padding-top:20px}
+.foot .tail{display:none}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -245,7 +246,7 @@ main{padding:0 0 16px}
 </section>
 </main>
 <footer class="foot">
-<a href="{{SITE}}" rel="noopener"><svg class="dot" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7.5" fill="var(--accent)"/><path d="M6.5 5.2v5.6L11 8z" fill="var(--on-accent)"/></svg>Made with Reelbird</a>
+<a href="{{SITE}}" rel="noopener"><svg class="dot" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7.5" fill="var(--accent)"/><path d="M6.5 5.2v5.6L11 8z" fill="var(--on-accent)"/></svg>Made with Reelbird<span class="tail">&nbsp;· free screen recorder for Mac</span></a>
 <button type="button" id="keys-open" aria-expanded="false" aria-controls="keys">Keyboard shortcuts</button>
 </footer>
 <div class="keys" id="keys" role="dialog" aria-label="Keyboard shortcuts" hidden>

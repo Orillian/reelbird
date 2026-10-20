@@ -156,6 +156,8 @@ struct CloudSignInCode: Sendable {
 
 /// `ReelbirdShare` Reelbird Cloud: hosted links and their view counts.
 protocol CloudService: Sendable {
+    /// Whether Reelbird Cloud is offered at all (it stays hidden until the hosted service launches).
+    var isAvailable: Bool { get }
     /// The signed-in account from disk (no network). `nil` when signed out.
     func status() -> CloudStatus?
     /// Plan and usage from the server.

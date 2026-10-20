@@ -17,7 +17,7 @@ public enum ShareSettings {
     /// account and turned on, then your own bucket (share.json). `nil` if not set up.
     public static func load() -> ShareDestination? {
         if let env = fromEnvironment() { return env }
-        if let cloud = CloudSettings.load(), cloud.enabled, cloud.isPro { return cloud.destination }
+        if CloudSettings.isAvailable, let cloud = CloudSettings.load(), cloud.enabled, cloud.isPro { return cloud.destination }
         return ownBucket()
     }
 

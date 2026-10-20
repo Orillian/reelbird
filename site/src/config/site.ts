@@ -62,6 +62,16 @@ export const PREBUILT = {
   sha256: "36e0d1c8855301ee55882896470be768c3a0fb762e604144d354bff701851422",
 };
 
+/**
+ * Reelbird Pro: optional hosted share links with view analytics. Keep `launched` false until the
+ * hosted service is live; the /support page leads with Pro only when it's true.
+ */
+export const PRO = {
+  launched: false,
+  price: "$5",
+  upgradeURL: "https://watch.reelbird.app/upgrade",
+} as const;
+
 /** Donations. Read by the /support page and the thank-you after a download. */
 export const DONATION_LINKS = {
   once: "https://buy.stripe.com/fZu14m0FO3v050PfqP3ks00",

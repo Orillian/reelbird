@@ -1,10 +1,12 @@
 import Foundation
 import ReelbirdAI
 import ReelbirdCore
+import ReelbirdShare
 
 /// Command table, help and dispatch.
 enum CLI {
-    static let commands: [CommandSpec] = [
+    static var commands: [CommandSpec] { baseCommands + (CloudSettings.isAvailable ? [CloudCLI.spec] : []) }
+    static let baseCommands: [CommandSpec] = [
         CommandSpec(name: "sources", summary: "List displays, windows, microphones and cameras."),
         CommandSpec(name: "record", summary: "Record the screen. Ctrl-C stops and saves.", options: [
             .value("display", "N|ID", "Display index (1 = main) or display ID"),
@@ -86,7 +88,6 @@ enum CLI {
         ]),
         CommandSpec(name: "unshare", summary: "Delete the project's shared files and link.", positionals: ["PROJECT"]),
         CommandSpec(name: "config", summary: "Configure sharing to your own bucket: `config share …` or `config show`.", positionals: ["ACTION"]),
-        CloudCLI.spec,
         CommandSpec(name: "recover", summary: "Rebuild a project left unfinished by a crash.", positionals: ["PROJECT"]),
         CommandSpec(name: "mcp", summary: "Run a Model Context Protocol server on stdin/stdout.",
                     discussion: "Add to an MCP client as: {\"command\": \"reelbird\", \"args\": [\"mcp\"]}"),
@@ -139,11 +140,11 @@ enum CLI {
     }
 
     static func dispatch(_ name: String, _ rest: [String]) async throws -> Report? {
+        if name == "cloud" { return try await CloudCLI.run(rest) }
         guard var spec = commands.first(where: { $0.name == name }) else {
             let s = ArgumentParser.closest(name, among: commands.map(\.name)).map { " Did you mean '\($0)'?" } ?? ""
             throw CLIError.usage("Unknown command '\(name)'.\(s)", hint: "Run `reelbird help` for the list.")
         }
-        if name == "cloud" { return try await CloudCLI.run(rest) }
         var args = rest
         if name == "config" {
             switch rest.first {

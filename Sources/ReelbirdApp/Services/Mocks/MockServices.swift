@@ -415,6 +415,7 @@ final class MockCloud: CloudService, @unchecked Sendable {
     private let lock = NSLock()
     private var current: CloudStatus?
 
+    var isAvailable: Bool { true }
     func status() -> CloudStatus? { lock.withLock { current } }
     func refresh() async throws -> CloudStatus? { status() }
     func beginSignIn() async throws -> CloudSignInCode {

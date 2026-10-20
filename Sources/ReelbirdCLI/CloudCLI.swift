@@ -19,6 +19,9 @@ enum CloudCLI {
     """)
 
     static func run(_ rest: [String]) async throws -> Report? {
+        guard CloudSettings.isAvailable else {
+            throw CLIError("Reelbird Cloud isn't available yet. Share to your own bucket with `reelbird config share`.", code: .unavailable)
+        }
         let a = try ArgumentParser.parse(rest, spec: spec)
         if a.has("help") || a.positional(0) == nil { return Report(json: ["help": .string(spec.help)], text: spec.help) }
         switch a.positional(0)! {

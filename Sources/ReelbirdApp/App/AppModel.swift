@@ -62,6 +62,18 @@ import ReelbirdCore
 
     func openLibrary() { windows.openLibrary() }
     func openSettings(_ tab: SettingsTab = .general) { windows.openSettings(tab) }
+
+    /// Opens Settings › Sharing on one way of sharing. "Get Reelbird Pro" goes straight to checkout
+    /// when already signed in.
+    func openSharing(_ target: SharingSettingsModel.Target) {
+        if target == .cloud, let c = services.cloud.status(), !c.isPro, let url = c.upgradeURL {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        SharingSettingsModel.requestedTarget = target
+        NotificationCenter.default.post(name: SharingSettingsModel.showTarget, object: nil)
+        openSettings(.sharing)
+    }
     func showOnboarding() { windows.openOnboarding() }
 
     func registerHotKeys() {

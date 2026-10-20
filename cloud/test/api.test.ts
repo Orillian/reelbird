@@ -195,7 +195,7 @@ test("signing out revokes the app token", async () => {
 
 const stripeEvent = async (type: string, object: object, id = "evt_" + crypto.randomUUID().replaceAll("-", "")) => {
   const payload = JSON.stringify({ id, type, data: { object } });
-  return call("/stripe/webhook", { method: "POST", body: payload, headers: { "stripe-signature": signPayload(payload, "whsec_test_reelbird"), "content-type": "application/json" } });
+  return call("/stripe/webhook", { method: "POST", body: payload, headers: { "stripe-signature": signPayload(payload, process.env.STRIPE_WEBHOOK_SECRET!), "content-type": "application/json" } });
 };
 const PRO = "prod_VTSee5NkgzYUpl", PRO_LINK = "plink_1USVjtBbj7zje3qW3ZISlMYw", DONATION = "prod_VKMxHgIqwzOiCj";
 const sub = (id: string, customer: string, status: string, product = PRO) => ({

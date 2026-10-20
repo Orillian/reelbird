@@ -174,7 +174,8 @@ struct LiveShare: ShareServiceProtocol {
 
 /// `ReelbirdShare` Reelbird Cloud (`CloudSettings`, `CloudSignIn`, `CloudAPI`).
 struct LiveCloud: CloudService {
-    func status() -> CloudStatus? { CloudSettings.load().map { Self.status($0, me: nil) } }
+    var isAvailable: Bool { CloudSettings.isAvailable }
+    func status() -> CloudStatus? { isAvailable ? CloudSettings.load().map { Self.status($0, me: nil) } : nil }
 
     func refresh() async throws -> CloudStatus? {
         guard let (account, me) = try await CloudSettings.refresh() else { return nil }

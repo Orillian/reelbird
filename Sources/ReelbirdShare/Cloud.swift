@@ -40,6 +40,15 @@ public struct CloudAccount: Codable, Hashable, Sendable {
 public enum CloudSettings {
     public static let keychainService = "app.reelbird.cloud"
 
+    /// Set to true when the hosted service is live. Until then Reelbird Cloud is hidden everywhere,
+    /// except with `REELBIRD_CLOUD_URL` set (development against a local server).
+    public static let launched = false
+
+    /// Whether to show Reelbird Cloud at all.
+    public static var isAvailable: Bool {
+        launched || ProcessInfo.processInfo.environment["REELBIRD_CLOUD_URL"]?.isEmpty == false
+    }
+
     /// The server the app signs in to. `REELBIRD_CLOUD_URL` overrides it.
     /// TODO(launch): https://watch.reelbird.app once the hosted service is live.
     public static var defaultServer: String {

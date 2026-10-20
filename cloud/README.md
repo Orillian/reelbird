@@ -38,7 +38,7 @@ R2_SECRET_ACCESS_KEY=…
 R2_BUCKET=reelbird-cloud-dev
 ```
 
-Then, from the repo root:
+Then, from the repo root (with `export REELBIRD_CLOUD_URL=http://localhost:8788`):
 
 ```sh
 .build/debug/reelbird cloud login        # approve the code in the browser
@@ -47,7 +47,7 @@ Then, from the repo root:
 .build/debug/reelbird cloud stats <share id>
 ```
 
-The app's Settings › Sharing has a Reelbird Cloud tab that does the same sign-in. The app and CLI use `http://localhost:8788` until launch (`REELBIRD_CLOUD_URL` overrides it).
+The app's Settings › Sharing has a Reelbird Cloud tab that does the same sign-in. Set `REELBIRD_CLOUD_URL=http://localhost:8788` for the app and CLI to show Cloud and use the local server; without it, Cloud stays hidden until launch.
 
 ## Tests
 
@@ -57,6 +57,8 @@ bun test        # end to end against the dev bucket and reelbird_cloud_test
 ```
 
 ## Before launch
+
+- **Launch switches.** Reelbird Cloud is hidden in released builds until these are flipped. `CloudSettings.launched` (`Sources/ReelbirdShare/Cloud.swift`) controls the app and CLI; with it off, setting `REELBIRD_CLOUD_URL` still shows Cloud for development. `PRO.launched` (`site/src/config/site.ts`) adds the Pro section to /support. Flip both only once the server is live.
 
 - **R2 key.** Replace the dev key with an R2 token limited to the hosted bucket (Object Read & Write). The temporary keys can never exceed their parent key's access.
 - **Email.** Magic-link sign-in through Tiffin auth and a mail service (Resend or similar). Until then only `DEV=1` can sign in.

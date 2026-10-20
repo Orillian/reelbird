@@ -5,14 +5,29 @@ import Illustration from "../components/Illustration.astro";
 import Icon from "../components/Icon.astro";
 import celebrating from "../assets/illustrations/celebrating.webp";
 import celebratingDark from "../assets/illustrations/celebrating-dark.webp";
-import { DONATION_LINKS, GITHUB_URL } from "../config/site";
+import { DONATION_LINKS, GITHUB_URL, PRO } from "../config/site";
 const crumbs = [{ name: "Support", path: "/support/" }];
+const lede = PRO.launched
+  ? "Reelbird is free and MIT licensed, with no watermarks or limits. The best way to support it is Reelbird Pro, which hosts your links for you. If you don't need that, you can chip in once or every month."
+  : "Reelbird is free, MIT licensed and has no paid tier. If it saves you time, you can chip in once or every month. It pays for the hours that go into fixes, new features and, soon, a signed download.";
 ---
 <Base title="Support Reelbird" description="Reelbird is free and MIT licensed. One-time or monthly support keeps it maintained." og="support" crumbs={crumbs}>
   <div class="wrap top">
-    <PageHead title="Support Reelbird" lede="Reelbird is free, MIT licensed and has no paid tier. If it saves you time, you can chip in once or every month. It pays for the hours that go into fixes, new features and, soon, a signed download." crumbs={crumbs} class="head" />
+    <PageHead title="Support Reelbird" lede={lede} crumbs={crumbs} class="head" />
     <Illustration src={celebrating} dark={celebratingDark} size={220} class="art" eager />
   </div>
+
+  {PRO.launched && (
+    <div class="wrap">
+      <section class="pro" aria-labelledby="pro-title">
+        <div>
+          <h2 id="pro-title">Reelbird Pro <span class="price">{PRO.price}<span class="per">/month</span></span></h2>
+          <p class="muted">Share without setting up storage: Reelbird hosts your links, with analytics that show who watched, where they stopped and where they came from. Recording, editing and exporting stay free.</p>
+        </div>
+        <a class="btn btn-primary" href={PRO.upgradeURL}><Icon name="arrowRight" />Get Reelbird Pro</a>
+      </section>
+    </div>
+  )}
 
   <div class="wrap tiers">
     <section class="once" aria-labelledby="once-title">
@@ -53,6 +68,10 @@ const crumbs = [{ name: "Support", path: "/support/" }];
   .top { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 2rem; }
   .top :global(.head) { width: auto; margin: 0; padding-inline: 0; }
   .top :global(.art) { margin-bottom: 2rem; }
+  .pro { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1.5rem 2rem; margin-bottom: 2rem; padding: 1.75rem; border-radius: var(--radius-lg); border: 1px solid var(--line-strong); background: var(--bg-raised); }
+  .pro h2 { font-size: var(--step-2); display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+  .pro .price { font-family: var(--font-display); font-size: 1.25rem; font-weight: 520; color: var(--accent-text); }
+  .pro p { max-width: 44rem; }
   .tiers { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 2rem; padding-bottom: 4rem; }
   .tiers section { border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: 1.75rem; background: var(--bg-raised); display: grid; align-content: start; gap: 0.9rem; justify-items: start; }
   .tiers h2 { font-size: var(--step-2); }
@@ -74,6 +93,7 @@ const crumbs = [{ name: "Support", path: "/support/" }];
     .top { grid-template-columns: minmax(0, 1fr); }
     .top :global(.art) { display: none; }
     .tiers { grid-template-columns: minmax(0, 1fr); }
+    .pro { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 30rem) { .monthly a { grid-template-columns: 7rem 1fr auto; } }
 </style>
