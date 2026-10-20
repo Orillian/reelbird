@@ -163,6 +163,53 @@ struct LiveShare: ShareServiceProtocol {
     func unpublish(_ info: ShareInfo, destination: ShareDestination, secret: String) async throws {
         try await ShareService.unpublish(info, destination: destination, secret: secret)
     }
+    func destination(for share: ShareInfo) -> (destination: ShareDestination, secret: String)? {
+        ShareSettings.destination(for: share)
+    }
+    func ownBucket() -> (destination: ShareDestination, secret: String?)? {
+        guard let d = ShareSettings.ownBucket() else { return nil }
+        return (d, ShareSettings.secret(forOwnBucket: d))
+    }
+}
+
+/// `ReelbirdShare` Reelbird Cloud (`CloudSettings`, `CloudSignIn`, `CloudAPI`).
+struct LiveCloud: CloudService {
+    func status() -> CloudStatus? { CloudSettings.load().map { Self.status($0, me: nil) } }
+
+    func refresh() async throws -> CloudStatus? {
+        guard let (account, me) = try await CloudSettings.refresh() else { return nil }
+        return Self.status(account, me: me)
+    }
+
+    func beginSignIn() async throws -> CloudSignInCode {
+        let s = try await CloudSignIn.start()
+        return CloudSignInCode(userCode: s.userCode, verifyURL: s.verifyURL) {
+            let account = try await s.wait()
+            return Self.status(account, me: try? await CloudSettings.refresh()?.me)
+        }
+    }
+
+    func signOut() async { await CloudSettings.signOut() }
+    func setEnabled(_ on: Bool) throws { try CloudSettings.setEnabled(on) }
+
+    func viewCounts() async throws -> [String: Int] {
+        guard let a = CloudSettings.load(), let t = CloudSettings.token(for: a.server) else { return [:] }
+        let links = try await CloudAPI(server: a.server, token: t).links()
+        return Dictionary(links.map { ($0.url, $0.views) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    func statsURL(forLink url: String) -> URL? {
+        guard let a = CloudSettings.load(), url.hasPrefix(a.storage.publicBaseURL + "/r/") else { return nil }
+        let id = url.dropFirst(a.storage.publicBaseURL.count + 3).split(separator: "/").first.map(String.init) ?? ""
+        return id.isEmpty ? nil : URL(string: "\(a.server)/account/s/\(id)")
+    }
+
+    static func status(_ a: CloudAccount, me: CloudAPI.Me?) -> CloudStatus {
+        CloudStatus(email: a.email, isPro: a.isPro, enabled: a.enabled,
+                    linksUsed: me?.usage.activeLinks, linkLimit: me?.limits.activeLinks,
+                    storageUsed: me?.usage.storageBytes, storageLimit: me?.limits.storageBytes,
+                    accountURL: me.flatMap { URL(string: $0.accountURL) } ?? URL(string: a.server + "/account"))
+    }
 }
 
 extension Services {
@@ -173,6 +220,7 @@ extension Services {
                  recorder: LiveRecorder(synthetic: synthetic),
                  render: LiveRender(),
                  share: LiveShare(),
+                 cloud: LiveCloud(),
                  ai: LiveAI(),
                  inputs: LiveInputPreview(),
                  isMock: false)

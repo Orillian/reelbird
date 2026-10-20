@@ -960,7 +960,9 @@ enum CaptionState: Equatable {
 
     /// Renders the polished video and publishes (or updates) the link, then copies it.
     func publish() {
-        guard let dest = services.share.loadDestination(), let secret = services.share.secret() else { return }
+        // An existing link updates where it lives; a new one goes where Settings › Sharing says.
+        guard let (dest, secret) = manifest.share.flatMap(services.share.destination(for:))
+                ?? services.share.loadDestination().flatMap({ d in services.share.secret().map { (d, $0) } }) else { return }
         shareState = .working("Rendering", 0)
         saveNow() // the share service reads title and chapters from edit.json
         let services = services, bundle = bundle, edit = edit
@@ -1002,7 +1004,7 @@ enum CaptionState: Equatable {
 
     /// Deletes the uploaded share; the link stops working.
     func unpublish() {
-        guard let info = shareInfo, let dest = services.share.loadDestination(), let secret = services.share.secret() else { return }
+        guard let info = shareInfo, let (dest, secret) = services.share.destination(for: info) else { return }
         shareState = .working("Removing", 0.5)
         let services = services
         Task {

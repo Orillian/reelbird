@@ -49,6 +49,11 @@ public enum ShareSettings {
         return secret(for: d)
     }
 
+    /// The Keychain secret for your own bucket.
+    public static func secret(forOwnBucket d: ShareDestination) -> String? {
+        Keychain.get(service: keychainService, account: d.accessKeyID)
+    }
+
     static func secret(for d: ShareDestination) -> String? {
         if let server = d.cloudServer { return CloudSettings.token(for: server) }
         return Keychain.get(service: keychainService, account: d.accessKeyID)

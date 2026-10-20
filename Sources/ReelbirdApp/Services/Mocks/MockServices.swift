@@ -403,6 +403,34 @@ final class MockShare: ShareServiceProtocol, @unchecked Sendable {
     func unpublish(_ info: ShareInfo, destination: ShareDestination, secret: String) async throws {
         try await Task.sleep(for: .milliseconds(300))
     }
+    func destination(for share: ShareInfo) -> (destination: ShareDestination, secret: String)? {
+        guard let d = loadDestination(), let s = secret() else { return nil }
+        return (d, s)
+    }
+    func ownBucket() -> (destination: ShareDestination, secret: String?)? { loadDestination().map { ($0, secret()) } }
+}
+
+/// Signed out until `beginSignIn`, which "approves" after a moment. State lives for the process.
+final class MockCloud: CloudService, @unchecked Sendable {
+    private let lock = NSLock()
+    private var current: CloudStatus?
+
+    func status() -> CloudStatus? { lock.withLock { current } }
+    func refresh() async throws -> CloudStatus? { status() }
+    func beginSignIn() async throws -> CloudSignInCode {
+        try await Task.sleep(for: .milliseconds(300))
+        return CloudSignInCode(userCode: "BKTW-QRNX", verifyURL: URL(string: "https://watch.reelbird.app/device?code=BKTW-QRNX")!) { [self] in
+            try await Task.sleep(for: .seconds(2))
+            let s = CloudStatus(email: "you@example.com", isPro: false, enabled: true, linksUsed: 1, linkLimit: 5,
+                                storageUsed: 48_000_000, storageLimit: 5_000_000_000, accountURL: URL(string: "https://watch.reelbird.app/account"))
+            lock.withLock { current = s }
+            return s
+        }
+    }
+    func signOut() async { lock.withLock { current = nil } }
+    func setEnabled(_ on: Bool) throws { lock.withLock { current?.enabled = on } }
+    func viewCounts() async throws -> [String: Int] { [:] }
+    func statsURL(forLink url: String) -> URL? { nil }
 }
 
 struct ShareTestError: LocalizedError {

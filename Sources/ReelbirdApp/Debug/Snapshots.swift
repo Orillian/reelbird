@@ -454,6 +454,23 @@ import SwiftUI
             })
         }
 
+        // Reelbird Cloud in Settings › Sharing
+        let cloudScenes: [(String, CloudStatus?, SharingSettingsModel.CloudPhase)] = [
+            ("signed-out", nil, .idle),
+            ("waiting", nil, .waiting(code: "BKTW-QRNX", url: URL(string: "https://watch.reelbird.app/device?code=BKTW-QRNX")!)),
+            ("free", CloudStatus(email: "sam@example.com", isPro: false, enabled: true, linksUsed: 3, linkLimit: 5,
+                                 storageUsed: 820_000_000, storageLimit: 5_000_000_000, accountURL: nil), .idle),
+            ("pro", CloudStatus(email: "sam@example.com", isPro: true, enabled: true, linksUsed: 42, linkLimit: nil,
+                                storageUsed: 18_400_000_000, storageLimit: 100_000_000_000, accountURL: nil), .idle),
+        ]
+        for (name, status, phase) in cloudScenes {
+            scenes.append(Scene(name: "settings-sharing-cloud-\(name)", size: CGSize(width: 640, height: 520), backdrop: false) {
+                let m = SharingSettingsModel(app: nil)
+                m.setForSnapshot(target: .cloud, cloud: status, phase: phase)
+                return AnyView(SharingSettings(model: m).frame(width: 640, height: 520).background(Color(nsColor: .windowBackgroundColor)))
+            })
+        }
+
         // Onboarding
         for step in [OnboardingModel.Step.welcome, .screen, .camera, .done] {
             scenes.append(Scene(name: "onboarding-\(step.rawValue)-\(step)", size: nil, backdrop: false) {

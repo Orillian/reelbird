@@ -127,6 +127,45 @@ protocol ShareServiceProtocol: Sendable {
     func publish(bundle: ProjectBundle, video: URL?, poster: CGImage?, captions: URL?, destination: ShareDestination,
                  secret: String, progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo
     func unpublish(_ info: ShareInfo, destination: ShareDestination, secret: String) async throws
+    /// Where an existing link lives (Reelbird Cloud or your bucket), so it updates in place after switching.
+    func destination(for share: ShareInfo) -> (destination: ShareDestination, secret: String)?
+    /// Your own bucket, whether or not Reelbird Cloud is on.
+    func ownBucket() -> (destination: ShareDestination, secret: String?)?
+}
+
+/// The Cloud account as the UI shows it.
+struct CloudStatus: Equatable, Sendable {
+    var email: String
+    var isPro: Bool
+    /// New shares go to Reelbird Cloud.
+    var enabled: Bool
+    var linksUsed: Int?
+    var linkLimit: Int?
+    var storageUsed: Int64?
+    var storageLimit: Int64?
+    var accountURL: URL?
+}
+
+/// A device sign-in in progress: show `userCode`, open `verifyURL`, then await `wait`.
+struct CloudSignInCode: Sendable {
+    var userCode: String
+    var verifyURL: URL
+    var wait: @Sendable () async throws -> CloudStatus
+}
+
+/// `ReelbirdShare` Reelbird Cloud: hosted links and their view counts.
+protocol CloudService: Sendable {
+    /// The signed-in account from disk (no network). `nil` when signed out.
+    func status() -> CloudStatus?
+    /// Plan and usage from the server.
+    func refresh() async throws -> CloudStatus?
+    func beginSignIn() async throws -> CloudSignInCode
+    func signOut() async
+    func setEnabled(_ on: Bool) throws
+    /// Views per hosted link, keyed by the link URL.
+    func viewCounts() async throws -> [String: Int]
+    /// The stats page for a hosted link, or `nil` for links in your own bucket.
+    func statsURL(forLink url: String) -> URL?
 }
 
 /// `ReelbirdAI` (Transcriber, Captions, SilenceDetector, StorySuggester).
@@ -164,16 +203,17 @@ protocol AIService: Sendable {
     let recorder: any RecorderService
     let render: any RenderService
     let share: any ShareServiceProtocol
+    let cloud: any CloudService
     let ai: any AIService
     let inputs: any InputPreviewService
     /// True when the engine is simulated (`--mock`, snapshots, `--selftest`).
     let isMock: Bool
 
     init(permissions: any PermissionsService, capture: any CaptureSourceService, recorder: any RecorderService,
-         render: any RenderService, share: any ShareServiceProtocol, ai: any AIService,
+         render: any RenderService, share: any ShareServiceProtocol, cloud: any CloudService, ai: any AIService,
          inputs: any InputPreviewService, isMock: Bool) {
         self.permissions = permissions; self.capture = capture; self.recorder = recorder
-        self.render = render; self.share = share; self.ai = ai; self.inputs = inputs; self.isMock = isMock
+        self.render = render; self.share = share; self.cloud = cloud; self.ai = ai; self.inputs = inputs; self.isMock = isMock
     }
 
     /// Simulated engine with real system permission checks (`--mock`, snapshots, `--selftest`).
@@ -183,6 +223,7 @@ protocol AIService: Sendable {
                  recorder: MockRecorder(),
                  render: MockRender(),
                  share: MockShare(),
+                 cloud: MockCloud(),
                  ai: MockAI(),
                  inputs: MockInputPreview(),
                  isMock: true)

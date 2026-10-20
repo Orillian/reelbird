@@ -310,6 +310,7 @@ struct LibraryView: View {
         } else {
             Button("Open") { open(item) }
             if item.shareURL != nil { Button("Copy Link") { store.copyLink(item) } }
+            if store.statsURL(item) != nil { Button("View Stats") { store.openStats(item) } }
             Button("Show in Finder") { store.reveal([item]) }
             Button("Duplicate") { store.duplicate(item) }
             Divider()
@@ -493,7 +494,10 @@ struct LibraryTile<MenuContent: View>: View {
                 Text(item.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
                 HStack(spacing: 6) {
                     Text(item.createdAt.formatted(.relative(presentation: .named)))
-                    if item.shareURL != nil {
+                    if let views = item.views {
+                        Text("·")
+                        Label(views == 1 ? "1 view" : "\(views) views", systemImage: "eye").labelStyle(.titleAndIcon)
+                    } else if item.shareURL != nil {
                         Text("·")
                         Label("Shared", systemImage: "link").labelStyle(.titleAndIcon)
                     }
@@ -544,7 +548,12 @@ struct LibraryRow<MenuContent: View>: View {
                 }
                 Spacer()
                 if item.recovered { Label("Recovered", systemImage: "arrow.clockwise").font(.system(size: 11.5)).foregroundStyle(Theme.warning) }
-                if item.shareURL != nil { Image(systemName: "link").foregroundStyle(.secondary).help("Shared") }
+                if let views = item.views {
+                    Label(views == 1 ? "1 view" : "\(views) views", systemImage: "eye")
+                        .font(.system(size: 11.5).monospacedDigit()).foregroundStyle(.secondary).labelStyle(.titleAndIcon)
+                } else if item.shareURL != nil {
+                    Image(systemName: "link").foregroundStyle(.secondary).help("Shared")
+                }
                 Text(TimeFormat.clock(item.duration)).font(.system(size: 12).monospacedDigit()).foregroundStyle(.secondary)
                     .frame(width: 50, alignment: .trailing)
             }

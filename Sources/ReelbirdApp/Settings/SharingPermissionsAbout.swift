@@ -7,6 +7,17 @@ import SwiftUI
 // MARK: Sharing
 
 @MainActor @Observable final class SharingSettingsModel {
+    /// Where new links go.
+    enum Target: Hashable { case cloud, bucket }
+    var target: Target = .cloud
+
+    // Reelbird Cloud
+    private(set) var cloud: CloudStatus?
+    enum CloudPhase: Equatable { case idle, starting, waiting(code: String, url: URL), failed(String) }
+    private(set) var cloudPhase: CloudPhase = .idle
+    @ObservationIgnored private var signInTask: Task<Void, Never>?
+
+    // Your own bucket
     var endpoint = ""
     var bucket = ""
     var region = "auto"
@@ -23,12 +34,83 @@ import SwiftUI
 
     init(app: AppModel?) {
         self.app = app
-        if let d = app?.services.share.loadDestination() {
+        if let (d, secret) = app?.services.share.ownBucket() {
             endpoint = d.endpoint; bucket = d.bucket; region = d.region; accessKeyID = d.accessKeyID
             publicBaseURL = d.publicBaseURL; prefix = d.prefix
-            secret = app?.services.share.secret() ?? ""
+            self.secret = secret ?? ""
             hasSaved = true
         }
+        cloud = app?.services.cloud.status()
+        // Show what new links use: your bucket only when it's set up and Cloud is off.
+        target = (cloud?.enabled ?? false) || !hasSaved ? .cloud : .bucket
+        refreshCloud()
+    }
+
+    func choose(_ t: Target) {
+        target = t
+        guard let app else { return }
+        if t == .cloud, cloud != nil {
+            try? app.services.cloud.setEnabled(true)
+        } else if t == .bucket {
+            try? app.services.cloud.setEnabled(false)
+        }
+        cloud = app.services.cloud.status() ?? cloud
+        app.refreshShareState()
+    }
+
+    func refreshCloud() {
+        guard let app, cloud != nil else { return }
+        Task {
+            if let s = try? await app.services.cloud.refresh() { cloud = s }
+        }
+    }
+
+    func signIn() {
+        guard let app else { return }
+        signInTask?.cancel()
+        cloudPhase = .starting
+        signInTask = Task {
+            do {
+                let code = try await app.services.cloud.beginSignIn()
+                cloudPhase = .waiting(code: code.userCode, url: code.verifyURL)
+                NSWorkspace.shared.open(code.verifyURL)
+                cloud = try await code.wait()
+                cloudPhase = .idle
+                target = .cloud
+                app.refreshShareState()
+                refreshCloud()
+            } catch is CancellationError {
+                cloudPhase = .idle
+            } catch {
+                cloudPhase = Task.isCancelled ? .idle : .failed((error as? any LocalizedError)?.errorDescription ?? error.localizedDescription)
+            }
+        }
+    }
+
+    func cancelSignIn() {
+        signInTask?.cancel()
+        signInTask = nil
+        cloudPhase = .idle
+    }
+
+    func signOut() {
+        guard let app else { return }
+        Task {
+            await app.services.cloud.signOut()
+            cloud = nil
+            app.refreshShareState()
+        }
+    }
+
+    /// Snapshots only.
+    func setForSnapshot(target: Target, cloud: CloudStatus?, phase: CloudPhase = .idle) {
+        self.target = target
+        self.cloud = cloud
+        cloudPhase = phase
+    }
+
+    func openAccount() {
+        if let url = cloud?.accountURL { NSWorkspace.shared.open(url) }
     }
 
     var destination: ShareDestination {
@@ -57,6 +139,7 @@ import SwiftUI
         guard let app else { return }
         do {
             try app.services.share.saveDestination(destination, secret: secret)
+            cloud = app.services.cloud.status() ?? cloud
             app.refreshShareState()
             hasSaved = true
             saved = true
@@ -80,9 +163,123 @@ struct SharingSettings: View {
     var body: some View {
         SettingsForm {
             Section {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Links upload to a storage bucket you own. Nothing goes through Reelbird's servers, because there aren't any.")
+                VStack(alignment: .leading, spacing: 10) {
+                    PillTabs(selection: Binding(get: { model.target }, set: { model.choose($0) }), items: [
+                        .init(value: .cloud, title: "Reelbird Cloud", symbol: "cloud"),
+                        .init(value: .bucket, title: "Your own bucket", symbol: "externaldrive"),
+                    ])
+                    Text(model.target == .cloud
+                         ? "Reelbird hosts your links. Nothing to set up: sign in and Share just works."
+                         : "Links upload to a storage bucket you own. Nothing goes through Reelbird's servers. Free forever.")
                         .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if model.target == .cloud { cloudSections } else { bucketSections }
+        }
+        .onChange(of: model.destination) { _, _ in model.saved = false; if model.test != .testing { model.test = .idle } }
+    }
+
+    // MARK: Reelbird Cloud
+
+    @ViewBuilder private var cloudSections: some View {
+        if let c = model.cloud {
+            Section("Account") {
+                LabeledContent("Signed in as") {
+                    HStack(spacing: 6) {
+                        Text(c.email)
+                        PlanBadge(pro: c.isPro)
+                    }
+                }
+                if let used = c.linksUsed {
+                    LabeledContent("Links") {
+                        Text(c.linkLimit.map { "\(used) of \($0)" } ?? "\(used) · unlimited").monospacedDigit()
+                    }
+                }
+                if let used = c.storageUsed, let limit = c.storageLimit, limit > 0 {
+                    LabeledContent("Storage") {
+                        HStack(spacing: 8) {
+                            ProgressView(value: min(1, Double(used) / Double(limit))).frame(width: 120).tint(Theme.accent)
+                            Text("\(Self.bytes(used)) of \(Self.bytes(limit))").monospacedDigit().foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                LabeledContent("Analytics") {
+                    Text(c.isPro ? "Views, retention and sources for every link" : "View counts · Pro adds who watched and for how long")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                HStack(spacing: Theme.Space.s) {
+                    if !c.enabled { StatusLine(tone: .info, text: "New links go to your own bucket.") }
+                    Spacer()
+                    Button("Sign Out…") { confirmSignOut() }
+                    Button("Manage Account") { model.openAccount() }
+                        .buttonStyle(PrimaryButtonStyle())
+                }
+            }
+        } else {
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    planLine("Free", "5 hosted links, view counts")
+                    planLine("Pro · $5 a month", "Unlimited links, viewer analytics: who watched, where they stopped, where they came from")
+                }
+                .padding(.vertical, 2)
+            }
+            Section {
+                switch model.cloudPhase {
+                case .waiting(let code, let url):
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Approve this code in your browser").font(.system(size: 12, weight: .medium))
+                        Text(code)
+                            .font(.system(size: 22, weight: .semibold, design: .monospaced)).tracking(2)
+                            .frame(maxWidth: .infinity).padding(.vertical, 10)
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.fieldFill))
+                            .textSelection(.enabled)
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Waiting for approval…").font(.system(size: 12)).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Cancel") { model.cancelSignIn() }
+                            Button("Open Browser Again") { NSWorkspace.shared.open(url) }
+                        }
+                    }
+                default:
+                    HStack(spacing: Theme.Space.s) {
+                        if case .failed(let m) = model.cloudPhase { StatusLine(tone: .error, text: m) }
+                        if model.cloudPhase == .starting { ProgressView().controlSize(.small) }
+                        Spacer()
+                        Button("Sign In…") { model.signIn() }
+                            .buttonStyle(PrimaryButtonStyle())
+                            .disabled(model.cloudPhase == .starting)
+                    }
+                }
+            }
+        }
+    }
+
+    private func planLine(_ name: String, _ detail: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(name).font(.system(size: 12, weight: .semibold)).frame(width: 110, alignment: .leading)
+            Text(detail).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func confirmSignOut() {
+        let alert = NSAlert()
+        alert.messageText = "Sign out of Reelbird Cloud?"
+        alert.informativeText = "Your hosted links keep working. To share again, sign back in or set up your own bucket."
+        alert.addButton(withTitle: "Sign Out")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn { model.signOut() }
+    }
+
+    static func bytes(_ n: Int64) -> String { ByteCountFormatter.string(fromByteCount: n, countStyle: .file) }
+
+    // MARK: Your own bucket
+
+    @ViewBuilder private var bucketSections: some View {
+            Section {
+                VStack(alignment: .leading, spacing: 6) {
                     DisclosureGroup("How to set up Cloudflare R2") {
                         VStack(alignment: .leading, spacing: 5) {
                             step(1, "In Cloudflare, open R2 and create a bucket, e.g. “reelbird”.")
@@ -128,8 +325,6 @@ struct SharingSettings: View {
                         .disabled(!model.complete)
                 }
             }
-        }
-        .onChange(of: model.destination) { _, _ in model.saved = false; if model.test != .testing { model.test = .idle } }
     }
 
     private func confirmRemove() {
@@ -157,6 +352,18 @@ struct SharingSettings: View {
             Text("\(n)").font(.system(size: 11, weight: .semibold).monospacedDigit()).foregroundStyle(.secondary).frame(width: 12)
             Text(text).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+/// "Pro" or "Free" next to the account email.
+struct PlanBadge: View {
+    let pro: Bool
+    var body: some View {
+        Text(pro ? "Pro" : "Free")
+            .font(.system(size: 10.5, weight: .semibold))
+            .padding(.horizontal, 7).padding(.vertical, 2)
+            .foregroundStyle(pro ? Theme.accentText : .secondary)
+            .background(Capsule().fill(pro ? Theme.accent.opacity(0.16) : Theme.fieldFill))
     }
 }
 

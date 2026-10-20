@@ -12,6 +12,8 @@ struct LibraryItem: Identifiable, Equatable {
     var sharePolished: Bool
     var recovered: Bool
     var cameraIncluded: Bool
+    /// Views of a Reelbird Cloud link, once fetched.
+    var views: Int? = nil
 }
 
 /// Recordings in the library folder, newest first, with posters loaded lazily.
@@ -34,6 +36,9 @@ struct LibraryItem: Identifiable, Equatable {
     @ObservationIgnored private let services: Services
     @ObservationIgnored private let prefs: Preferences
     @ObservationIgnored private var loadedAt = Date.distantPast
+    /// View counts of Reelbird Cloud links by URL, refreshed at most every 30 seconds.
+    @ObservationIgnored private var viewCounts: [String: Int] = [:]
+    @ObservationIgnored private var viewsLoadedAt = Date.distantPast
     /// The bundle the app is recording into right now (set by RecordingController). It stays out of the
     /// library until it is finished, and so do takes the CLI is still recording.
     @ObservationIgnored var activeRecording: URL?
@@ -51,8 +56,9 @@ struct LibraryItem: Identifiable, Equatable {
     func reload() {
         let active = activeRecording?.standardizedFileURL
         let bundles = prefs.library.list().filter { $0.url.standardizedFileURL != active }
-        items = bundles.compactMap(Self.item(for:))
+        items = bundles.compactMap(Self.item(for:)).map { var i = $0; i.views = i.shareURL.flatMap { viewCounts[$0] }; return i }
         loadedAt = Date()
+        loadViewCounts()
         let ids = Set(items.map(\.id))
         if !selection.isSubset(of: ids) { selection.formIntersection(ids) }
         if let a = anchor, !ids.contains(a) { anchor = nil; lead = nil }
@@ -75,6 +81,25 @@ struct LibraryItem: Identifiable, Equatable {
                            shareURL: m.share?.url, sharePolished: m.share?.polished ?? false,
                            recovered: m.status == .recovered || m.status == .recording,
                            cameraIncluded: m.track(.camera) != nil)
+    }
+
+    private func loadViewCounts() {
+        guard services.cloud.status() != nil, items.contains(where: { $0.shareURL != nil }),
+              Date().timeIntervalSince(viewsLoadedAt) > 30 else { return }
+        viewsLoadedAt = Date()
+        let cloud = services.cloud
+        Task {
+            guard let counts = try? await cloud.viewCounts() else { return }
+            viewCounts = counts
+            items = items.map { var i = $0; i.views = i.shareURL.flatMap { counts[$0] }; return i }
+        }
+    }
+
+    /// The Reelbird Cloud stats page for a hosted link.
+    func statsURL(_ item: LibraryItem) -> URL? { item.shareURL.flatMap(services.cloud.statsURL(forLink:)) }
+
+    func openStats(_ item: LibraryItem) {
+        if let url = statsURL(item) { NSWorkspace.shared.open(url) }
     }
 
     private func loadPosters() {

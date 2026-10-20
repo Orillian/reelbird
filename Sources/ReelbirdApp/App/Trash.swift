@@ -27,7 +27,7 @@ extension AppModel {
         alert.addButton(withTitle: "Cancel")
         alert.buttons.first?.hasDestructiveAction = true
         var unshare: NSButton?
-        if !shared.isEmpty, services.share.loadDestination() != nil {
+        if !shared.isEmpty, shared.contains(where: { services.share.destination(for: $0) != nil }) {
             let label = bundles.count == 1 ? "Also delete its share link"
                 : shared.count == 1 ? "Also delete the share link" : "Also delete their \(shared.count) share links"
             let box = NSButton(checkboxWithTitle: label, target: nil, action: nil)
@@ -67,14 +67,16 @@ extension AppModel {
                 : "Couldn't move \(failed) of the \(bundles.count) recordings to the Trash")
         }
 
-        guard deleteLinks, !trashedShares.isEmpty,
-              let dest = services.share.loadDestination(), let secret = services.share.secret() else { return }
+        guard deleteLinks, !trashedShares.isEmpty else { return }
         let share = services.share
         Task {
             var firstError: (any Error)?
             var errors = 0
             for (info, places) in trashedShares {
                 do {
+                    guard let (dest, secret) = share.destination(for: info) else {
+                        throw ShareTestError("Sharing for this link isn't set up on this Mac any more.")
+                    }
                     try await share.unpublish(info, destination: dest, secret: secret)
                     // The link is gone: forget it, so putting the recording back doesn't show a dead link.
                     Self.forgetShare(info, at: places)
