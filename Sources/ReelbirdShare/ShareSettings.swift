@@ -139,7 +139,14 @@ enum Keychain {
                                    kSecAttrService as String: service,
                                    kSecAttrAccount as String: account]
         let data = Data(value.utf8)
-        let status = SecItemUpdate(base as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        var status = SecItemUpdate(base as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        // An item another program made (an older or self-built copy of Reelbird, its CLI) can refuse
+        // changes from this one. Replace it if macOS lets us; otherwise say how to clear it.
+        if status != errSecSuccess && status != errSecItemNotFound {
+            let removed = SecItemDelete(base as CFDictionary)
+            guard removed == errSecSuccess || removed == errSecItemNotFound else { throw foreign(status, service: service) }
+            status = errSecItemNotFound
+        }
         if status == errSecItemNotFound {
             var add = base
             add[kSecValueData as String] = data
@@ -163,10 +170,24 @@ enum Keychain {
         return String(data: d, encoding: .utf8)
     }
 
+    /// Removes every item of `service` that this program may remove, one account at a time. Items
+    /// owned by another program (macOS refuses with "invalid attempt to change the owner") are left
+    /// alone: they're stale, and they mustn't stop you signing in or saving a new secret.
     static func deleteAll(service: String) throws {
-        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service]
-        let s = SecItemDelete(q as CFDictionary)
-        guard s == errSecSuccess || s == errSecItemNotFound else { throw error(s) }
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                kSecReturnAttributes as String: true, kSecMatchLimit as String: kSecMatchLimitAll]
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let items = out as? [[String: Any]] else { return }
+        for account in items.compactMap({ $0[kSecAttrAccount as String] as? String }) {
+            _ = SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                               kSecAttrAccount as String: account] as CFDictionary)
+        }
+    }
+
+    static func foreign(_ status: OSStatus, service: String) -> ShareError {
+        let text = (SecCopyErrorMessageString(status, nil) as String?) ?? "OSStatus \(status)"
+        return ShareError(status: 0, code: "Keychain\(status)",
+                          message: "Couldn't save the secret in the Keychain (\(text)). An older copy of Reelbird saved one that this copy can't replace: open Keychain Access, search for \(service), delete it, and try again.")
     }
 
     static func error(_ status: OSStatus) -> ShareError {

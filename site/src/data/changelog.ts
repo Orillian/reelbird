@@ -11,6 +11,16 @@ const newer = (a: string, b: string) => {
 
 const ALL: Release[] = [
   {
+    version: "0.2.3",
+    date: "2026-10-20",
+    title: "Signing in to Reelbird Pro always saves",
+    summary: "Fixes \"Couldn't save the secret in the Keychain\" when signing in, if an older or self-built copy of Reelbird had saved a sign-in before.",
+    notes: [
+      "Signing in to Reelbird Pro, or saving your own bucket's key, no longer fails because of a Keychain item an older copy of Reelbird left behind.",
+      "If macOS ever refuses to replace an item, the message says how to clear it in Keychain Access.",
+    ],
+  },
+  {
     version: "0.2.2",
     date: "2026-10-20",
     title: "Updating a link really replaces it",
