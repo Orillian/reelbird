@@ -9,6 +9,7 @@ import { ingest, VIEWER_SCRIPT } from "./events";
 import { shareStats } from "./stats";
 import { billing, hasSubscription, linkOnSignIn, portalURL, upgradeURL, webhook } from "./billing";
 import * as pages from "./pages";
+import { serveAsset } from "./assets";
 import { canSendMail, sendMail } from "./mail";
 import { clientIP } from "./events";
 
@@ -35,7 +36,10 @@ app.post("/e", ingest);
 
 // MARK: Web pages
 
-app.get("/", async (c) => c.html(pages.homePage(await auth.webUser(c))));
+app.get("/", async (c) => ((await auth.webUser(c)) ? c.redirect("/account") : c.html(pages.homePage())));
+
+// Fonts and icons for the pages, so they load nothing from other hosts.
+app.get("/assets/:file", serveAsset);
 
 // Sign-in emails per IP: 10 an hour. (On Tiffin: Valkey's rateLimit, shared across instances.)
 const loginHits = new Map<string, number[]>();
@@ -98,7 +102,8 @@ app.post("/login/verify", async (c) => {
 app.post("/logout", async (c) => {
   if (!auth.sameOrigin(c)) return c.text("Bad origin", 403);
   await auth.endWebSession(c);
-  return c.redirect("/");
+  const next = (await c.req.parseBody()).next;
+  return c.redirect(typeof next === "string" && next.startsWith("/login") ? safeNext(next) : "/");
 });
 
 app.get("/device", async (c) => {
@@ -190,7 +195,7 @@ app.post("/api/device/token", async (c) => {
 app.use("/api/*", async (c, next) => {
   if (c.req.path.startsWith("/api/device")) return next();
   const user = await auth.appUser(c);
-  if (!user) return fail(c, 401, "SignedOut", "Sign in to Reelbird Cloud again.");
+  if (!user) return fail(c, 401, "SignedOut", "Sign in to Reelbird again.");
   c.set("user" as never, user as never);
   return next();
 });

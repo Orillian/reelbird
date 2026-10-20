@@ -295,7 +295,7 @@ Recording through an agent needs Screen Recording permission for the app that ru
 
 ## Sharing
 
-Sharing is optional; recording, editing and exporting work without it, with no watermark. Share links point at a storage bucket **you** own, for free, or at Reelbird Pro ($5 a month): sign in under Settings › Sharing › Reelbird Cloud and Share works with nothing to set up, plus analytics on who watched ([details](docs/SHARING.md#reelbird-pro-no-setup)). When you share to your own bucket, Reelbird uploads a small viewer page and the video to `https://<your public URL>/r/<id>/`, signed with your own keys; with Pro the link is `https://watch.reelbird.app/r/<id>/`. Anyone with the link can watch in a browser, and the link never changes, even after **Update link**.
+Sharing is optional; recording, editing and exporting work without it, with no watermark. Share links point at a storage bucket **you** own, for free, or at Reelbird Pro ($5 a month): sign in under Settings › Sharing › Reelbird Pro and Share works with nothing to set up, plus analytics on who watched ([details](docs/SHARING.md#reelbird-pro-no-setup)). When you share to your own bucket, Reelbird uploads a small viewer page and the video to `https://<your public URL>/r/<id>/`, signed with your own keys; with Pro the link is `https://watch.reelbird.app/r/<id>/`. Anyone with the link can watch in a browser, and the link never changes, even after **Update link**.
 
 Cloudflare R2 is the recommended host: no download (egress) fees, and the free tier includes 10 GB of storage. Setup takes about ten minutes, once:
 

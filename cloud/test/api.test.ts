@@ -294,7 +294,7 @@ test("paying through the Pro link makes the account Pro; cancelling ends it", as
   expect((await stripeEvent("checkout.session.completed", checkout("cus_carol", "sub_carol", { client_reference_id: ref, customer_details: { email: "carol@example.com" } }))).status).toBe(200);
   expect(await plan(carol.token)).toBe("pro");
   expect((await call("/upgrade", { cookie: carol.cookie })).headers.get("location")).toBe("/account");
-  expect(await (await call("/account", { cookie: carol.cookie })).text()).toContain("Manage subscription");
+  expect(await (await call("/account", { cookie: carol.cookie })).text()).toContain("Manage billing");
   expect((await call("/billing", { cookie: carol.cookie })).headers.get("location")).toContain("billing.stripe.com/p/login/test_portal?prefilled_email=carol%40example.com");
 
   // Payment fails → past_due → no Pro; paid again → Pro; cancelled → no Pro.
@@ -336,4 +336,20 @@ test("webhooks: bad signatures are refused, repeats are ignored", async () => {
   const again = await stripeEvent("customer.subscription.updated", sub("sub_erin", "cus_erin", "active"), "evt_same");
   expect(again.status).toBe(200);
   expect(await (await stripeEvent("customer.subscription.updated", sub("sub_erin", "cus_erin", "canceled"), "evt_same")).json()).toMatchObject({ duplicate: true });
+});
+
+test("pages: brand assets are served with long caching; the home page sends signed-in people to their links", async () => {
+  const home = await (await call("/")).text();
+  const font = home.match(/\/assets\/fraunces\.woff2\?v=[0-9a-f]+/)?.[0];
+  expect(font).toBeTruthy();
+  const r = await call(font!);
+  expect(r.status).toBe(200);
+  expect(r.headers.get("content-type")).toBe("font/woff2");
+  expect(r.headers.get("cache-control")).toContain("immutable");
+  expect((await call("/assets/../package.json")).status).toBe(404);
+  expect((await call("/assets/nope.css")).status).toBe(404);
+  const dave = await webLogin("dave@example.com");
+  const res = await call("/", { cookie: dave });
+  expect(res.status).toBe(302);
+  expect(res.headers.get("location")).toBe("/account");
 });

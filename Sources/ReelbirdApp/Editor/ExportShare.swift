@@ -277,8 +277,8 @@ struct SharePanel: View {
                 }
                 .buttonStyle(PrimaryButtonStyle())
             } else if !model.shareConfigured {
-                Text("Share with a link").font(.system(size: 14, weight: .semibold))
-                Text("Reelbird Pro hosts your links and shows who watched, for $5 a month. Or connect your own storage bucket, free. Exporting and saving the video is always free.")
+                Text("Share a link in one click").font(.system(size: 14, weight: .semibold))
+                Text("Reelbird Pro hosts this video and shows who watched and where they stopped. $5 a month, cancel any time. Or share from your own storage bucket, free.")
                     .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: Theme.Space.s) {
                     Button("Get Reelbird Pro") {

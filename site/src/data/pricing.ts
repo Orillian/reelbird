@@ -6,14 +6,29 @@
 import { PRO } from "../config/site";
 import type { Faq } from "./faq";
 
+/** The plan columns on /pricing. Short, and only what differs; the table below has the detail. */
+export const FREE_POINTS = [
+  "Record, edit and export, with no watermark and no limits",
+  "No account, nothing leaves your Mac unless you share",
+  `Share links from your own bucket, such as Cloudflare R2. <a href="/docs/sharing/">About ten minutes to set up</a>, once`,
+  "CLI and MCP server for scripts and agents",
+];
+export const PRO_POINTS = [
+  "Share links hosted by Reelbird, with nothing to set up",
+  `Unlimited links and ${PRO.storage} of video`,
+  "Views and unique viewers for every link",
+  "Where viewers stop, where they came from, and their devices",
+];
+
 export const PLAN_ROWS: { k: string; free: string; pro: string }[] = [
   { k: "Price", free: "Free", pro: `${PRO.price} a month` },
   { k: "Record, edit, export", free: "Everything, with no watermark and no limits", pro: "The same app" },
   { k: "Account", free: "None needed", pro: "Your email address" },
   { k: "Share links", free: "Hosted in your own bucket: Cloudflare R2 or any S3-compatible storage", pro: "Hosted by Reelbird at watch.reelbird.app" },
-  { k: "Setup", free: "About ten minutes, once", pro: "None. Sign in from Settings › Sharing" },
+  { k: "Setup", free: "About ten minutes, once", pro: "None. Sign in from the Share button" },
   { k: "Storage", free: "Whatever your bucket holds. R2's free tier covers 10 GB", pro: `Unlimited links, ${PRO.storage}` },
-  { k: "Viewer analytics", free: "No", pro: "Views, unique viewers, where people stopped, where they came from, devices" },
+  { k: "Viewer analytics", free: "No", pro: "Views, unique viewers, where people stop, where they came from, devices" },
+  { k: "If you cancel", free: "—", pro: "Links you've shared keep playing. New links need Pro or your own bucket" },
   { k: "Update link, same URL", free: "Yes", pro: "Yes" },
   { k: "CLI and MCP", free: "Yes", pro: "Yes, plus reelbird cloud" },
 ];
@@ -21,8 +36,8 @@ export const PLAN_ROWS: { k: string; free: string; pro: string }[] = [
 export const PRICING_FAQ: Faq[] = [
   {
     id: "is-free",
-    q: "Is Reelbird free?",
-    a: "Yes. The app is free and MIT licensed: recording, editing, exporting and sharing to your own storage bucket, with no watermark, no limits and no account. Reelbird Pro is an optional $5-a-month plan for people who'd rather not set up storage.",
+    q: "Is Reelbird free? Why?",
+    a: "Yes. The app is free and MIT licensed: recording, editing, exporting and sharing to your own storage bucket, with no watermark, no limits and no account. A recorder runs on your Mac and costs nothing to give away. Hosting links costs money every month, so that part is the paid plan: Reelbird Pro, $5 a month, for people who'd rather not set up storage.",
   },
   {
     id: "what-pro",
@@ -43,20 +58,25 @@ export const PRICING_FAQ: Faq[] = [
   {
     id: "get-pro",
     q: "How do I get Pro?",
-    a: "In Reelbird, open Settings › Sharing › Reelbird Cloud and choose Sign In. Approve the code in your browser, then upgrade. From a terminal, reelbird cloud login does the same.",
-    html: `In Reelbird, open <strong>Settings › Sharing › Reelbird Cloud</strong> and choose <strong>Sign In</strong>. Approve the code in your browser, then <a href="${PRO.upgradeURL}">upgrade</a>. From a terminal, <code>reelbird cloud login</code> does the same.`,
+    a: "In Reelbird, press Share on a recording and choose Get Reelbird Pro, or open Settings › Sharing › Reelbird Pro and choose Sign In. Approve the code in your browser, then upgrade. From a terminal, reelbird cloud login does the same.",
+    html: `In Reelbird, press <strong>Share</strong> on a recording and choose <strong>Get Reelbird Pro</strong>, or open <strong>Settings › Sharing › Reelbird Pro</strong> and choose <strong>Sign In</strong>. Approve the code in your browser, then <a href="${PRO.upgradeURL}">upgrade</a>. From a terminal, <code>reelbird cloud login</code> does the same.`,
   },
   {
     id: "cancel",
     q: "Can I cancel? What happens to my links?",
-    a: "Cancel any time from your account page: Manage subscription opens Stripe's billing page. Links you already shared keep playing after Pro ends, and you can delete them from the account page or the app. Without Pro you can't add or update hosted links, but you can switch sharing back to your own bucket.",
-    html: `Cancel any time from your <a href="${PRO.accountURL}">account page</a>: <strong>Manage subscription</strong> opens Stripe's billing page. Links you already shared keep playing after Pro ends, and you can delete them from the account page or the app. Without Pro you can't add or update hosted links, but you can switch sharing back to your own bucket.`,
+    a: "Cancel any time from your account page: Manage billing opens Stripe's billing page. Links you already shared keep playing after Pro ends, and you can delete them from the account page or the app. Without Pro you can't add or update hosted links, but you can switch sharing back to your own bucket.",
+    html: `Cancel any time from your <a href="${PRO.accountURL}">account page</a>: <strong>Manage billing</strong> opens Stripe's billing page. Links you already shared keep playing after Pro ends, and you can delete them from the account page or the app. Without Pro you can't add or update hosted links, but you can switch sharing back to your own bucket.`,
   },
   {
     id: "analytics-privacy",
     q: "How private are the viewer analytics?",
     a: "They use no cookies. A viewer is counted with a daily hash of IP address and browser, so no IP address is stored and nobody can be followed across days or links. Your own views and link-preview bots aren't counted.",
     html: `They use no cookies. A viewer is counted with a daily hash of IP address and browser, so no IP address is stored and nobody can be followed across days or links. Your own views and link-preview bots aren't counted. More on the <a href="/privacy/#pro">privacy page</a>.`,
+  },
+  {
+    id: "what-counts",
+    q: "What counts as a view?",
+    a: "A view is someone playing the video for at least three seconds. Opening the page without playing isn't a view, and neither are your own plays while you're signed in or link previews from Slack, iMessage and the like. Unique viewers are counted once a day per link.",
   },
   {
     id: "viewers",

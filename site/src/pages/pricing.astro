@@ -3,47 +3,63 @@ import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import Faq from "../components/Faq.astro";
 import Icon from "../components/Icon.astro";
+import Shot from "../components/Shot.astro";
 import { PRO } from "../config/site";
-import { PLAN_ROWS, PRICING_FAQ } from "../data/pricing";
+import { FREE_POINTS, PRO_POINTS, PLAN_ROWS, PRICING_FAQ } from "../data/pricing";
 import { faqPage, softwareApplication } from "../lib/jsonld";
+import statsLight from "../assets/shots/pro-stats-light.webp";
+import statsDark from "../assets/shots/pro-stats-dark.webp";
 const crumbs = [{ name: "Pricing", path: "/pricing/" }];
 const description = `Reelbird is free: record, edit, export and share to your own bucket, with no watermark and no account. Optional Reelbird Pro hosts your links for ${PRO.price} a month, with viewer analytics.`;
 ---
 <Base title="Reelbird pricing: free, with optional Pro hosting" description={description} og="pricing" crumbs={crumbs} schema={[softwareApplication(), faqPage(PRICING_FAQ)]}>
   <PageHead
-    title="Pricing"
-    lede={`Reelbird is free. Recording, editing, exporting and share links to your own bucket cost nothing, with no watermark, no limits and no account. If you'd rather not set up storage, Reelbird Pro hosts your links for ${PRO.price} a month.`}
+    title="The recorder is free. Pro hosts your links."
+    lede={`Record, edit and export with no watermark and no account, and share from your own storage for free. If you'd rather not set anything up, Reelbird Pro hosts your links and shows who watched, for ${PRO.price} a month.`}
     crumbs={crumbs}
   />
 
   <div class="wrap">
     <section class="plans" aria-label="Plans">
       <div class="plan" id="free">
-        <h2>Free</h2>
-        <p class="price">$0</p>
-        <p class="muted">The whole app, MIT licensed. Share links go to a bucket you own, such as Cloudflare R2, after a ten-minute setup.</p>
+        <h2>Reelbird</h2>
+        <p class="price">Free</p>
+        <p class="muted">The whole app, MIT licensed.</p>
+        <ul class="points">
+          {FREE_POINTS.map((p) => <li><Icon name="check" /><span set:html={p} /></li>)}
+        </ul>
         <div class="actions">
           <a class="btn btn-primary" href="/download/"><Icon name="download" />Download Reelbird</a>
-          <a class="link-arrow" href="/docs/sharing/">Sharing setup</a>
         </div>
       </div>
       <div class="plan" id="pro">
         <h2>Reelbird Pro</h2>
         <p class="price">{PRO.price}<span class="per"> a month</span></p>
-        <p class="muted">Reelbird hosts your links, with nothing to set up, and shows who watched and where they stopped. Cancel any time.</p>
+        <p class="muted">Everything in Reelbird, plus:</p>
+        <ul class="points">
+          {PRO_POINTS.map((p) => <li><Icon name="check" /><span set:html={p} /></li>)}
+        </ul>
         <div class="actions">
-          <a class="btn btn-ghost" href={PRO.upgradeURL}><Icon name="arrowRight" />Get Reelbird Pro</a>
-          <span class="muted small">Or in the app: Settings › Sharing › Reelbird Cloud.</span>
+          <a class="btn btn-ink" href={PRO.upgradeURL}>Get Reelbird Pro</a>
+          <span class="muted small">Cancel any time. Links you've shared keep playing.</span>
         </div>
       </div>
     </section>
 
+    <section class="block showcase" aria-labelledby="see-title">
+      <div class="showcase-text">
+        <h2 id="see-title">See who watched</h2>
+        <p class="muted">Every hosted link gets a page of its own. Views and unique viewers, how much people watched, the moment they stopped, and where they came from. No cookies, and your own plays don't count.</p>
+      </div>
+      <Shot src={statsLight} dark={statsDark} alt="A Reelbird Pro stats page: 64 views, 37 unique viewers, 57% watched on average, and a curve of viewers still watching across a five-minute video." sizes="(min-width: 72rem) 1100px, 100vw" variant="frame" class="stats-shot" />
+    </section>
+
     <section class="block" aria-labelledby="table-title">
-      <h2 id="table-title">Free and Pro, side by side</h2>
+      <h2 id="table-title">Side by side</h2>
       <div class="table-wrap">
         <table class="plan-table">
-          <caption class="sr-only">What Reelbird Free and Reelbird Pro include</caption>
-          <thead><tr><th scope="col"><span class="sr-only">Feature</span></th><th scope="col">Free</th><th scope="col">Pro, {PRO.price} a month</th></tr></thead>
+          <caption class="sr-only">What Reelbird and Reelbird Pro include</caption>
+          <thead><tr><th scope="col"><span class="sr-only">Feature</span></th><th scope="col">Reelbird, free</th><th scope="col">Reelbird Pro, {PRO.price} a month</th></tr></thead>
           <tbody>
             {PLAN_ROWS.map((r) => <tr><th scope="row">{r.k}</th><td>{r.free}</td><td>{r.pro}</td></tr>)}
           </tbody>
@@ -55,11 +71,11 @@ const description = `Reelbird is free: record, edit, export and share to your ow
     <section class="block steps" aria-labelledby="how-title">
       <h2 id="how-title">Getting Pro</h2>
       <ol>
-        <li>In Reelbird, open <strong>Settings › Sharing › Reelbird Cloud</strong> and choose <strong>Sign In</strong>.</li>
-        <li>Approve the code in your browser. Your account is your email address.</li>
-        <li><a href={PRO.upgradeURL}>Upgrade to Pro</a>. New shares then go to Reelbird's hosting, at <code>watch.reelbird.app/r/&lt;id&gt;/</code>.</li>
+        <li>In Reelbird, press <strong>Share</strong> on any recording and choose <strong>Get Reelbird Pro</strong>. Or open <strong>Settings › Sharing › Reelbird Pro</strong>.</li>
+        <li>Sign in with your email address and approve the code in your browser.</li>
+        <li>Pay with Stripe. Back in Reelbird, press <strong>Share</strong>: the link is hosted at <code>watch.reelbird.app</code>.</li>
       </ol>
-      <p class="muted">Manage or cancel on your <a href={PRO.accountURL}>account page</a>. Links keep playing after Pro ends.</p>
+      <p class="muted">Manage billing or cancel from <a href={PRO.accountURL}>your account</a>.</p>
     </section>
 
     <section class="block faqsec" aria-labelledby="pricing-faq">
@@ -70,18 +86,23 @@ const description = `Reelbird is free: record, edit, export and share to your ow
 </Base>
 
 <style>
-  .plans { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line); margin-bottom: 1rem; }
-  .plan { padding: 2rem 2rem 2.25rem 0; display: grid; align-content: start; gap: 0.75rem; scroll-margin-top: 5rem; }
-  .plan + .plan { padding-left: 2rem; border-left: 1px solid var(--line); }
+  .plans { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line); }
+  .plan { padding: 2rem 2.5rem 2.5rem 0; display: grid; align-content: start; gap: 0.75rem; scroll-margin-top: 5rem; }
+  .plan + .plan { padding-left: 2.5rem; padding-right: 0; border-left: 1px solid var(--line); }
   .plan h2 { font-size: var(--step-2); }
-  .price { font-family: var(--font-display); font-size: var(--step-3); font-weight: 520; line-height: 1; }
+  .price { font-family: var(--font-display); font-size: var(--step-3); font-weight: 520; line-height: 1; font-feature-settings: "lnum"; }
   .per { font-family: var(--font-sans); font-size: 1rem; font-weight: 400; color: var(--text-muted); }
-  .plan p.muted { max-width: 30rem; }
-  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; margin-top: 0.5rem; }
+  .points { list-style: none; padding: 0; display: grid; gap: 0.6rem; margin-top: 0.25rem; }
+  .points li { display: grid; grid-template-columns: 1.1rem 1fr; gap: 0.7rem; align-items: start; }
+  .points :global(svg) { width: 1.1rem; height: 1.1rem; margin-top: 0.3rem; color: var(--text-muted); }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; margin-top: 1rem; }
   .small { font-size: var(--step--1); }
   .block { padding-block: clamp(2.5rem, 2rem + 2vw, 4rem); border-top: 1px solid var(--line); }
   .plans + .block { border-top: 0; }
-  .block > h2 { font-size: var(--step-3); margin-bottom: 1.5rem; }
+  .block > h2, .showcase-text h2 { font-size: var(--step-3); margin-bottom: 1rem; }
+  .showcase-text { max-width: 40rem; margin-bottom: 2rem; }
+  .showcase-text p { font-size: var(--step-1); line-height: 1.5; }
+  .showcase :global(.stats-shot) { box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-frame); }
   .plan-table { min-width: 36rem; }
   .plan-table th[scope="row"] { color: var(--text); width: 24%; font-size: 0.95rem; }
   .plan-table td { width: 38%; color: var(--text-muted); }

@@ -262,7 +262,7 @@ public struct CloudAPI: Sendable {
     }
 
     func raw(_ method: String, _ path: String, body: (any Encodable & Sendable)? = nil) async throws -> Data {
-        guard let url = URL(string: server + path) else { throw Self.error(0, "BadServer", "The Reelbird Cloud address \(server) isn't valid.") }
+        guard let url = URL(string: server + path) else { throw Self.error(0, "BadServer", "The Reelbird Pro server address \(server) isn't valid.") }
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "accept")
@@ -276,13 +276,13 @@ public struct CloudAPI: Sendable {
             (data, resp) = try await Self.session.data(for: req)
         } catch let e as URLError {
             if e.code == .cancelled { throw CancellationError() }
-            throw Self.error(0, "Offline", "Can't reach Reelbird Cloud (\(e.localizedDescription)).")
+            throw Self.error(0, "Offline", "Can't reach Reelbird Pro (\(e.localizedDescription)).")
         }
         let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             struct Err: Decodable { var error: String; var message: String }
             if let e = try? JSONDecoder().decode(Err.self, from: data) { throw Self.error(status, e.error, e.message) }
-            throw Self.error(status, "HTTP\(status)", "Reelbird Cloud answered HTTP \(status).")
+            throw Self.error(status, "HTTP\(status)", "Reelbird Pro answered HTTP \(status).")
         }
         return data
     }
@@ -290,7 +290,7 @@ public struct CloudAPI: Sendable {
     func request<T: Decodable>(_ method: String, _ path: String, body: (any Encodable & Sendable)? = nil) async throws -> T {
         let data = try await raw(method, path, body: body)
         do { return try Self.decoder.decode(T.self, from: data) } catch {
-            throw Self.error(0, "BadResponse", "Reelbird Cloud sent a response this version of Reelbird doesn't understand.")
+            throw Self.error(0, "BadResponse", "Reelbird Pro sent a response this version of Reelbird doesn't understand.")
         }
     }
 
@@ -337,7 +337,7 @@ public final class CloudKeys: Sendable {
     /// A signer for requests touching `key` (an object key, or a listing prefix).
     func signer(for key: String) async throws -> SigV4Signer {
         guard let id = Self.shareID(in: key) else {
-            throw ShareError(status: 0, code: "NoShare", message: "Reelbird Cloud only writes inside a share's folder.", key: key)
+            throw ShareError(status: 0, code: "NoShare", message: "Reelbird Pro only writes inside a share's folder.", key: key)
         }
         if let c = cache.withLock({ $0[id] }), c.expires > Date().addingTimeInterval(300) { return c.signer }
         let task: Task<(SigV4Signer, Date), any Error> = inFlight.withLock { all in

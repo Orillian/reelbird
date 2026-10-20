@@ -184,12 +184,12 @@ struct SharingSettings: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if model.cloudAvailable {
                         PillTabs(selection: Binding(get: { model.target }, set: { model.choose($0) }), items: [
-                            .init(value: .cloud, title: "Reelbird Cloud", symbol: "cloud"),
+                            .init(value: .cloud, title: "Reelbird Pro", symbol: "cloud"),
                             .init(value: .bucket, title: "Your own bucket", symbol: "externaldrive"),
                         ])
                     }
                     Text(model.target == .cloud
-                         ? "With Reelbird Pro, Reelbird hosts your links. Nothing to set up: Share just works."
+                         ? "Reelbird hosts your links on watch.reelbird.app and shows who watched. Nothing to set up: Share just works."
                          : model.cloudAvailable
                             ? "Links upload to a storage bucket you own. Nothing goes through Reelbird's servers. Free forever."
                             : "Links upload to a storage bucket you own. Nothing goes through Reelbird's servers, because there aren't any.")
@@ -283,15 +283,15 @@ struct SharingSettings: View {
     private var proPitch: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Reelbird Pro · $5 a month").font(.system(size: 12, weight: .semibold))
-            Text("Unlimited hosted links, 100 GB of storage, and analytics that show who watched, where they stopped and where they came from.")
+            Text("Share from Reelbird with nothing to set up: unlimited links, 100 GB of video, and analytics that show who watched, where they stopped and where they came from. Cancel any time.")
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private func confirmSignOut() {
         let alert = NSAlert()
-        alert.messageText = "Sign out of Reelbird Cloud?"
-        alert.informativeText = "Your hosted links keep playing. To share to Reelbird Cloud again, sign back in."
+        alert.messageText = "Sign out of Reelbird Pro?"
+        alert.informativeText = "Your hosted links keep playing. To host new links again, sign back in."
         alert.addButton(withTitle: "Sign Out")
         alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn { model.signOut() }

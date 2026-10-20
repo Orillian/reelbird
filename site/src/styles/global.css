@@ -25,10 +25,8 @@
   --accent-text: light-dark(var(--coral-text), var(--coral));
   --focus: light-dark(var(--coral-text), var(--coral));
   --code-bg: light-dark(#fbefe2, #120e0c);
-  --shadow-frame: light-dark(
-    0 1px 0 rgb(26 21 18 / 0.04), 0 24px 60px -24px rgb(74 40 20 / 0.35), 0 8px 20px -12px rgb(74 40 20 / 0.18),
-    0 1px 0 rgb(0 0 0 / 0.2), 0 30px 80px -30px rgb(0 0 0 / 0.8), 0 0 0 1px rgb(255 244 232 / 0.06)
-  );
+  /* light-dark() only takes colours, so the dark shadow is swapped in below. */
+  --shadow-frame: 0 1px 0 rgb(26 21 18 / 0.04), 0 24px 60px -24px rgb(74 40 20 / 0.35), 0 8px 20px -12px rgb(74 40 20 / 0.18);
 
   /* Type. --font-display, --font-sans and --font-mono come from Astro's <Font> (astro.config.mjs). */
 
@@ -51,6 +49,10 @@
 
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --shadow-frame: 0 1px 0 rgb(0 0 0 / 0.2), 0 30px 80px -30px rgb(0 0 0 / 0.8), 0 0 0 1px rgb(255 244 232 / 0.06); }
+}
+:root[data-theme="dark"] { --shadow-frame: 0 1px 0 rgb(0 0 0 / 0.2), 0 30px 80px -30px rgb(0 0 0 / 0.8), 0 0 0 1px rgb(255 244 232 / 0.06); }
 
 /* Base */
 *, *::before, *::after { box-sizing: border-box; }

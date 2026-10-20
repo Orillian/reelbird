@@ -208,7 +208,7 @@ struct LiveEngine: Engine {
     private func configuredShare() throws -> (ShareDestination, String) {
         guard let d = ShareSettings.load() else {
             throw CLIError("Sharing isn't set up.", code: .unavailable,
-                           hint: "Run `reelbird cloud login` for Reelbird Cloud, or `reelbird config share --endpoint URL --bucket NAME --access-key ID --public-base URL --secret-stdin` for your own bucket.")
+                           hint: "Run `reelbird cloud login` for Reelbird Pro, or `reelbird config share --endpoint URL --bucket NAME --access-key ID --public-base URL --secret-stdin` for your own bucket.")
         }
         guard let secret = ShareSettings.secret() else {
             throw CLIError("The share secret access key is missing from the Keychain.", code: .unavailable,
