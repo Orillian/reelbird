@@ -315,6 +315,13 @@ test("open-source support tiers and other links grant nothing", async () => {
   expect(await plan(dan.token)).toBe("free");
 });
 
+test("a 100%-off code (no payment required) makes Pro even before the subscription event", async () => {
+  const fay = await appLogin("fay@example.com");
+  const ref = new URL((await call("/upgrade", { cookie: fay.cookie })).headers.get("location")!).searchParams.get("client_reference_id")!;
+  await stripeEvent("checkout.session.completed", checkout("cus_fay", "sub_fay", { client_reference_id: ref, payment_status: "no_payment_required", amount_total: 0 }));
+  expect(await plan(fay.token)).toBe("pro");
+});
+
 test("a payment made before signing up turns into Pro at sign-in", async () => {
   await stripeEvent("checkout.session.completed", checkout("cus_erin", "sub_erin", { customer_details: { email: "erin@example.com" } }));
   await stripeEvent("customer.subscription.created", sub("sub_erin", "cus_erin", "active"));

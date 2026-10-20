@@ -3,6 +3,19 @@ export interface Release { version: string; date: string; title: string; summary
 
 export const RELEASES: Release[] = [
   {
+    version: "0.2.0",
+    date: "2026-10-20",
+    title: "Share without setting up storage",
+    summary: "Reelbird Pro hosts your links for you, with analytics that show who watched. Recording, editing, exporting and sharing to your own bucket stay free.",
+    notes: [
+      "Reelbird Pro ($5 a month): sign in from Settings › Sharing and Share just works, with no bucket to set up.",
+      "See who watched: views, unique viewers, where people stopped and where they came from, in the Library and on the web.",
+      "Sharing to your own bucket is unchanged and free. Links you already shared keep working.",
+      "The Share panel offers both ways to get a link. Exports never carry a watermark.",
+      "Shared pages now say what Reelbird is: a free screen recorder for Mac.",
+    ],
+  },
+  {
     version: "0.1.2",
     date: "2026-10-19",
     title: "Any speed between 0.5× and 2×",

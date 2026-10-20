@@ -1,6 +1,6 @@
 # Sharing setup
 
-Reelbird has no server. Share links point at a storage bucket that you own. Reelbird uploads a small viewer page and the video to it, and anyone with the link can watch in a browser. Nothing goes through us.
+This page sets up sharing to a storage bucket that you own, which is free. If you'd rather not set one up, Reelbird Pro hosts your links for $5 a month: sign in under Settings › Sharing. Reelbird uploads a small viewer page and the video to it, and anyone with the link can watch in a browser. Nothing goes through us.
 
 Cloudflare R2 is the recommended host because it doesn't charge for downloads (egress), so a popular video costs the same as an unwatched one. Any S3-compatible service works too (see [Other S3-compatible services](#other-s3-compatible-services)).
 

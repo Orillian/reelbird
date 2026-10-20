@@ -8,7 +8,7 @@ export const FAQ: Faq[] = [
   {
     id: "free",
     q: "Is Reelbird free?",
-    a: "Yes. It's MIT licensed, with no paid tier, watermark or export limit. Sharing uses your own storage bucket; Cloudflare R2's free tier (10 GB, free egress) covers most people.",
+    a: "Yes. It's MIT licensed, with no watermark or export limit. Reelbird Pro ($5 a month) is optional: it hosts your share links so you don't need a bucket. Sharing uses your own storage bucket; Cloudflare R2's free tier (10 GB, free egress) covers most people.",
   },
   {
     id: "open-source",

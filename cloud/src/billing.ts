@@ -89,11 +89,11 @@ async function checkoutCompleted(session: Obj) {
   await sql`update users set stripe_customer_id = null where stripe_customer_id = ${session.customer} and id <> ${user.id}`;
   await sql`update users set stripe_customer_id = ${session.customer} where id = ${user.id}`;
   // The subscription event can arrive before or after this one. If it hasn't yet, count the paid
-  // checkout for now; the subscription event replaces it.
+  // checkout for now (a 100%-off code is paid too: "no_payment_required"); the subscription event replaces it.
   if (typeof session.subscription === "string") {
     await sql`
       insert into subscriptions (id, customer_id, product_id, status, amount, currency, interval)
-      values (${session.subscription}, ${session.customer}, ${billing.proProduct}, ${session.payment_status === "paid" ? "active" : "incomplete"},
+      values (${session.subscription}, ${session.customer}, ${billing.proProduct}, ${session.payment_status === "paid" || session.payment_status === "no_payment_required" ? "active" : "incomplete"},
               ${Number(session.amount_total ?? 0)}, ${session.currency ?? "usd"}, 'month')
       on conflict (id) do nothing`;
   }

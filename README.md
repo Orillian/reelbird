@@ -29,7 +29,7 @@
   <img src="brand/media/demo.gif" alt="Reelbird zooming in on a click, the link being copied, then zooming back out" width="800">
 </p>
 
-It's a native Swift app with no account, no telemetry and no Reelbird server: share links point at a storage bucket you own, such as Cloudflare R2. It includes a command-line tool and an MCP server, so coding agents can record and share demos too. You can download it, signed and notarised by Apple, or build it from source, on macOS 15 or later.
+It's a native Swift app with no account needed and no telemetry: share links point at a storage bucket you own, such as Cloudflare R2, or, if you'd rather not set one up, at Reelbird Pro's hosting ($5 a month, with viewer analytics). It includes a command-line tool and an MCP server, so coding agents can record and share demos too. You can download it, signed and notarised by Apple, or build it from source, on macOS 15 or later.
 
 **Why not just use Loom or Screen Studio?** Loom's free plan stops each video at 5 minutes and won't let you download it; Screen Studio costs $29 a month and gives you a link only after you export. Reelbird gives you the link when you stop and the auto-zoom polish later, under the same link, for free. [How it compares](#how-it-compares).
 
@@ -105,7 +105,7 @@ Checked 12 October 2026 on each vendor's own pages: [Loom pricing](https://www.l
 
 ## Download
 
-[**Download Reelbird 0.1.2**](https://github.com/btahir/reelbird/releases/latest/download/Reelbird-0.1.2.zip) for Apple silicon Macs on macOS 15 or later (7.1 MB).
+[**Download Reelbird 0.2.0**](https://github.com/btahir/reelbird/releases/latest/download/Reelbird-0.2.0.zip) for Apple silicon Macs on macOS 15 or later (7.4 MB).
 
 Unzip it, drag **Reelbird** to your Applications folder and open it. It's signed with an Apple Developer ID and notarised by Apple, so it opens like any other app, and macOS keeps your permissions across updates. The SHA-256 of each zip is listed on its [release page](https://github.com/btahir/reelbird/releases).
 
@@ -293,7 +293,7 @@ Recording through an agent needs Screen Recording permission for the app that ru
 
 ## Sharing
 
-Sharing is optional; recording, editing and exporting work without it. Reelbird has no server, so share links point at a storage bucket **you** own. When you share, Reelbird uploads a small viewer page and the video to `https://<your public URL>/r/<id>/`, signed with your own keys. Anyone with that link can watch in a browser, and the link never changes, even after **Update link**.
+Sharing is optional; recording, editing and exporting work without it, with no watermark. Share links point at a storage bucket **you** own, for free, or at Reelbird Pro ($5 a month): sign in under Settings › Sharing and Share works with nothing to set up, plus analytics on who watched. When you share, Reelbird uploads a small viewer page and the video to `https://<your public URL>/r/<id>/`, signed with your own keys. Anyone with that link can watch in a browser, and the link never changes, even after **Update link**.
 
 Cloudflare R2 is the recommended host: no download (egress) fees, and the free tier includes 10 GB of storage. Setup takes about ten minutes, once:
 

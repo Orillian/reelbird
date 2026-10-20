@@ -14,11 +14,11 @@ ${SITE_DESCRIPTION_LONG.replace(SITE_DESCRIPTION, "").trim()}
 
 ## Key facts
 
-- Licence: MIT, free, no paid tier, no watermark
+- Licence: MIT, free, no watermark; optional Reelbird Pro ($5/month) hosts share links with viewer analytics
 - Platform: macOS only. Runs on ${REQUIREMENTS.runs}. ${REQUIREMENTS.hardware}
 - Build requirement: ${REQUIREMENTS.tools} (${REQUIREMENTS.toolsDetail.replace(/\.$/, "")})
 - Install: git clone ${GITHUB_URL}.git && cd reelbird && make install (no signed download yet)
-- No account, no telemetry, no Reelbird server; share links point at your own S3-compatible bucket (Cloudflare R2 recommended)
+- No account needed, no telemetry; share links point at your own S3-compatible bucket (Cloudflare R2 recommended), or at Reelbird Pro hosting
 - Agents: reelbird CLI (--json) and an MCP server (reelbird mcp) for Claude Code, Codex and Cursor
 - Repository: ${GITHUB_URL}
 - Website: ${SITE_URL}/

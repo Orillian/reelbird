@@ -40,20 +40,19 @@ public struct CloudAccount: Codable, Hashable, Sendable {
 public enum CloudSettings {
     public static let keychainService = "app.reelbird.cloud"
 
-    /// Set to true when the hosted service is live. Until then Reelbird Cloud is hidden everywhere,
-    /// except with `REELBIRD_CLOUD_URL` set (development against a local server).
-    public static let launched = false
+    /// The hosted service is live (watch.reelbird.app). With this false Reelbird Cloud is hidden
+    /// everywhere, except with `REELBIRD_CLOUD_URL` set (development against a local server).
+    public static let launched = true
 
     /// Whether to show Reelbird Cloud at all.
     public static var isAvailable: Bool {
         launched || ProcessInfo.processInfo.environment["REELBIRD_CLOUD_URL"]?.isEmpty == false
     }
 
-    /// The server the app signs in to. `REELBIRD_CLOUD_URL` overrides it.
-    /// TODO(launch): https://watch.reelbird.app once the hosted service is live.
+    /// The server the app signs in to. `REELBIRD_CLOUD_URL` overrides it (e.g. http://localhost:8788).
     public static var defaultServer: String {
         let env = ProcessInfo.processInfo.environment["REELBIRD_CLOUD_URL"]?.trimmingCharacters(in: .whitespaces)
-        return normalizedServer(env?.isEmpty == false ? env! : "http://localhost:8788")
+        return normalizedServer(env?.isEmpty == false ? env! : "https://watch.reelbird.app")
     }
 
     public static func normalizedServer(_ s: String) -> String {
@@ -78,14 +77,18 @@ public enum CloudSettings {
         return a
     }
 
+    /// The account token: `REELBIRD_CLOUD_TOKEN` (scripts, CI, agents) or the Keychain item.
     public static func token(for server: String) -> String? {
-        Keychain.get(service: keychainService, account: server)
+        if let t = ProcessInfo.processInfo.environment["REELBIRD_CLOUD_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty {
+            return t
+        }
+        return Keychain.get(service: keychainService, account: server)
     }
 
     public static func save(_ account: CloudAccount, token: String? = nil) throws {
         try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONCoding.writeAtomically(account, to: fileURL)
-        if let token {
+        if let token, ProcessInfo.processInfo.environment["REELBIRD_CLOUD_TOKEN"] == nil {
             try Keychain.deleteAll(service: keychainService)
             try Keychain.set(token, service: keychainService, account: account.server)
         }

@@ -62,7 +62,7 @@ bun test        # end to end against the dev bucket and reelbird_cloud_test
 
 ## Before launch
 
-- **Launch switches.** Reelbird Cloud is hidden in released builds until these are flipped. `CloudSettings.launched` (`Sources/ReelbirdShare/Cloud.swift`) controls the app and CLI; with it off, setting `REELBIRD_CLOUD_URL` still shows Cloud for development. `PRO.launched` (`site/src/config/site.ts`) adds the Pro section to /support. Flip both only once the server is live.
+- **Launch switches.** `CloudSettings.launched` (`Sources/ReelbirdShare/Cloud.swift`) shows Reelbird Cloud in the app and CLI; it is on since the server went live at `https://watch.reelbird.app`. `PRO.launched` (`site/src/config/site.ts`) adds the Pro section to /support.
 
 - **R2 key.** Replace the dev key with an R2 token limited to the hosted bucket (Object Read & Write). The temporary keys can never exceed their parent key's access.
 - **Email** is done: links are sent from `reelbird@shiptiffin.com` through the box's SendGrid relay, with no key of our own. A `hello@reelbird.app` sender later is one `tiffin email sending-domain set reelbird --domain reelbird.app` plus the DNS records it lists.

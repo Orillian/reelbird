@@ -1,6 +1,6 @@
 # Architecture
 
-Reelbird is a native macOS app (Swift 6, SwiftUI + AppKit, Metal) with a command line tool that shares the same engine. It has no server and no third-party Swift dependencies.
+Reelbird is a native macOS app (Swift 6, SwiftUI + AppKit, Metal) with a command line tool that shares the same engine. It needs no server and has no third-party Swift dependencies. The optional Reelbird Pro hosting is a separate small server in `cloud/` (Bun, Postgres, R2).
 
 ```
 ReelbirdCore     project format, edit document, events, timeline + motion maths (pure Swift)

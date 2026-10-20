@@ -10,8 +10,8 @@ export const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues`;
 export const GITHUB_RELEASES_URL = `${GITHUB_URL}/releases`;
 export const LICENSE_NAME = "MIT";
 
-export const APP_VERSION = "0.1.2";
-export const RELEASE_DATE = "2026-10-19";
+export const APP_VERSION = "0.2.0";
+export const RELEASE_DATE = "2026-10-20";
 export const MIN_MACOS = "macOS 15";
 
 /** What it takes to build and run Reelbird. Say it the same way everywhere. */
@@ -27,7 +27,7 @@ export const SITE_DESCRIPTION =
   "Reelbird is a free, open-source screen recorder for macOS that copies a share link the moment you stop recording, then lets you polish the same take with auto-zoom, a smooth cursor and captions without changing the link.";
 
 /** The canonical three-sentence description (homepage intro, llms.txt, directories). */
-export const SITE_DESCRIPTION_LONG = `${SITE_DESCRIPTION} It is a native Swift app with no account, no telemetry and no Reelbird server: share links point at a storage bucket you own, such as Cloudflare R2. It includes a command-line tool and an MCP server so coding agents can record and share demos, and you can download it, signed and notarised by Apple, or build it from source, on macOS 15 or later.`;
+export const SITE_DESCRIPTION_LONG = `${SITE_DESCRIPTION} It is a native Swift app with no account needed and no telemetry: share links point at a storage bucket you own, such as Cloudflare R2. It includes a command-line tool and an MCP server so coding agents can record and share demos, and you can download it, signed and notarised by Apple, or build it from source, on macOS 15 or later.`;
 
 export const SITE_TAGLINE = "Record. Get a link. Polish it later.";
 
@@ -59,15 +59,15 @@ export const PREBUILT = {
   url: `${GITHUB_RELEASES_URL}/download/v${APP_VERSION}/Reelbird-${APP_VERSION}.zip`,
   label: `Download Reelbird ${APP_VERSION} (.zip)`,
   note: "For Apple silicon Macs on macOS 15 or later. Signed and notarised by Apple, so it opens like any other app.",
-  sha256: "36e0d1c8855301ee55882896470be768c3a0fb762e604144d354bff701851422",
+  sha256: "392c32a34c79cb765944b4bc0ec84a994d25a70deed1840f8a2e2461fe27adee",
 };
 
 /**
- * Reelbird Pro: optional hosted share links with view analytics. Keep `launched` false until the
- * hosted service is live; the /support page leads with Pro only when it's true.
+ * Reelbird Pro: optional hosted share links with view analytics. `launched` (on since 0.2.0) shows it on the
+ * /support page, which then leads with Pro.
  */
 export const PRO = {
-  launched: false,
+  launched: true,
   price: "$5",
   upgradeURL: "https://watch.reelbird.app/upgrade",
 } as const;
