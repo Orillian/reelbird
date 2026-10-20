@@ -41,7 +41,7 @@ struct QuickShareState: Equatable {
         switch link {
         case .live: "Copy the link again"
         case .share: "Upload this recording and get a link"
-        case .setUp: "Set up sharing to your own bucket"
+        case .setUp: "Get a link: Reelbird Pro hosts it for you, or use your own bucket for free"
         }
     }
 

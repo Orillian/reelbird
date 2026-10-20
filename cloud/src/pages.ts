@@ -162,13 +162,13 @@ export function accountPage(
     ? `<form method="post" action="/dev/plan" style="margin:0"><input type="hidden" name="plan" value="${pro ? "free" : "pro"}"><button class="btn small" type="submit">Dev: ${pro ? "end Pro" : "start Pro"}</button></form>`
     : "";
   return layout("Your links · Reelbird Cloud", `
-<div class="row"><div><h1>Your links</h1><p class="muted" style="margin:0">${esc(user.email)} <span class="pill${pro ? " pro" : ""}">${pro ? "Pro" : "No plan"}</span></p></div><div class="row">${planAction}${devPlan}</div></div>${welcome}
+<div class="row"><div><h1>Your links</h1><p class="muted" style="margin:0">${esc(user.email)}</p></div><div class="row">${planAction}${devPlan}</div></div>${welcome}
 ${pro ? `<div class="grid2">
 <div class="card"><h2>Links</h2><b style="font-size:22px">${linksLine}</b><p class="faint" style="margin:4px 0 0">Unlimited on Pro</p></div>
 <div class="card"><h2>Storage</h2><b style="font-size:22px">${fmtBytes(usage.storageBytes)}</b><span class="faint"> of ${fmtBytes(lim.storageBytes)}</span><div class="meter"><i style="width:${pct.toFixed(1)}%"></i></div></div>
 </div>` : `<div class="card" style="margin-top:16px"><h2>Reelbird Pro · $5/month</h2>
 <p style="margin:0 0 4px">Share without setting anything up: unlimited hosted links, 100 GB of storage, and analytics that show who watched, where they stopped and where they came from.</p>
-<p class="faint" style="margin:0">Sharing to your own bucket stays free.${usage.activeLinks ? " Your existing links keep playing." : ""}</p></div>`}
+<p class="faint" style="margin:0">Recording, editing, exporting and sharing to your own bucket are free, with no watermark.${usage.activeLinks ? " Your existing links keep playing." : ""}</p></div>`}
 <div class="card" style="margin-top:16px;padding-bottom:10px"><table><thead><tr><th>Recording</th><th class="num">Views</th><th class="num hide">Size</th><th class="hide">Created</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`, { user });
 }
 

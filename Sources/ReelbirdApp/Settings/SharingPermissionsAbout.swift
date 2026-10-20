@@ -192,12 +192,7 @@ struct SharingSettings: View {
     @ViewBuilder private var cloudSections: some View {
         if let c = model.cloud {
             Section("Account") {
-                LabeledContent("Signed in as") {
-                    HStack(spacing: 6) {
-                        Text(c.email)
-                        PlanBadge(pro: c.isPro)
-                    }
-                }
+                LabeledContent("Signed in as") { Text(c.email) }
                 if c.isPro {
                     if let used = c.linksUsed {
                         LabeledContent("Links") { Text("\(used)").monospacedDigit() }
@@ -220,7 +215,7 @@ struct SharingSettings: View {
             Section {
                 HStack(spacing: Theme.Space.s) {
                     if c.isPro && !c.enabled { StatusLine(tone: .info, text: "New links go to your own bucket.") }
-                    if !c.isPro { StatusLine(tone: .info, text: "Hosted links need Pro. Your own bucket stays free.") }
+                    if !c.isPro { StatusLine(tone: .info, text: "Recording, editing and exporting are free. Pro is only for hosted links.") }
                     Spacer()
                     Button("Sign Out…") { confirmSignOut() }
                     if c.isPro {
@@ -364,18 +359,6 @@ struct SharingSettings: View {
             Text("\(n)").font(.system(size: 11, weight: .semibold).monospacedDigit()).foregroundStyle(.secondary).frame(width: 12)
             Text(text).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
-    }
-}
-
-/// "Pro" or "Free" next to the account email.
-struct PlanBadge: View {
-    let pro: Bool
-    var body: some View {
-        Text(pro ? "Pro" : "No plan")
-            .font(.system(size: 10.5, weight: .semibold))
-            .padding(.horizontal, 7).padding(.vertical, 2)
-            .foregroundStyle(pro ? Theme.accentText : .secondary)
-            .background(Capsule().fill(pro ? Theme.accent.opacity(0.16) : Theme.fieldFill))
     }
 }
 
