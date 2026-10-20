@@ -1,7 +1,15 @@
 /** Release notes. /changelog and /changelog/rss.xml read this. Newest first. */
 export interface Release { version: string; date: string; title: string; summary: string; notes: string[] }
 
-export const RELEASES: Release[] = [
+import { APP_VERSION } from "../config/site";
+
+const newer = (a: string, b: string) => {
+  const [x, y] = [a, b].map((v) => v.split(".").map(Number));
+  for (let i = 0; i < 3; i++) if ((x![i] ?? 0) !== (y![i] ?? 0)) return (x![i] ?? 0) > (y![i] ?? 0);
+  return false;
+};
+
+const ALL: Release[] = [
   {
     version: "0.2.2",
     date: "2026-10-20",
@@ -86,3 +94,6 @@ export const RELEASES: Release[] = [
     ],
   },
 ];
+
+/** Releases up to the one the site offers (APP_VERSION): notes for a version wait until it can be downloaded. */
+export const RELEASES = ALL.filter((r) => !newer(r.version, APP_VERSION));
