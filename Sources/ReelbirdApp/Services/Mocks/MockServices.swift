@@ -391,7 +391,7 @@ final class MockShare: ShareServiceProtocol, @unchecked Sendable {
             throw ShareTestError("Uploads work, but the public URL must start with https:// so viewers can open links.")
         }
     }
-    func publish(bundle: ProjectBundle, video: URL?, poster: CGImage?, captions: URL?, destination: ShareDestination,
+    func publish(bundle: ProjectBundle, video: URL?, poster: ShareAsset<CGImage>, captions: ShareAsset<URL>, destination: ShareDestination,
                  secret: String, progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo {
         for i in 1...25 { try await Task.sleep(for: .milliseconds(50)); progress(Double(i) / 25) }
         let existing = (try? bundle.readManifest())?.share

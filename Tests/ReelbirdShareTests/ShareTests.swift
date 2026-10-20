@@ -319,10 +319,11 @@ actor Media {
         try "WEBVTT\n\n00:00.000 --> 00:01.500\nHello there\n".write(to: vtt, atomically: true, encoding: .utf8)
 
         let progress = ProgressLog()
-        let info = try await ShareService.publish(bundle: bundle, video: video, poster: nil, captions: vtt,
+        let info = try await ShareService.publish(bundle: bundle, video: video, poster: .keep, captions: .replace(vtt),
                                                   destination: server.destination(), secret: server.secret,
                                                   session: nil) { p in Task { await progress.add(p) } }
         #expect(info.polished)
+        #expect(info.revision == 1)
         let layout = try #require(ShareLayout(info: info, destination: server.destination()))
         let m1 = try TestSupport.meta(server, layout)
         #expect(m1.video == "video.1.mp4")
@@ -347,51 +348,234 @@ actor Media {
         #expect((resp as? HTTPURLResponse)?.statusCode == 206)
         #expect(part.count == 100)
 
-        // Update in place: same link, new revision, old assets cleaned up.
+        // Update in place with the captions removed: same link, new revision, and nothing of the
+        // previous revision stays public (removed captions included).
         var manifest = try bundle.readManifest()
         manifest.share = info
         try bundle.writeManifest(manifest)
         edit.title = "Quarterly walkthrough (final)"
         try bundle.writeEdit(edit)
-        let info2 = try await ShareService.publish(bundle: bundle, video: video, poster: nil, captions: nil,
+        let info2 = try await ShareService.publish(bundle: bundle, video: video, poster: .keep, captions: .remove,
                                                    destination: server.destination(), secret: server.secret,
                                                    session: nil) { _ in }
         #expect(info2.url == info.url && info2.key == info.key)
+        #expect(info2.revision == 2)
         let m2 = try TestSupport.meta(server, layout)
         #expect(m2.revision == 2)
         #expect(m2.title == "Quarterly walkthrough (final)")
         #expect(m2.video == "video.2.mp4")
-        #expect(m2.captions == "captions.1.vtt")   // kept: not replaced
+        #expect(m2.poster == "poster.2.jpg")
+        #expect(m2.captions == nil && m2.captionsLanguage == nil)
         #expect(server.object(layout.key("video.1.mp4")) == nil)
         #expect(server.object(layout.key("poster.1.jpg")) == nil)
+        #expect(server.object(layout.key("captions.1.vtt")) == nil)
         #expect(server.object(layout.key("video.2.mp4")) != nil)
         #expect(m2.createdAt == m1.createdAt)
+        let page2 = String(decoding: try #require(server.object(layout.pageKeys[0])).data, as: UTF8.self)
+        #expect(!page2.contains("captions.1.vtt") && !page2.contains("video.1.mp4"))
+
+        // A title-only update keeps the files it doesn't replace.
+        manifest.share = info2
+        try bundle.writeManifest(manifest)
+        let info3 = try await ShareService.publish(bundle: bundle, video: nil, poster: .keep, captions: .keep,
+                                                   destination: server.destination(), secret: server.secret,
+                                                   session: nil) { _ in }
+        let m3 = try TestSupport.meta(server, layout)
+        #expect(info3.revision == 3 && m3.revision == 3)
+        #expect(m3.video == "video.2.mp4" && m3.poster == "poster.2.jpg")
+        #expect(server.object(layout.key("video.2.mp4")) != nil && server.object(layout.key("poster.2.jpg")) != nil)
 
         bundle = ProjectBundle(url: bundle.url)
-        try await ShareService.unpublish(info2, destination: server.destination(), secret: server.secret)
+        try await ShareService.unpublish(info3, destination: server.destination(), secret: server.secret)
         #expect(server.keys(prefix: info.key).isEmpty)
     }
 
-    @Test func publishAfterLiveKeepsTheStreamAndAddsTheMP4() async throws {
+    /// The polished MP4 replaces the stream recorded live: its playlist and segments (which may show
+    /// what the edit blurred or cut) are deleted, and the page no longer mentions them.
+    @Test func publishAfterLiveReplacesTheStreamWithTheMP4() async throws {
         let server = try TestSupport.server()
         defer { server.stop() }
         let stream = try await Media.shared.cmaf()
         let up = TestSupport.uploader(server, journal: try TestSupport.tempDir("journal"))
         let info = try await up.begin(recordingID: "rec", title: "Live then polished")
+        #expect(info.revision == 0)
         await up.initSegment(stream.initSegment)
         for (i, s) in stream.segments.enumerated() { await up.mediaSegment(index: i + 1, data: s.data, duration: s.duration) }
         await up.finish(totalDuration: stream.totalDuration, timeout: 15)
+        let layout = try #require(ShareLayout(info: info, destination: server.destination()))
+        #expect(server.object(layout.segmentKey(1)) != nil)
 
         let bundle = try TestSupport.bundle(in: try TestSupport.tempDir("p"), share: info)
-        let out = try await ShareService.publish(bundle: bundle, video: try await Media.shared.polished(), poster: nil,
-                                                 captions: nil, destination: server.destination(), secret: server.secret,
+        let out = try await ShareService.publish(bundle: bundle, video: try await Media.shared.polished(), poster: .keep,
+                                                 captions: .keep, destination: server.destination(), secret: server.secret,
                                                  session: nil) { _ in }
         #expect(out.url == info.url)
-        let layout = try #require(ShareLayout(info: info, destination: server.destination()))
+        #expect(out.revision == 1)
         let m = try TestSupport.meta(server, layout)
-        #expect(m.hls == "hls/index.m3u8")
+        #expect(m.hls == nil)
         #expect(m.video == "video.1.mp4")
-        #expect(server.object(layout.segmentKey(1)) != nil)
+        #expect(server.keys(prefix: layout.folder + "hls/").isEmpty)
+        let page = String(decoding: try #require(server.object(layout.pageKeys[0])).data, as: UTF8.self)
+        #expect(!page.contains("index.m3u8"))
+    }
+
+    /// Without listing (keys scoped to objects), the playlist names the segments to delete.
+    @Test func streamIsRemovedWithoutListing() async throws {
+        let server = try TestSupport.server()
+        defer { server.stop() }
+        let stream = try await Media.shared.cmaf()
+        let up = TestSupport.uploader(server, journal: try TestSupport.tempDir("journal"))
+        let info = try await up.begin(recordingID: "rec", title: "No listing")
+        await up.initSegment(stream.initSegment)
+        for (i, s) in stream.segments.enumerated() { await up.mediaSegment(index: i + 1, data: s.data, duration: s.duration) }
+        await up.finish(totalDuration: stream.totalDuration, timeout: 15)
+        let layout = try #require(ShareLayout(info: info, destination: server.destination()))
+
+        server.listingAllowed = false
+        let bundle = try TestSupport.bundle(in: try TestSupport.tempDir("p"), share: info)
+        _ = try await ShareService.publish(bundle: bundle, video: try await Media.shared.polished(), poster: .keep,
+                                           captions: .keep, destination: server.destination(), secret: server.secret,
+                                           session: nil) { _ in }
+        #expect(try TestSupport.meta(server, layout).hls == nil)
+        #expect(server.keys(prefix: layout.folder + "hls/").isEmpty)
+    }
+
+    /// Cleanup runs only once the new meta.json is live, and a failed delete is retried by the next publish.
+    @Test func failedCleanupNeverBreaksTheLinkAndIsRetried() async throws {
+        let server = try TestSupport.server()
+        defer { server.stop() }
+        let dir = try TestSupport.tempDir("cleanup")
+        let video = try await Media.shared.polished()
+        let bundle = try TestSupport.bundle(in: dir, duration: 3)
+        let vtt = dir.appendingPathComponent("captions.vtt")
+        try "WEBVTT\n\n00:00.000 --> 00:01.500\nSecret project name\n".write(to: vtt, atomically: true, encoding: .utf8)
+        func publish(_ captions: ShareAsset<URL>) async throws -> ShareInfo {
+            let info = try await ShareService.publish(bundle: bundle, video: video, poster: .keep, captions: captions,
+                                                      destination: server.destination(), secret: server.secret,
+                                                      session: nil) { _ in }
+            var m = try bundle.readManifest()
+            m.share = info
+            try bundle.writeManifest(m)
+            return info
+        }
+        let info = try await publish(.replace(vtt))
+        let layout = try #require(ShareLayout(info: info, destination: server.destination()))
+
+        server.fail(layout.key("captions.1.vtt"), count: 1, status: 403)
+        _ = try await publish(.remove)
+        let m2 = try TestSupport.meta(server, layout)
+        #expect(m2.revision == 2 && m2.captions == nil)
+        #expect(server.object(layout.key("captions.1.vtt")) != nil, "the injected failure kept it")
+        for name in [m2.video, m2.poster].compactMap({ $0 }) { #expect(server.object(layout.key(name)) != nil) }
+
+        _ = try await publish(.remove)
+        #expect(server.object(layout.key("captions.1.vtt")) == nil)
+        #expect(server.object(layout.key("video.2.mp4")) == nil)
+        #expect(try TestSupport.meta(server, layout).video == "video.3.mp4")
+    }
+
+    /// Stopping waits only briefly for the live upload, so its finalize can still be pending when the
+    /// edit is published. The publish stops it first: meta.json keeps pointing at the edit, the stream stays gone.
+    @Test func delayedLiveFinalizeNeverOverwritesAnEditPublish() async throws {
+        let server = try TestSupport.server()
+        defer { server.stop() }
+        let stream = try await Media.shared.cmaf()
+        let journal = try TestSupport.tempDir("journal")
+        let up = TestSupport.uploader(server, journal: journal)
+        let info = try await up.begin(recordingID: "rec", title: "Stopped, then edited")
+        let layout = try #require(ShareLayout(info: info, destination: server.destination()))
+        server.delay(layout.segmentKey(stream.segments.count), seconds: 4)
+        await up.initSegment(stream.initSegment)
+        for (i, s) in stream.segments.enumerated() { await up.mediaSegment(index: i + 1, data: s.data, duration: s.duration) }
+        await up.finish(totalDuration: stream.totalDuration, timeout: 0.3)   // returns with the upload unfinished
+        #expect(await up.backlog > 0)
+
+        // Only the upload already in flight stays held up; the publish doesn't wait for it.
+        server.delay(layout.segmentKey(stream.segments.count), seconds: 0)
+        let bundle = try TestSupport.bundle(in: try TestSupport.tempDir("p"), share: info)
+        let t0 = Date()
+        let out = try await ShareService.publish(bundle: bundle, video: try await Media.shared.polished(), poster: .keep,
+                                                 captions: .remove, destination: server.destination(), secret: server.secret,
+                                                 session: nil) { _ in }
+        #expect(Date().timeIntervalSince(t0) < 3)
+        _ = await up.waitUntilUploaded()
+        try await Task.sleep(nanoseconds: 4_500_000_000)   // past the held-up segment
+        let m = try TestSupport.meta(server, layout)
+        #expect(m.revision == out.revision && m.revision == 1)
+        #expect(m.video == "video.1.mp4" && m.hls == nil && m.status == .ready)
+        #expect(server.keys(prefix: layout.folder + "hls/").isEmpty)
+        let page = String(decoding: try #require(server.object(layout.pageKeys[0])).data, as: UTF8.self)
+        #expect(page.contains("video.1.mp4"))
+        #expect(!FileManager.default.fileExists(atPath: journal.appendingPathComponent("\(layout.id).json").path))
+    }
+
+    /// The same race with a writer this process can't stop (the CLI, another Mac): the live finalize
+    /// reads meta.json back, finds a newer revision and gives way, deleting its stream.
+    @Test func liveFinalizeGivesWayToANewerRevisionInTheBucket() async throws {
+        let server = try TestSupport.server()
+        defer { server.stop() }
+        let stream = try await Media.shared.cmaf()
+        let journal = try TestSupport.tempDir("journal")
+        let up = TestSupport.uploader(server, journal: journal)
+        let info = try await up.begin(recordingID: "rec", title: "Edited elsewhere")
+        let layout = try #require(ShareLayout(info: info, destination: server.destination()))
+        server.delay(layout.segmentKey(stream.segments.count), seconds: 2)
+        await up.initSegment(stream.initSegment)
+        for (i, s) in stream.segments.enumerated() { await up.mediaSegment(index: i + 1, data: s.data, duration: s.duration) }
+        await up.finish(totalDuration: stream.totalDuration, timeout: 0.3)
+
+        var newer = try TestSupport.meta(server, layout)
+        newer.revision = 4
+        newer.video = "video.4.mp4"
+        newer.hls = nil
+        newer.status = .ready
+        server.put(layout.metaKey, newer.jsonData, contentType: "application/json")
+
+        #expect(await up.waitUntilUploaded())
+        #expect(try TestSupport.meta(server, layout) == newer)
+        #expect(server.keys(prefix: layout.folder + "hls/").isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: journal.appendingPathComponent("\(layout.id).json").path))
+    }
+
+    /// After a restart: the live upload was cut short and the edit published meanwhile. Resume finds the
+    /// newer revision in the bucket (even when the project's record is older) and gives way.
+    @Test func resumeGivesWayToAPublishMadeMeanwhile() async throws {
+        let server = try TestSupport.server()
+        defer { server.stop() }
+        let stream = try await Media.shared.cmaf()
+        let dir = try TestSupport.tempDir("resume-newer")
+        let journal = dir.appendingPathComponent("journal")
+        let up = TestSupport.uploader(server, journal: journal)
+        let info = try await up.begin(recordingID: "rec", title: "Crashed, then edited")
+        let layout = try #require(ShareLayout(info: info, destination: server.destination()))
+        await up.initSegment(stream.initSegment)
+        await up.mediaSegment(index: 1, data: stream.segments[0].data, duration: stream.segments[0].duration)
+        _ = try await TestSupport.waitUntil(5) { server.object(layout.playlistKey) != nil }
+        await up.simulateCrash()
+        let journalFile = journal.appendingPathComponent("\(layout.id).json")
+        #expect(FileManager.default.fileExists(atPath: journalFile.path))
+
+        let bundle = try TestSupport.bundle(in: dir, share: info)
+        let shareDir = bundle.directory(for: .share)
+        try FileManager.default.createDirectory(at: shareDir, withIntermediateDirectories: true)
+        try stream.initSegment.write(to: shareDir.appendingPathComponent("init.mp4"))
+        for (i, s) in stream.segments.enumerated() {
+            try s.data.write(to: shareDir.appendingPathComponent(String(format: "seg_%05d.m4s", i + 1)))
+        }
+        let published = try await ShareService.publish(bundle: bundle, video: try await Media.shared.polished(), poster: .keep,
+                                                       captions: .remove, destination: server.destination(), secret: server.secret,
+                                                       session: nil) { _ in }
+        let before = try TestSupport.meta(server, layout)
+        #expect(before.revision == published.revision)
+        // A stray segment that landed after the publish goes too.
+        server.put(layout.segmentKey(2), stream.segments[1].data)
+
+        // The project's record still says revision 0: the bucket's meta.json is what stops the resume.
+        let again = TestSupport.uploader(server, journal: journal)
+        #expect(try await again.resumeIfNeeded(bundle: bundle) == nil)
+        #expect(try TestSupport.meta(server, layout) == before)
+        #expect(server.keys(prefix: layout.folder + "hls/").isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: journalFile.path))
     }
 
     @Test func testConnectionReportsWhatToFix() async throws {

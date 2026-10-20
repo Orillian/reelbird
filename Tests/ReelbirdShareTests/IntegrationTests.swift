@@ -101,7 +101,7 @@ enum Integration {
         try await Synthetic.mp4(opts, to: mp4)
         let vtt = dir.appendingPathComponent("captions.vtt")
         try Integration.captions.write(to: vtt, atomically: true, encoding: .utf8)
-        let polished = try await ShareService.publish(bundle: bundle, video: mp4, poster: nil, captions: vtt,
+        let polished = try await ShareService.publish(bundle: bundle, video: mp4, poster: .keep, captions: .replace(vtt),
                                                       destination: dest, secret: secret) { _ in }
         #expect(polished.url == info.url)
         let (md, _) = try await TestSupport.fetch(layout.baseURL + "meta.json?t=\(Date().timeIntervalSince1970)")
@@ -142,7 +142,7 @@ enum Integration {
         try await Synthetic.mp4(opts, to: mp4)
         let vtt = dir.appendingPathComponent("captions.vtt")
         try Integration.captions.write(to: vtt, atomically: true, encoding: .utf8)
-        _ = try await ShareService.publish(bundle: b1, video: mp4, poster: nil, captions: vtt, destination: dest,
+        _ = try await ShareService.publish(bundle: b1, video: mp4, poster: .keep, captions: .replace(vtt), destination: dest,
                                            secret: server.secret) { _ in }
         lines.append("polished \(info1.url)")
 

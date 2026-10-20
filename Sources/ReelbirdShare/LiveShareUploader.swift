@@ -12,6 +12,10 @@ import Synchronization
 /// share ready. A small journal in `~/Library/Application Support/Reelbird/uploads/<id>.json`
 /// lets `resumeIfNeeded(bundle:)` finish an interrupted upload after relaunch, from the
 /// segments the recorder kept in the bundle's `share/` folder.
+///
+/// The live stream is revision 0 of the share. Once a publish (Update Link) is live, it owns the
+/// link: this uploader never writes `meta.json` or the page over a higher revision, and deletes its
+/// stream instead of finishing it when that revision plays a polished MP4.
 public final class LiveShareUploader: ShareSegmentSink {
     public let destination: ShareDestination
     let state: UploadState
@@ -67,6 +71,22 @@ public final class LiveShareUploader: ShareSegmentSink {
     @discardableResult
     public func resumeIfNeeded(bundle: ProjectBundle) async throws -> ShareInfo? {
         try await state.resume(bundle: bundle)
+    }
+}
+
+/// Live uploads running in this process, by share key, so a publish can stop the share's upload
+/// before it writes (the check against the bucket's meta.json alone leaves a moment between read and write).
+enum LiveUploads {
+    private static let running = Mutex<[String: UploadState]>([:])
+
+    static func add(_ key: String, _ s: UploadState) { running.withLock { $0[key] = s } }
+    static func remove(_ key: String, _ s: UploadState) { running.withLock { if $0[key] === s { $0[key] = nil } } }
+
+    /// Stops the share's live upload, if one is running here, and waits until none of its requests is in flight.
+    static func retire(_ key: String) async -> UploadState? {
+        guard let s = running.withLock({ $0.removeValue(forKey: key) }) else { return nil }
+        await s.retire()
+        return s
     }
 }
 
@@ -139,7 +159,8 @@ actor UploadState {
 
     var info: ShareInfo? {
         guard let layout else { return nil }
-        return ShareInfo(key: layout.key, url: layout.pageURL, polished: false, updatedAt: meta?.updatedAt ?? Date())
+        return ShareInfo(key: layout.key, url: layout.pageURL, polished: false, updatedAt: meta?.updatedAt ?? Date(),
+                         revision: meta?.revision ?? 0)
     }
 
     var backlog: Int { tasks.count + pending.count + (initData != nil && !initUploaded ? 1 : 0) }
@@ -164,6 +185,7 @@ actor UploadState {
         meta = m
         journal = UploadJournal(id: id, recordingID: recordingID, title: m.title, createdAt: now, bucket: destination.bucket)
         saveJournal()
+        LiveUploads.add(l.key, self)
 
         // Wait a few seconds for the placeholder page; a slow or black-holed network must not hold
         // the link (and the segments queued behind it) for minutes of request timeouts.
@@ -173,6 +195,7 @@ actor UploadState {
             pagesUploaded = true
         case .failure(let e as ShareError)? where !e.isTransient:
             discardJournal()
+            LiveUploads.remove(l.key, self)
             layout = nil
             throw e
         case .failure(let error)?:
@@ -184,7 +207,7 @@ actor UploadState {
             placeholderAttempt = attempt
             placeholderTask = Task { await self.finishSlowPlaceholder(attempt) }
         }
-        return ShareInfo(key: l.key, url: l.pageURL, polished: false, updatedAt: now)
+        return ShareInfo(key: l.key, url: l.pageURL, polished: false, updatedAt: now, revision: m.revision)
     }
 
     /// Seconds `begin` waits for the placeholder page before returning the link anyway.
@@ -240,6 +263,7 @@ actor UploadState {
         // so without the check the loop would spin on the actor until the share completed.
         while !cancelled && !pagesUploaded && !completed && !Task.isCancelled {
             guard let m = meta, let l = layout else { return }
+            if await isSuperseded() { return }
             do {
                 try await uploadPlaceholder(m, layout: l)
                 pagesUploaded = true
@@ -400,7 +424,9 @@ actor UploadState {
                     m.hls = "hls/index.m3u8"
                     m.updatedAt = Date()
                     meta = m
-                    try? await client.put(l.metaKey, data: m.jsonData, contentType: "application/json", cacheControl: ShareLayout.noStore)
+                    if await !isSuperseded() {
+                        try? await client.put(l.metaKey, data: m.jsonData, contentType: "application/json", cacheControl: ShareLayout.noStore)
+                    }
                 }
             } catch {
                 noteError(error)
@@ -433,7 +459,7 @@ actor UploadState {
 
     private func finalize() async {
         guard let l = layout else { return }
-        if backlog > 0, var m = meta {
+        if backlog > 0, var m = meta, await !isSuperseded() {
             m.status = .processing
             m.updatedAt = Date()
             meta = m
@@ -470,23 +496,99 @@ actor UploadState {
         m.duration = hasMedia ? summed : (totalDuration ?? 0)
         m.updatedAt = Date()
         meta = m
-        let html = Data(ViewerPage.html(m).utf8)
-        await Self.putUntilDone(client: client, key: l.metaKey, data: m.jsonData, contentType: "application/json",
-                                cacheControl: ShareLayout.noStore, isCancelled: { await self.isCancelled },
-                                onError: { await self.noteError($0) })
-        for k in l.pageKeys {
-            await Self.putUntilDone(client: client, key: k, data: html, contentType: "text/html; charset=utf-8",
-                                    cacheControl: ShareLayout.revalidate, isCancelled: { await self.isCancelled },
-                                    onError: { await self.noteError($0) })
-        }
+        guard await writeFinal(m, layout: l) else { return }
         if !pagesUploaded, let card = TitleCard.jpeg(title: m.title) {
             try? await client.put(l.cardKey, data: card, contentType: "image/jpeg", cacheControl: ShareLayout.revalidate)
         }
+        complete()
+    }
+
+    private func complete() {
         completed = true
         lastError = nil
         discardJournal()
         removeSpool()
+        if let l = layout { LiveUploads.remove(l.key, self) }
         resumeWaiters()
+    }
+
+    /// Writes the final meta.json and pages, retrying until they land. Before each attempt it reads
+    /// meta.json back; if a newer revision is live, it writes nothing and gives way to it. `true` when written.
+    private func writeFinal(_ m: ViewerMeta, layout l: ShareLayout) async -> Bool {
+        let html = Data(ViewerPage.html(m).utf8)
+        let client = self.client
+        var delay = 2.0
+        while !cancelled && !Task.isCancelled {
+            do {
+                if let newer = try await newerRevision() {
+                    await giveWay(polished: newer.video != nil)
+                    return false
+                }
+                try await client.put(l.metaKey, data: m.jsonData, contentType: "application/json", cacheControl: ShareLayout.noStore)
+                try await withThrowingTaskGroup(of: Void.self) { g in
+                    for k in l.pageKeys {
+                        g.addTask { try await client.put(k, data: html, contentType: "text/html; charset=utf-8", cacheControl: ShareLayout.revalidate) }
+                    }
+                    try await g.waitForAll()
+                }
+                return true
+            } catch is CancellationError {
+                return false
+            } catch {
+                noteError(error)
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1e9))
+                delay = min(delay * 2, 30)
+            }
+        }
+        return false
+    }
+
+    // MARK: Newer revisions
+
+    /// The share's meta.json if a publish since this stream (Update Link) has a higher revision: it owns
+    /// the link from then on. `nil` when the bucket has this upload's own (or none); throws when unreadable.
+    private func newerRevision() async throws -> ViewerMeta? {
+        guard let l = layout else { return nil }
+        let data: Data
+        do { data = try await client.get(l.metaKey) } catch let e as ShareError where e.status == 404 { return nil }
+        guard let m = try? JSONCoding.decoder.decode(ViewerMeta.self, from: data), m.revision > (meta?.revision ?? 0) else { return nil }
+        return m
+    }
+
+    /// For best-effort writes: only a newer revision that was actually read counts.
+    private func isSuperseded() async -> Bool { (try? await newerRevision()) != nil }
+
+    /// A newer revision owns the link: stop without touching meta.json or the page. When it plays a
+    /// polished MP4 the stream is deleted (it may show what the edit blurred or cut); if that fails the
+    /// journal stays, so the next launch's resume tries again.
+    private func giveWay(polished: Bool) async {
+        if polished, let l = layout {
+            do { try await ShareService.removeStream(l, client: client) } catch {
+                noteError(error)
+                halt()
+                return
+            }
+        }
+        complete()
+    }
+
+    /// A publish of this share is about to write (see `LiveUploads.retire`): stop every upload and wait
+    /// until none is in flight. The journal stays until `superseded()`, so if the publish fails the next
+    /// launch still finishes the stream.
+    func retire() async {
+        guard !cancelled, !completed else { return }
+        let running = Array(tasks.values) + [initTask, playlistTask, placeholderTask, finalizeTask].compactMap { $0 }
+        let attempt = placeholderAttempt
+        halt()
+        attempt?.cancel()
+        for t in running { await t.value }
+        _ = await attempt?.result
+    }
+
+    /// The publish after `retire()` is live: nothing is left to resume.
+    func superseded() {
+        discardJournal()
+        removeSpool()
     }
 
     private func waitForCompletion(timeout: Double) async {
@@ -523,6 +625,7 @@ actor UploadState {
 
     func halt() {
         cancelled = true
+        if let l = layout { LiveUploads.remove(l.key, self) }
         initTask?.cancel()
         tasks.values.forEach { $0.cancel() }
         playlistTask?.cancel()
@@ -536,6 +639,7 @@ actor UploadState {
     func cancel() async {
         guard !cancelled else { return }
         cancelled = true
+        if let l = layout { LiveUploads.remove(l.key, self) }
         initTask?.cancel()
         tasks.values.forEach { $0.cancel() }
         playlistTask?.cancel()
@@ -596,9 +700,19 @@ actor UploadState {
         initUploaded = j.initUploaded
         hlsAnnounced = !j.uploaded.isEmpty
         pagesUploaded = true
+        LiveUploads.add(l.key, self)
 
-        // Start from the live meta.json if it is there (keeps createdAt, title edits); else rebuild.
-        if let d = try? await client.get(l.metaKey), let m = try? JSONCoding.decoder.decode(ViewerMeta.self, from: d) {
+        let current = (try? await client.get(l.metaKey)).flatMap { try? JSONCoding.decoder.decode(ViewerMeta.self, from: $0) }
+        // The stream is revision 0. A publish since that plays a polished MP4 (in this project's record
+        // or in the bucket) replaced it for good: delete the stream instead of finishing it.
+        if share.polished || ((current?.revision ?? 0) > 0 && current?.video != nil) {
+            await giveWay(polished: true)
+            if completed, manifest.status != .recording { bundle.removeSegments(of: .share) }
+            return nil
+        }
+        // Start from the live meta.json if it is there (keeps createdAt and a newer title-only update,
+        // whose revision it keeps); else rebuild.
+        if let m = current {
             meta = m
         } else {
             meta = ViewerMeta(id: l.id, title: j.title, status: .processing, createdAt: j.createdAt, updatedAt: Date(),

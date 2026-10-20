@@ -23,7 +23,7 @@ r/<id>/poster.<n>.jpg   preview image for link unfurls
 r/<id>/captions.<n>.vtt captions, if you made them
 ```
 
-`<n>` goes up by one with every update, so browsers and caches never show a stale video. Reelbird deletes the previous revision's files after an update.
+`<n>` goes up by one with every update, so browsers and caches never show a stale video. After an update is live, Reelbird deletes everything it no longer plays: the previous revision's files, captions you removed, and the stream from `hls/`, which may show what you blurred or cut.
 
 The link is `https://<your public URL>/r/<id>/`. It never changes, even when you update the video.
 

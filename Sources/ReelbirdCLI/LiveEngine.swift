@@ -171,15 +171,16 @@ struct LiveEngine: Engine {
                                      request: ExportRequest(format: .mp4, height: 1080, destination: tmp.appendingPathComponent("video.mp4")),
                                      progress: { progress($0 * 0.6) })
         let poster = try? await Thumbnailer.poster(bundle: bundle, at: 0, maxWidth: 1280)
-        var captions: URL?
+        // No captions in the edit takes the published ones down too.
+        var captions = ShareAsset<URL>.remove
         if edit.captions.file != nil, let transcript = Self.transcript(bundle: bundle) {
             let url = tmp.appendingPathComponent("captions.vtt")
             try Data(Captions.webVTT(transcript.remapped(to: EditTimeline(manifest: manifest, edit: edit))).utf8).write(to: url)
-            captions = url
+            captions = .replace(url)
         }
         do {
-            return try await ShareService.publish(bundle: bundle, video: video, poster: poster, captions: captions,
-                                                  destination: destination, secret: secret) { progress(0.6 + $0 * 0.4) }
+            return try await ShareService.publish(bundle: bundle, video: video, poster: poster.map { .replace($0) } ?? .keep,
+                                                  captions: captions, destination: destination, secret: secret) { progress(0.6 + $0 * 0.4) }
         } catch { throw CLIError("Sharing failed: \(Self.shareMessage(error))") }
     }
 

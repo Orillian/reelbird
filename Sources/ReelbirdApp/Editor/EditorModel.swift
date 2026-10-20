@@ -979,14 +979,15 @@ enum CaptionState: Equatable {
                     Task { @MainActor in self.shareState = .working("Rendering", p * 0.6) }
                 }
                 let poster = try? await services.render.poster(bundle: bundle, at: 0, maxWidth: 1280)
-                var captions: URL?
+                // No captions in the edit takes the published ones down too.
+                var captions = ShareAsset<URL>.remove
                 if let captionsVTT {
                     let url = tmp.appendingPathComponent("captions.vtt")
                     try captionsVTT.write(to: url, atomically: true, encoding: .utf8)
-                    captions = url
+                    captions = .replace(url)
                 }
-                let info = try await services.share.publish(bundle: bundle, video: video, poster: poster, captions: captions,
-                                                            destination: dest, secret: secret) { p in
+                let info = try await services.share.publish(bundle: bundle, video: video, poster: poster.map { .replace($0) } ?? .keep,
+                                                            captions: captions, destination: dest, secret: secret) { p in
                     Task { @MainActor in self.shareState = .working("Uploading", 0.6 + p * 0.4) }
                 }
                 var m = manifest

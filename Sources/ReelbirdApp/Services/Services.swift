@@ -126,7 +126,7 @@ protocol ShareServiceProtocol: Sendable {
     /// Returns the share when there was work to do.
     func resumeIfNeeded(bundle: ProjectBundle) async throws -> ShareInfo?
     func testConnection(_ d: ShareDestination, secret: String) async throws
-    func publish(bundle: ProjectBundle, video: URL?, poster: CGImage?, captions: URL?, destination: ShareDestination,
+    func publish(bundle: ProjectBundle, video: URL?, poster: ShareAsset<CGImage>, captions: ShareAsset<URL>, destination: ShareDestination,
                  secret: String, progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo
     func unpublish(_ info: ShareInfo, destination: ShareDestination, secret: String) async throws
     /// Where an existing link lives (Reelbird Cloud or your bucket), so it updates in place after switching.
