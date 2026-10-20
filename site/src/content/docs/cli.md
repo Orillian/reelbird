@@ -41,11 +41,13 @@ reelbird markers latest                        # markers dropped while recording
 reelbird markers latest --as-chapters          # make them the chapters on the share page
 reelbird share latest                          # upload and print the link
 reelbird share latest --polished               # render the edit, same link
+reelbird cloud login                           # Reelbird Pro: sign in in the browser instead of setting up a bucket
+reelbird cloud links                           # your hosted links with view counts (cloud stats PROJECT for one)
 reelbird help record
 ```
 
 A project can be a `.reelbird` path, a name from `reelbird list`, or `latest`. Every command takes `--json` for machine-readable output and `--library DIR` to use another folder (the default is `~/Movies/Reelbird`, or `$REELBIRD_LIBRARY`).
 
-Sharing settings made in the app are used by the CLI too. To set them from the terminal, run `reelbird config share --help`.
+Sharing settings made in the app are used by the CLI too. To set them from the terminal, run `reelbird config share --help` for your own bucket, or `reelbird cloud --help` for Reelbird Pro (scripts and agents can set `REELBIRD_CLOUD_TOKEN`).
 
 When you record from a terminal, macOS asks for Screen Recording permission for the terminal app (Terminal, iTerm, your editor), not for Reelbird.

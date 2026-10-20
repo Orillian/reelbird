@@ -12,6 +12,7 @@ struct LivePermissions: PermissionsService {
     func status(_ p: Permission) -> PermissionState { Permissions.status(p) }
     func request(_ p: Permission) async -> PermissionState { await Permissions.request(p) }
     @MainActor func openSettings(for p: Permission) { Permissions.openSettings(for: p) }
+    func reset(_ p: Permission) -> Bool { Permissions.reset(p) }
 }
 
 struct LiveCaptureSources: CaptureSourceService {

@@ -1,4 +1,5 @@
 import AppKit
+import ReelbirdShare
 
 /// The main menu. Installed even while the app is menu-bar only, so text fields get ⌘C/⌘V/⌘Z.
 /// Editor and library commands target the app delegate, which routes them to the key window
@@ -18,6 +19,9 @@ import AppKit
         appMenu.addItem(item("About Reelbird", #selector(AppDelegate.openAbout(_:)), target: target))
         appMenu.addItem(.separator())
         appMenu.addItem(item("Settings…", #selector(AppDelegate.openSettings(_:)), key: ",", target: target))
+        if CloudSettings.isAvailable {
+            appMenu.addItem(item("Reelbird Pro…", #selector(AppDelegate.openPro(_:)), target: target))
+        }
         appMenu.addItem(.separator())
         let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
         let servicesMenu = NSMenu()

@@ -11,10 +11,10 @@ import sharingD from "../../assets/shots/settings-sharing-dark.webp";
 ---
 <Feature
   seoTitle="Instant share links to your own bucket: Reelbird"
-  description="The link is copied when you stop and plays in any browser. Update it after editing and the URL stays the same. Hosted on your S3 or Cloudflare R2."
+  description="Copied when you stop, plays in any browser, and the URL stays the same after you edit. Free on your own S3 or R2 bucket, or hosted by Reelbird Pro."
   path="/features/share-links/" og="features-share-links" name="Share links"
   title="Instant share links to your own bucket"
-  lede="With Share while recording on, the link is on your clipboard the moment you stop. Edit later, choose Update link, and the same URL plays the new version. There's no Reelbird server: the files live in a bucket you own."
+  lede="With Share while recording on, the link is on your clipboard the moment you stop. Edit later, choose Update link, and the same URL plays the new version. The files live in a bucket you own, for free, or Reelbird Pro hosts them for you."
 >
   <section class="fsec wrap fgrid">
     <div>
@@ -56,10 +56,24 @@ r/7Hk2pQx9/captions.2.vtt  captions, if you made them`}</code></pre>
     <Shot src={sharingL} dark={sharingD} variant="frame" alt="Reelbird's Sharing settings: endpoint, bucket, region, access key, secret, public URL and prefix, with Test Connection and Save." sizes="(min-width: 60rem) 520px, 100vw" widths={[520, 1040, 1120]} class="narrow" />
   </section>
 
+  <section class="fsec wrap fgrid flip" id="pro">
+    <div>
+      <h2>Or skip the setup with Reelbird Pro</h2>
+      <p>If you'd rather not set up a bucket, Reelbird Pro hosts your links for $5 a month. Sign in under <strong>Settings › Sharing › Reelbird Cloud</strong>, approve the code in your browser and upgrade. Share then works the same way, with links at <code>watch.reelbird.app/r/&lt;id&gt;/</code>.</p>
+      <p><a class="link-arrow" href="/pricing/">Free and Pro compared</a></p>
+    </div>
+    <ul class="plain">
+      <li><strong>Unlimited links and 100 GB</strong> of storage, with nothing to set up.</li>
+      <li><strong>See who watched:</strong> views, unique viewers, where people stopped watching, where they came from and their devices, in the Library and on the web.</li>
+      <li><strong>No cookies.</strong> Viewers are counted with a daily hash, and no IP address is stored.</li>
+      <li><strong>Cancel any time.</strong> Your links keep playing after Pro ends.</li>
+    </ul>
+  </section>
+
   <section class="fsec wrap term-sec">
     <div class="term-text">
       <h2>From the terminal too</h2>
-      <p>The command line tool uses the same settings, or environment variables on a CI machine without a Keychain.</p>
+      <p>The command line tool uses the same settings, or environment variables on a CI machine without a Keychain. With Pro, <code>reelbird cloud login</code> signs it in, and scripts and agents can set <code>REELBIRD_CLOUD_TOKEN</code>.</p>
       <p><a class="link-arrow" href="/docs/sharing/#command-line-and-ci">Command line and CI</a></p>
     </div>
     <Code code={"reelbird share latest              # upload and print the link\nreelbird share latest --polished   # render the edit, same link\nreelbird unshare latest            # delete it"} />

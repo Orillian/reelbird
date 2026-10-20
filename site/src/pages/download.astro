@@ -87,13 +87,13 @@ const permissions = [
         <p class="muted">Then <code>reelbird help</code>. The <a href="/docs/cli/">command line docs</a> and <a href="/docs/mcp/">MCP setup</a> have the rest.</p>
 
         <h3 id="sharing">Set up share links</h3>
-        <p>Recording, editing and export work without it. For links, connect a storage bucket you own, once. Cloudflare R2's free tier covers most people. <a href="/docs/sharing/">Sharing setup, step by step</a>.</p>
+        <p>Recording, editing and export work without it. For links, connect a storage bucket you own, once, for free; Cloudflare R2's free tier covers most people. <a href="/docs/sharing/">Sharing setup, step by step</a>. Or sign in to <a href="/pricing/">Reelbird Pro</a> ($5 a month) under Settings › Sharing › Reelbird Cloud, with nothing to set up.</p>
 
         <h3 id="update">Update</h3>
         <Code code={`cd reelbird\ngit pull\nmake install`} />
 
         <h3 id="uninstall">Uninstall</h3>
-        <p>Quit Reelbird from the menu bar and delete <code>/Applications/Reelbird.app</code>. Your recordings stay in <code>~/Movies/Reelbird</code> until you delete them. Sharing settings are in <code>~/Library/Application Support/Reelbird</code>, and the sharing secret is the <code>app.reelbird.share</code> item in Keychain Access.</p>
+        <p>Quit Reelbird from the menu bar and delete <code>/Applications/Reelbird.app</code>. Your recordings stay in <code>~/Movies/Reelbird</code> until you delete them. Sharing settings are in <code>~/Library/Application Support/Reelbird</code>, the sharing secret is the <code>app.reelbird.share</code> item in Keychain Access, and a Reelbird Pro sign-in is the <code>app.reelbird.cloud</code> item. Uninstalling doesn't cancel Pro; do that from your <a href="https://watch.reelbird.app/account">account page</a>.</p>
       </section>
 
       <section class="extra" aria-labelledby="trouble-title">

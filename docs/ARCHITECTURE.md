@@ -1,6 +1,6 @@
 # Architecture
 
-Reelbird is a native macOS app (Swift 6, SwiftUI + AppKit, Metal) with a command line tool that shares the same engine. It needs no server and has no third-party Swift dependencies. The optional Reelbird Pro hosting is a separate small server in `cloud/` (Bun, Postgres, R2).
+Reelbird is a native macOS app (Swift 6, SwiftUI + AppKit, Metal) with a command line tool that shares the same engine. Recording, editing and sharing to your own bucket work without any Reelbird server, and there are no third-party Swift dependencies. The optional Reelbird Pro hosting is a separate small server in `cloud/` (Bun, Postgres, R2).
 
 ```
 ReelbirdCore     project format, edit document, events, timeline + motion maths (pure Swift)
@@ -29,7 +29,7 @@ One host clock (`CMClockGetHostTimeClock`) drives everything. Timeline zero is t
 
 ## Sharing
 
-Sharing is optional and serverless: the app uploads to an S3-compatible bucket you own (Cloudflare R2 recommended, free egress).
+Sharing is optional. By default it is serverless: the app uploads to an S3-compatible bucket you own (Cloudflare R2 recommended, free egress). With Reelbird Pro, the same upload code writes to Reelbird's private R2 bucket using temporary keys limited to one share's folder, and the small server in `cloud/` serves the viewer page and counts views.
 
 1. When recording starts, the app reserves a short ID and uploads a placeholder viewer page, so the link exists before the first frame.
 2. While recording, a second writer produces an H.264 stream (screen scaled to at most 1920 px wide, the camera bubble where the live bubble is, mixed audio, 30 fps) in 2-second CMAF segments, kept in the bundle's `share/` folder and uploaded as they are written, plus an HLS playlist that grows (`EVENT`). If the app quits mid-upload, a small journal lets the next launch finish it.

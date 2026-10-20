@@ -1,0 +1,99 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import Faq from "../components/Faq.astro";
+import Icon from "../components/Icon.astro";
+import { PRO } from "../config/site";
+import { PLAN_ROWS, PRICING_FAQ } from "../data/pricing";
+import { faqPage, softwareApplication } from "../lib/jsonld";
+const crumbs = [{ name: "Pricing", path: "/pricing/" }];
+const description = `Reelbird is free: record, edit, export and share to your own bucket, with no watermark and no account. Optional Reelbird Pro hosts your links for ${PRO.price} a month, with viewer analytics.`;
+---
+<Base title="Reelbird pricing: free, with optional Pro hosting" description={description} og="pricing" crumbs={crumbs} schema={[softwareApplication(), faqPage(PRICING_FAQ)]}>
+  <PageHead
+    title="Pricing"
+    lede={`Reelbird is free. Recording, editing, exporting and share links to your own bucket cost nothing, with no watermark, no limits and no account. If you'd rather not set up storage, Reelbird Pro hosts your links for ${PRO.price} a month.`}
+    crumbs={crumbs}
+  />
+
+  <div class="wrap">
+    <section class="plans" aria-label="Plans">
+      <div class="plan" id="free">
+        <h2>Free</h2>
+        <p class="price">$0</p>
+        <p class="muted">The whole app, MIT licensed. Share links go to a bucket you own, such as Cloudflare R2, after a ten-minute setup.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="/download/"><Icon name="download" />Download Reelbird</a>
+          <a class="link-arrow" href="/docs/sharing/">Sharing setup</a>
+        </div>
+      </div>
+      <div class="plan" id="pro">
+        <h2>Reelbird Pro</h2>
+        <p class="price">{PRO.price}<span class="per"> a month</span></p>
+        <p class="muted">Reelbird hosts your links, with nothing to set up, and shows who watched and where they stopped. Cancel any time.</p>
+        <div class="actions">
+          <a class="btn btn-ghost" href={PRO.upgradeURL}><Icon name="arrowRight" />Get Reelbird Pro</a>
+          <span class="muted small">Or in the app: Settings › Sharing › Reelbird Cloud.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" aria-labelledby="table-title">
+      <h2 id="table-title">Free and Pro, side by side</h2>
+      <div class="table-wrap">
+        <table class="plan-table">
+          <caption class="sr-only">What Reelbird Free and Reelbird Pro include</caption>
+          <thead><tr><th scope="col"><span class="sr-only">Feature</span></th><th scope="col">Free</th><th scope="col">Pro, {PRO.price} a month</th></tr></thead>
+          <tbody>
+            {PLAN_ROWS.map((r) => <tr><th scope="row">{r.k}</th><td>{r.free}</td><td>{r.pro}</td></tr>)}
+          </tbody>
+        </table>
+      </div>
+      <p class="plan-note muted">Every take stays on your Mac as MP4 files on either plan. Shared links are unlisted: anyone with the link can watch.</p>
+    </section>
+
+    <section class="block steps" aria-labelledby="how-title">
+      <h2 id="how-title">Getting Pro</h2>
+      <ol>
+        <li>In Reelbird, open <strong>Settings › Sharing › Reelbird Cloud</strong> and choose <strong>Sign In</strong>.</li>
+        <li>Approve the code in your browser. Your account is your email address.</li>
+        <li><a href={PRO.upgradeURL}>Upgrade to Pro</a>. New shares then go to Reelbird's hosting, at <code>watch.reelbird.app/r/&lt;id&gt;/</code>.</li>
+      </ol>
+      <p class="muted">Manage or cancel on your <a href={PRO.accountURL}>account page</a>. Links keep playing after Pro ends.</p>
+    </section>
+
+    <section class="block faqsec" aria-labelledby="pricing-faq">
+      <h2 id="pricing-faq">Questions</h2>
+      <Faq items={PRICING_FAQ} />
+    </section>
+  </div>
+</Base>
+
+<style>
+  .plans { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line); margin-bottom: 1rem; }
+  .plan { padding: 2rem 2rem 2.25rem 0; display: grid; align-content: start; gap: 0.75rem; scroll-margin-top: 5rem; }
+  .plan + .plan { padding-left: 2rem; border-left: 1px solid var(--line); }
+  .plan h2 { font-size: var(--step-2); }
+  .price { font-family: var(--font-display); font-size: var(--step-3); font-weight: 520; line-height: 1; }
+  .per { font-family: var(--font-sans); font-size: 1rem; font-weight: 400; color: var(--text-muted); }
+  .plan p.muted { max-width: 30rem; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; margin-top: 0.5rem; }
+  .small { font-size: var(--step--1); }
+  .block { padding-block: clamp(2.5rem, 2rem + 2vw, 4rem); border-top: 1px solid var(--line); }
+  .plans + .block { border-top: 0; }
+  .block > h2 { font-size: var(--step-3); margin-bottom: 1.5rem; }
+  .plan-table { min-width: 36rem; }
+  .plan-table th[scope="row"] { color: var(--text); width: 24%; font-size: 0.95rem; }
+  .plan-table td { width: 38%; color: var(--text-muted); }
+  .plan-table thead th { color: var(--text); font-size: 1rem; }
+  .plan-note { margin-top: 1.25rem; font-size: var(--step--1); max-width: 44rem; }
+  .steps ol { padding-left: 1.3rem; display: grid; gap: 0.6rem; max-width: 44rem; }
+  .steps ol + p { margin-top: 1.25rem; }
+  .steps strong { font-weight: 600; }
+  .faqsec { max-width: 52rem; padding-bottom: var(--section); }
+  @media (max-width: 48rem) {
+    .plans { grid-template-columns: minmax(0, 1fr); }
+    .plan { padding-right: 0; }
+    .plan + .plan { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
+  }
+</style>

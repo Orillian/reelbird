@@ -3,6 +3,18 @@ export interface Release { version: string; date: string; title: string; summary
 
 export const RELEASES: Release[] = [
   {
+    version: "0.2.1",
+    date: "2026-10-20",
+    title: "Fix permissions that look on but don't work",
+    summary: "A Reset button for permissions that are switched on in System Settings but still don't apply, and Reelbird Pro in the menus.",
+    notes: [
+      "Settings › Permissions shows Reset when Screen Recording, Accessibility or Input Monitoring is on in System Settings but not working. It clears the entry an earlier copy of Reelbird left behind, and macOS asks again.",
+      "The welcome window offers the same reset on its Screen Recording step.",
+      "Reelbird Pro… in the Reelbird menu and the menu bar menu opens your account, or sign-in and upgrade.",
+      "A Pricing page on the website compares the free app and Reelbird Pro.",
+    ],
+  },
+  {
     version: "0.2.0",
     date: "2026-10-20",
     title: "Share without setting up storage",

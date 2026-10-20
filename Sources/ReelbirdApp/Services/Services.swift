@@ -14,6 +14,8 @@ protocol PermissionsService: Sendable {
     func status(_ p: Permission) -> PermissionState
     func request(_ p: Permission) async -> PermissionState
     @MainActor func openSettings(for p: Permission)
+    /// Clears Reelbird's own entry so macOS asks again (a stale entry from a differently signed copy).
+    func reset(_ p: Permission) -> Bool
 }
 
 /// `ReelbirdCapture.CaptureSources` and `ReelbirdCapture.Devices`

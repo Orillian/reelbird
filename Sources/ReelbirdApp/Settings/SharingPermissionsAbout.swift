@@ -383,6 +383,8 @@ struct SharingSettings: View {
 
 @MainActor @Observable final class PermissionsModel {
     private(set) var states: [Permission: PermissionState] = [:]
+    /// Screen Recording was asked for or reset here: macOS applies it after Reelbird reopens.
+    private(set) var screenNeedsRelaunch = false
     @ObservationIgnored let services: Services
     @ObservationIgnored private var timer: Timer?
 
@@ -404,7 +406,27 @@ struct SharingSettings: View {
 
     func stopPolling() { timer?.invalidate(); timer = nil }
 
+    /// Permissions whose System Settings switch can show on while not applying to this copy.
+    static let resettable: Set<Permission> = [.screen, .accessibility, .inputMonitoring]
+
+    /// Clears Reelbird's own (stale) entry and asks again.
+    func resetAndAsk(_ p: Permission) {
+        _ = services.permissions.reset(p)
+        refresh()
+        if p == .screen { screenNeedsRelaunch = true }
+        request(p)
+    }
+
+    func relaunch() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = ["-n", Bundle.main.bundleURL.path]
+        try? task.run()
+        NSApp.terminate(nil)
+    }
+
     func request(_ p: Permission) {
+        if p == .screen { screenNeedsRelaunch = true }
         if states[p] == .notDetermined && p != .screen {
             Task { _ = await services.permissions.request(p); refresh() }
         } else {
@@ -436,11 +458,30 @@ struct PermissionsSettings: View {
         SettingsForm {
             Section {
                 ForEach(PermissionInfo.shown, id: \.permission) { info in
-                    PermissionRow(info: info, state: model.states[info.permission] ?? .notDetermined) { model.request(info.permission) }
+                    let state = model.states[info.permission] ?? .notDetermined
+                    PermissionRow(info: info, state: state,
+                                  reset: state == .denied && PermissionsModel.resettable.contains(info.permission)
+                                      ? { model.resetAndAsk(info.permission) } : nil) { model.request(info.permission) }
                 }
             } footer: {
-                Text("Reelbird checks again whenever you come back from System Settings. Screen Recording takes effect after Reelbird reopens.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Reelbird checks again whenever you come back from System Settings. Screen Recording takes effect after Reelbird reopens.")
+                    if PermissionsModel.resettable.contains(where: { model.states[$0] == .denied }) {
+                        Text("On in System Settings but Off here? Click Reset: it clears an entry left by an earlier copy of Reelbird, and macOS asks again.")
+                    }
+                }
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if model.screenNeedsRelaunch && model.states[.screen] != .granted {
+                Section {
+                    HStack {
+                        StatusLine(tone: .info, text: "Turned Screen Recording on? macOS applies it after Reelbird reopens.")
+                        Spacer()
+                        Button("Quit & Reopen") { model.relaunch() }
+                    }
+                }
             }
         }
         .onAppear { model.refresh(); model.startPolling() }
@@ -451,6 +492,8 @@ struct PermissionsSettings: View {
 struct PermissionRow: View {
     let info: PermissionInfo
     let state: PermissionState
+    /// Shown for a permission that may be stuck on a stale entry.
+    var reset: (() -> Void)? = nil
     let action: () -> Void
 
     var body: some View {
@@ -469,6 +512,10 @@ struct PermissionRow: View {
             }
             Spacer()
             badge
+            if let reset {
+                Button("Reset", action: reset)
+                    .help("Switched on in System Settings but still Off here? This clears Reelbird's old entry so macOS can ask again.")
+            }
             if state != .granted {
                 Button(state == .notDetermined ? "Allow…" : "Open Settings", action: action)
             }

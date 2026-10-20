@@ -26,14 +26,14 @@ const picks = [
   { id: "cap", text: "an open-source Loom alternative that also runs on Windows or Linux, with hosted plans" },
   { id: "openscreen", text: "a free, signed, cross-platform editor and you'll host the files yourself" },
   { id: "screenity", text: "free recording in Chrome on any operating system" },
-  { id: "reelbird", text: "a link the moment you stop, auto-zoom polish under the same link, your own storage and no bill, on a Mac" },
+  { id: "reelbird", text: "a link the moment you stop and auto-zoom polish under the same link, free on a Mac, with links in your own storage or hosted for $5 a month" },
 ];
 
 const faq = [
   { id: "loom-or-screen-studio", q: "Loom or Screen Studio: which should I use?", a: `They do different jobs. Loom is for quick, hosted links and team feedback: a link when you stop, comments and view counts, on Mac, Windows, the web and phones, with no auto-zoom. Its free plan stops videos at 5 minutes and can't download; Business is $18 per user a month. Screen Studio is for polished Mac product videos: auto-zoom, a smooth cursor and camera layouts, with a share link after you export, for $29 a month or $9 billed yearly. Reelbird does both jobs from one take on the Mac, free: the link when you stop, the polish later under the same link. Checked ${CHECKED_LABEL}.` },
   { id: "free-auto-zoom", q: "Which free Mac screen recorders have auto-zoom?", a: "Reelbird (MIT, native Swift, with share links to your own bucket), OpenScreen (MIT, Electron, no share links) and Cap (free for personal use, with auto-zoom in Studio mode). Screenity's auto-zoom needs Pro, and Screen Studio, CleanShot X and Tella are paid." },
   { id: "open-source", q: "Which of these screen recorders are open source?", a: "Reelbird (MIT), OpenScreen (MIT), Cap (AGPLv3, with some parts MIT) and Screenity's Chrome recorder (GPL-3.0). Loom, Screen Studio, CleanShot X and Tella are proprietary." },
-  { id: "free-link", q: "Which free recorders give you a share link when you stop?", a: "Reelbird, with no limit from Reelbird, hosted in your own S3 or R2 bucket. Loom's free Starter plan, with 5-minute videos and 25 per person. Cap's free plan, for personal use, with 5-minute links. Screenity's links need Pro, OpenScreen has none, and Screen Studio's come after export." },
+  { id: "free-link", q: "Which free recorders give you a share link when you stop?", a: "Reelbird, with no limit from Reelbird, hosted in your own S3 or R2 bucket (or by Reelbird Pro, $5 a month). Loom's free Starter plan, with 5-minute videos and 25 per person. Cap's free plan, for personal use, with 5-minute links. Screenity's links need Pro, OpenScreen has none, and Screen Studio's come after export." },
   { id: "keep-files", q: "Which ones let me keep my video files for free?", a: "Reelbird saves every take as MP4 files on your Mac. OpenScreen, Screenity's free recorder and Cap's free plan (personal use) export files too. Loom's free Starter plan can't download videos; that needs Business or higher." },
 ];
 
@@ -46,7 +46,7 @@ const schema = [
 ---
 <Base title={seoTitle} description={description} og="compare" brand={false} crumbs={crumbs} type="article" schema={schema}>
   <PageHead title={title} crumbs={crumbs}>
-    <p class="answer">Eight screen recorders, compared on price, free-plan limits, licence, share links and auto-zoom. In short: Loom is the team tool, Screen Studio the most mature Mac editor, Cap the open-source pick for Windows and Linux, and OpenScreen the free cross-platform editor without links. Reelbird, which we make, gives you a link the moment you stop and lets you polish the same take under the same link, free and open source, on the Mac.</p>
+    <p class="answer">Eight screen recorders, compared on price, free-plan limits, licence, share links and auto-zoom. In short: Loom is the team tool, Screen Studio the most mature Mac editor, Cap the open-source pick for Windows and Linux, and OpenScreen the free cross-platform editor without links. Reelbird, which we make, gives you a link the moment you stop and lets you polish the same take under the same link, free and open source, on the Mac, with optional hosting for $5 a month.</p>
     <p class="stamp">Updated <time datetime={CHECKED}>{CHECKED_LABEL}</time> from each vendor's own pages. Every row links its source. Prices change, so check before you buy.</p>
   </PageHead>
 
@@ -109,8 +109,8 @@ const schema = [
       <h2 id="limits">Reelbird's limits</h2>
       <ul>
         <li>Mac only, macOS 15 or later. Windows and Linux aren't planned.</li>
-        <li>Share links need your own S3-compatible bucket. Cloudflare R2's free tier works, and needs a payment method on file.</li>
-        <li>No comments, reactions or view counts on links.</li>
+        <li>Free share links need your own S3-compatible bucket. Cloudflare R2's free tier works, and needs a payment method on file. <a href="/pricing/">Reelbird Pro</a> ($5 a month) hosts links instead.</li>
+        <li>No comments or reactions on links. View counts and where viewers stopped need Pro.</li>
         <li>Zooms follow clicks, and typing when keystroke recording is on. Zooms that track the focused text field and joining clips are on the roadmap.</li>
       </ul>
     </div>

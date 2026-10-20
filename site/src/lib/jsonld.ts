@@ -1,4 +1,4 @@
-import { GITHUB_URL, LAUNCH_VIDEO, MIN_MACOS, PREBUILT, SITE_DESCRIPTION, SITE_NAME, SITE_URL, abs } from "../config/site";
+import { GITHUB_URL, LAUNCH_VIDEO, MIN_MACOS, PREBUILT, PRO, SITE_DESCRIPTION, SITE_NAME, SITE_URL, abs } from "../config/site";
 
 const ORG_ID = `${SITE_URL}/#organization`;
 const SITE_ID = `${SITE_URL}/#website`;
@@ -27,7 +27,8 @@ export const FEATURES = [
   "Share link copied the moment you stop recording",
   "Update link replaces the video and keeps the URL",
   "Auto-zoom planned from clicks, with a smooth redrawn cursor",
-  "Share links point at your own S3-compatible bucket, such as Cloudflare R2",
+  "Free share links to your own S3-compatible bucket, such as Cloudflare R2",
+  "Optional Reelbird Pro ($5 a month): hosted share links with viewer analytics",
   "Auto level, on-device voice enhance and ducking of system audio",
   "On-device captions and Cut Long Silences",
   "Crash-safe recording in 2-second segments with live warnings",
@@ -49,7 +50,32 @@ export const softwareApplication = () => ({
   softwareRequirements: "To build: Command Line Tools for Xcode 26 or later (Swift 6.2, macOS 26 SDK), on macOS 15.6 or later",
   license: "https://opensource.org/licenses/MIT",
   isAccessibleForFree: true,
-  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  offers: [
+    {
+      "@type": "Offer",
+      name: "Reelbird",
+      description: "The app: recording, editing, exporting and sharing to your own bucket. No watermark, no limits, no account.",
+      price: "0",
+      priceCurrency: "USD",
+      url: abs("/download/"),
+    },
+    {
+      "@type": "Offer",
+      name: "Reelbird Pro",
+      description: `Optional. Reelbird hosts your share links: unlimited links, ${PRO.storage} of storage and viewer analytics. Cancel any time.`,
+      price: PRO.priceAmount,
+      priceCurrency: PRO.currency,
+      category: "Subscription",
+      url: abs("/pricing/"),
+      priceSpecification: {
+        "@type": "UnitPriceSpecification",
+        price: PRO.priceAmount,
+        priceCurrency: PRO.currency,
+        billingDuration: "P1M",
+        referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitCode: "MON" },
+      },
+    },
+  ],
   featureList: FEATURES,
   screenshot: abs("/og/home.png"),
   image: abs("/icon-512.png"),

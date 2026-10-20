@@ -29,6 +29,24 @@ IDENTITY="${RB_SIGN_IDENTITY:-${DEVID:--}}"
 RB_CONFIG=release RB_SIGN_IDENTITY="$IDENTITY" scripts/build-app.sh
 
 APP=build/Reelbird.app
+
+# Updates must look like the same app to macOS, or every user loses Screen Recording and the other
+# permissions (macOS ties them to the bundle ID and the signing team). Refuse a release that differs.
+RELEASE_ID="app.reelbird.Reelbird"
+RELEASE_TEAM="${RB_RELEASE_TEAM:-Y8J6V7372T}"   # forks: set your own team
+BUILT_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")"
+if [ "$BUILT_ID" != "$RELEASE_ID" ]; then
+  echo "Refusing to package: bundle ID is $BUILT_ID, releases must be $RELEASE_ID." >&2
+  exit 1
+fi
+case "$IDENTITY" in "Developer ID Application:"*)
+  REQ="$(codesign -d -r- "$APP" 2>&1)"
+  if ! printf '%s' "$REQ" | grep -q "identifier \"$RELEASE_ID\"" || ! printf '%s' "$REQ" | grep -q "$RELEASE_TEAM"; then
+    echo "Refusing to package: the designated requirement doesn't name $RELEASE_ID and team $RELEASE_TEAM:" >&2
+    echo "$REQ" >&2
+    exit 1
+  fi
+;; esac
 ZIP="build/Reelbird-$VERSION.zip"
 rm -f "$ZIP" "$ZIP.sha256"
 

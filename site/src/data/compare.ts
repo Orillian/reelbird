@@ -32,16 +32,16 @@ export const PRODUCTS: Product[] = [
     id: "reelbird",
     name: "Reelbird",
     kind: "Native Mac screen recorder, open source",
-    price: "Free",
-    freePlan: "Everything, no watermark. Optional $5/month Pro for hosted links",
+    price: "Free. Optional Reelbird Pro, $5 a month, hosts your links",
+    freePlan: "Everything, no watermark or limits, including links to your own bucket",
     platforms: "macOS 15+",
     openSource: "Yes, MIT",
-    links: "Copied the moment you stop. Hosted in your own S3 or R2 bucket. The same link updates after editing",
+    links: "Copied the moment you stop. Hosted in your own S3 or R2 bucket for free, or by Reelbird Pro. The same link updates after editing",
     autoZoom: "Yes, from clicks and typing. Every zoom editable",
     download: "Always. Every take is MP4 files on your Mac",
-    notes: "Native Swift. Free notarised download or build from source. No account needed, no telemetry. CLI and MCP server",
-    bestFor: "Mac users who want a link the moment they stop, auto-zoom polish later under the same link, their own storage, and no bill.",
-    keepInMind: "Mac only. Links need a bucket you own. No comments or view counts.",
+    notes: "Native Swift. Free notarised download or build from source. No account needed, no telemetry in the app. Viewer analytics with Pro. CLI and MCP server",
+    bestFor: "Mac users who want a link the moment they stop, auto-zoom polish later under the same link, and their files on their own Mac, for free.",
+    keepInMind: "Mac only. Free links need a bucket you own; Reelbird Pro ($5 a month) hosts them instead. No comments.",
     sources: [{ label: "github.com/btahir/reelbird", href: "https://github.com/btahir/reelbird" }],
   },
   {
@@ -175,9 +175,9 @@ export const HOME_VS = {
   cols: ["Loom", "Screen Studio", "Reelbird"] as const,
   colNotes: ["free Starter plan", "", ""] as const,
   rows: [
-    { k: "Price", v: ["Free, then $18 per user a month", "$29 a month, or $9 billed yearly", "Free. MIT licence"] },
+    { k: "Price", v: ["Free, then $18 per user a month", "$29 a month, or $9 billed yearly", "Free (MIT). Optional Pro hosting, $5 a month"] },
     { k: "Limits", v: ["5 min a video, 25 videos, 720p", "Links up to 30 min", "None set by Reelbird"] },
-    { k: "Link when you stop", v: ["Yes, on Loom's cloud", "No, after you export", "Yes, in your own bucket"] },
+    { k: "Link when you stop", v: ["Yes, on Loom's cloud", "No, after you export", "Yes, in your own bucket or on Pro"] },
     { k: "Auto-zoom polish", v: ["No", "Yes", "Yes, under the same link"] },
     { k: "Keep the file", v: ["No downloads on the free plan", "Yes", "Always: MP4s on your Mac"] },
   ],
@@ -188,8 +188,8 @@ export const HOME_VS = {
  * PRODUCTS, the alternative pages and the README table.
  */
 export const VS_STATEMENTS: { id: string; text: string }[] = [
-  { id: "loom", text: "Reelbird vs Loom: both copy a share link when you stop recording. Loom's free Starter plan stops each video at 5 minutes, keeps 25 videos per person, records up to 720p and can't download; Business is $18 per user a month (billed monthly). Reelbird is free (MIT), sets no length limit, keeps every take as MP4 files on your Mac and hosts links in your own S3 or R2 bucket. Loom has comments, view counts, team workspaces and apps for Windows, web and mobile; Reelbird is Mac only and has none of those." },
-  { id: "screen-studio", text: "Reelbird vs Screen Studio: both plan auto-zoom from clicks and smooth the cursor on the Mac. Screen Studio costs $29 a month or $9 a month billed yearly (no one-time licence for new buyers), and its share link comes after export (1080p60, up to 30 minutes). Reelbird is free and MIT licensed, copies a link the moment you stop and updates that same link after you polish. Screen Studio has the more mature editor (camera layouts, iPhone recording, transcript editing) and a signed download; Reelbird is build-from-source for now." },
-  { id: "cap", text: "Reelbird vs Cap: both are open-source recorders with instant links and auto-zoom. Cap does them as separate recording modes (Instant and Studio), runs on macOS, Windows (beta) and Linux, is mostly AGPLv3, and its free plan is personal use with 5-minute links; custom S3 needs Pro ($12 per user a month, or $8.16 yearly). Reelbird is Mac only, MIT, native Swift, and links to your own bucket for free." },
-  { id: "openscreen", text: "Reelbird vs OpenScreen: both are free, MIT licensed and have auto-zoom. OpenScreen is Electron, runs on macOS 13+, Windows and Linux, has signed Mac builds and no share links. Reelbird is native Swift, Mac only (macOS 15+), build-from-source for now, and copies a share link the moment you stop." },
+  { id: "loom", text: "Reelbird vs Loom: both copy a share link when you stop recording. Loom's free Starter plan stops each video at 5 minutes, keeps 25 videos per person, records up to 720p and can't download; Business is $18 per user a month (billed monthly). Reelbird is free (MIT), sets no length limit, keeps every take as MP4 files on your Mac and hosts links in your own S3 or R2 bucket for free, or on Reelbird Pro ($5 a month, with view counts and where viewers stopped). Loom has comments, team workspaces and apps for Windows, web and mobile; Reelbird is Mac only and has none of those." },
+  { id: "screen-studio", text: "Reelbird vs Screen Studio: both plan auto-zoom from clicks and smooth the cursor on the Mac. Screen Studio costs $29 a month or $9 a month billed yearly (no one-time licence for new buyers), and its share link comes after export (1080p60, up to 30 minutes). Reelbird is free and MIT licensed, copies a link the moment you stop and updates that same link after you polish; links go to your own bucket for free, or to Reelbird Pro hosting for $5 a month. Screen Studio has the more mature editor (camera layouts, iPhone recording, transcript editing)." },
+  { id: "cap", text: "Reelbird vs Cap: both are open-source recorders with instant links and auto-zoom. Cap does them as separate recording modes (Instant and Studio), runs on macOS, Windows (beta) and Linux, is mostly AGPLv3, and its free plan is personal use with 5-minute links; custom S3 needs Pro ($12 per user a month, or $8.16 yearly). Reelbird is Mac only, MIT, native Swift, and links to your own bucket for free; optional Reelbird Pro ($5 a month) hosts links instead." },
+  { id: "openscreen", text: "Reelbird vs OpenScreen: both are free, MIT licensed and have auto-zoom. OpenScreen is Electron, runs on macOS 13+, Windows and Linux, has signed Mac builds and no share links. Reelbird is native Swift, Mac only (macOS 15+), a notarised download or build from source, and copies a share link the moment you stop." },
 ];

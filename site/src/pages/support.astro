@@ -11,7 +11,7 @@ const lede = PRO.launched
   ? "Reelbird is free and MIT licensed, with no watermarks or limits. The best way to support it is Reelbird Pro, which hosts your links for you. If you don't need that, you can chip in once or every month."
   : "Reelbird is free, MIT licensed and has no paid tier. If it saves you time, you can chip in once or every month. It pays for the hours that go into fixes, new features and, soon, a signed download.";
 ---
-<Base title="Support Reelbird" description="Reelbird is free and MIT licensed. One-time or monthly support keeps it maintained." og="support" crumbs={crumbs}>
+<Base title="Support Reelbird" description={PRO.launched ? "Reelbird is free and MIT licensed. Reelbird Pro, or a one-time or monthly donation, keeps it maintained." : "Reelbird is free and MIT licensed. One-time or monthly support keeps it maintained."} og="support" crumbs={crumbs}>
   <div class="wrap top">
     <PageHead title="Support Reelbird" lede={lede} crumbs={crumbs} class="head" />
     <Illustration src={celebrating} dark={celebratingDark} size={220} class="art" eager />
@@ -22,7 +22,7 @@ const lede = PRO.launched
       <section class="pro" aria-labelledby="pro-title">
         <div>
           <h2 id="pro-title">Reelbird Pro <span class="price">{PRO.price}<span class="per">/month</span></span></h2>
-          <p class="muted">Share without setting up storage: Reelbird hosts your links, with analytics that show who watched, where they stopped and where they came from. Recording, editing and exporting stay free.</p>
+          <p class="muted">Share without setting up storage: Reelbird hosts your links (unlimited, {PRO.storage}), with analytics that show who watched, where they stopped and where they came from. Recording, editing, exporting and sharing to your own bucket stay free. <a href="/pricing/">Free and Pro compared</a>.</p>
         </div>
         <a class="btn btn-primary" href={PRO.upgradeURL}><Icon name="arrowRight" />Get Reelbird Pro</a>
       </section>

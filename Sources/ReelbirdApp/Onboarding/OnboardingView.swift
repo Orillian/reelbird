@@ -106,6 +106,13 @@ import SwiftUI
         }
     }
 
+    /// Clears Reelbird's own Screen Recording entry (left by a differently signed copy) and asks again.
+    func resetScreen() {
+        _ = permissions.reset(.screen)
+        refresh()
+        request(.screen)
+    }
+
     func relaunch() {
         app?.prefs.onboardingDone = false // come back to the screen step's successor
         let path = Bundle.main.bundleURL.path
@@ -249,6 +256,9 @@ struct OnboardingView: View {
                 VStack(spacing: 6) {
                     StatusLine(tone: .info, text: "Turned it on? macOS applies it after Reelbird reopens.")
                     Button("Quit & Reopen") { model.relaunch() }.buttonStyle(SecondaryButtonStyle())
+                    Button("Already on and reopened? Reset and ask again") { model.resetScreen() }
+                        .buttonStyle(.link).font(.system(size: 12))
+                        .help("Clears an entry left by an earlier copy of Reelbird, so macOS asks again.")
                 }
             }
             Spacer()

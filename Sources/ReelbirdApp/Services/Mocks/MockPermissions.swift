@@ -12,4 +12,5 @@ final class MockPermissions: PermissionsService, @unchecked Sendable {
         return lock.withLock { states[p] = .granted; return .granted }
     }
     @MainActor func openSettings(for p: Permission) {}
+    func reset(_ p: Permission) -> Bool { lock.withLock { states[p] = .notDetermined }; return true }
 }

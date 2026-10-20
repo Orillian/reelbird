@@ -36,7 +36,8 @@ compare|Mac screen recorders compared|Compare|perch
 guide-internal-audio|Record your Mac screen with internal audio|Guide|headphones
 faq|Questions, answered|FAQ|perch
 support|Support Reelbird|Support|celebrating
-privacy|No account, no telemetry, no server|Privacy|sleeping
+pricing|Free, or $5 a month if we host your links|Pricing|link
+privacy|No account needed, no telemetry|Privacy|sleeping
 changelog|What changed in each release|Changelog|celebrating'
 
 enc() { python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$1"; }

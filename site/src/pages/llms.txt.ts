@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
 import { getCollection } from "astro:content";
-import { SITE_URL, SITE_DESCRIPTION, SITE_DESCRIPTION_LONG, SITE_SHORT, GITHUB_URL, REQUIREMENTS } from "../config/site";
+import { SITE_URL, SITE_DESCRIPTION, SITE_DESCRIPTION_LONG, SITE_SHORT, GITHUB_URL, REQUIREMENTS, PREBUILT, PRO } from "../config/site";
 import { VS_STATEMENTS, CHECKED_LABEL } from "../data/compare";
 
 export const GET: APIRoute = async () => {
@@ -14,11 +14,13 @@ ${SITE_DESCRIPTION_LONG.replace(SITE_DESCRIPTION, "").trim()}
 
 ## Key facts
 
-- Licence: MIT, free, no watermark; optional Reelbird Pro ($5/month) hosts share links with viewer analytics
+- Price: free and open source (MIT). Recording, editing and exporting have no watermark, no limits and need no account
+- Sharing, free: share links to your own S3-compatible bucket (Cloudflare R2 recommended), about ten minutes of setup, once; nothing goes through Reelbird's servers
+- Sharing, paid (optional): Reelbird Pro, ${PRO.price}/month, hosts your links with nothing to set up: unlimited hosted links, ${PRO.storage} of storage, and viewer analytics (views, unique viewers, retention, referrers, devices) without cookies. Cancel any time; links keep playing after Pro ends. There is no free hosted tier
 - Platform: macOS only. Runs on ${REQUIREMENTS.runs}. ${REQUIREMENTS.hardware}
-- Build requirement: ${REQUIREMENTS.tools} (${REQUIREMENTS.toolsDetail.replace(/\.$/, "")})
-- Install: git clone ${GITHUB_URL}.git && cd reelbird && make install (no signed download yet)
-- No account needed, no telemetry; share links point at your own S3-compatible bucket (Cloudflare R2 recommended), or at Reelbird Pro hosting
+- Download: ${PREBUILT.url} (signed and notarised by Apple)
+- Build from source: git clone ${GITHUB_URL}.git && cd reelbird && make install. Needs ${REQUIREMENTS.tools} (${REQUIREMENTS.toolsDetail.replace(/\.$/, "")})
+- Privacy: no telemetry, analytics or update checks in the app; recordings stay on your Mac unless you share
 - Agents: reelbird CLI (--json) and an MCP server (reelbird mcp) for Claude Code, Codex and Cursor
 - Repository: ${GITHUB_URL}
 - Website: ${SITE_URL}/
@@ -33,12 +35,13 @@ ${VS_STATEMENTS.map((v) => `- ${v.text}`).join("\n")}
 
 ${docs.map((d) => `- [${d.data.title}](${u(`/docs/${d.id}.md`)}): ${d.data.description}`).join("\n")}
 - [Download and build](${u("/download/")}): Step-by-step install, permissions, local signing, updating and troubleshooting
+- [Pricing](${u("/pricing/")}): Free vs Reelbird Pro (${PRO.price}/month for hosted links and viewer analytics), cancelling, and analytics privacy
 - [FAQ](${u("/faq/")}): Straight answers about price, install, requirements, links and privacy
 
 ## Features
 
 - [Auto-zoom and smooth cursor](${u("/features/auto-zoom/")})
-- [Instant share links to your own bucket](${u("/features/share-links/")})
+- [Instant share links, to your own bucket or hosted by Reelbird Pro](${u("/features/share-links/")})
 - [Audio and on-device captions](${u("/features/audio-captions/")})
 - [CLI and MCP for coding agents](${u("/features/agents/")})
 

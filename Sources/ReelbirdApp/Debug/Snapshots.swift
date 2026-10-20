@@ -454,6 +454,13 @@ import SwiftUI
             })
         }
 
+        // A Screen Recording switch that's on in System Settings but doesn't apply (stale entry).
+        scenes.append(Scene(name: "settings-permissions-stuck", size: CGSize(width: 640, height: 480), backdrop: false) {
+            let stuck = Services.mock(permissions: MockPermissions([.screen: .denied, .microphone: .granted]))
+            return AnyView(PermissionsSettings(model: PermissionsModel(services: stuck)).frame(width: 640, height: 480)
+                .background(Color(nsColor: .windowBackgroundColor)))
+        })
+
         // Reelbird Cloud in Settings › Sharing
         let cloudScenes: [(String, CloudStatus?, SharingSettingsModel.CloudPhase)] = [
             ("signed-out", nil, .idle),

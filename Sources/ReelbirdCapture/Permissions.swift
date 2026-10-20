@@ -105,6 +105,31 @@ public enum Permissions {
         }
     }
 
+    /// Clears this app's own entry for a permission (`tccutil reset <service> <bundle id>`), so macOS
+    /// asks again. Fixes a switch that shows on in System Settings but doesn't apply: the entry was
+    /// made for an earlier copy of Reelbird signed differently (a build from source, an old dev
+    /// build). Only this app's entry is touched. Returns whether tccutil succeeded.
+    @discardableResult
+    public static func reset(_ p: Permission) -> Bool {
+        guard let bundleID = Bundle.main.bundleIdentifier else { return false }
+        let service = switch p {
+        case .screen: "ScreenCapture"
+        case .microphone: "Microphone"
+        case .camera: "Camera"
+        case .accessibility: "Accessibility"
+        case .inputMonitoring: "ListenEvent"
+        }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        task.arguments = ["reset", service, bundleID]
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+        do { try task.run() } catch { return false }
+        task.waitUntilExit()
+        if p == .screen { UserDefaults.standard.removeObject(forKey: askedKey) }
+        return task.terminationStatus == 0
+    }
+
     /// Opens the System Settings pane where the person can turn the permission on.
     public static func openSettings(for p: Permission) {
         let url = p.settingsURL

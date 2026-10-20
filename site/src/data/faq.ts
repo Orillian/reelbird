@@ -8,7 +8,8 @@ export const FAQ: Faq[] = [
   {
     id: "free",
     q: "Is Reelbird free?",
-    a: "Yes. It's MIT licensed, with no watermark or export limit. Reelbird Pro ($5 a month) is optional: it hosts your share links so you don't need a bucket. Sharing uses your own storage bucket; Cloudflare R2's free tier (10 GB, free egress) covers most people.",
+    a: "Yes. It's MIT licensed, with no watermark, no export limit and no account. Share links to your own storage bucket are free too; Cloudflare R2's free tier (10 GB, free egress) covers most people. Reelbird Pro ($5 a month) is optional: it hosts your links so you don't need a bucket, and shows who watched.",
+    html: `Yes. It's MIT licensed, with no watermark, no export limit and no account. Share links to your own storage bucket are free too; Cloudflare R2's free tier (10 GB, free egress) covers most people. <a href="/pricing/">Reelbird Pro</a> ($5 a month) is optional: it hosts your links so you don't need a bucket, and shows who watched.`,
   },
   {
     id: "open-source",
@@ -19,7 +20,7 @@ export const FAQ: Faq[] = [
   {
     id: "account",
     q: "Do I need an account?",
-    a: "No. There's no Reelbird account or server.",
+    a: "No. Recording, editing, exporting and sharing to your own bucket need no account. Only Reelbird Pro, the optional hosting, has one: you sign in with your email address from Settings › Sharing.",
   },
   {
     id: "install",
@@ -40,14 +41,20 @@ export const FAQ: Faq[] = [
   {
     id: "links",
     q: "How do share links work?",
-    a: "With Share while recording on, Reelbird uploads a 1080p stream to your bucket as you record and copies the link when you stop. After editing, Update link replaces the video and the URL stays the same.",
-    html: `With <strong>Share while recording</strong> on, Reelbird uploads a 1080p stream to your bucket as you record and copies the link when you stop. After editing, <strong>Update link</strong> replaces the video and the URL stays the same.`,
+    a: "With Share while recording on, Reelbird uploads a 1080p stream as you record, to your own bucket or to Reelbird Pro, and copies the link when you stop. After editing, Update link replaces the video and the URL stays the same.",
+    html: `With <strong>Share while recording</strong> on, Reelbird uploads a 1080p stream as you record, to your own bucket or to Reelbird Pro, and copies the link when you stop. After editing, <strong>Update link</strong> replaces the video and the URL stays the same.`,
   },
   {
     id: "sharing-setup",
     q: "Do I have to set up sharing?",
-    a: "Only if you want links. Recording, editing and export work with no setup. Sharing needs a one-time bucket setup, about ten minutes for R2 (Cloudflare asks for a payment method on file even on the free tier).",
-    html: `Only if you want links. Recording, editing and export work with no setup. Sharing needs a one-time bucket setup, about ten minutes for R2 (Cloudflare asks for a payment method on file even on the free tier). See <a href="/docs/sharing/">Sharing setup</a>.`,
+    a: "Only if you want links. Recording, editing and export work with no setup. For links there are two ways: your own bucket, free, after a one-time setup of about ten minutes for R2 (Cloudflare asks for a payment method on file even on the free tier); or Reelbird Pro, $5 a month, where you sign in and there's nothing to set up.",
+    html: `Only if you want links. Recording, editing and export work with no setup. For links there are two ways: your own bucket, free, after a one-time setup of about ten minutes for R2 (Cloudflare asks for a payment method on file even on the free tier; see <a href="/docs/sharing/">Sharing setup</a>); or <a href="/pricing/">Reelbird Pro</a>, $5 a month, where you sign in and there's nothing to set up.`,
+  },
+  {
+    id: "pro",
+    q: "What is Reelbird Pro?",
+    a: "An optional $5-a-month plan where Reelbird hosts your share links: nothing to set up, unlimited links, 100 GB of storage, and viewer analytics (views, unique viewers, where people stopped watching, where they came from and devices). Cancel any time; links keep playing after Pro ends. Everything else in Reelbird stays free.",
+    html: `An optional $5-a-month plan where Reelbird hosts your share links: nothing to set up, unlimited links, 100 GB of storage, and viewer analytics (views, unique viewers, where people stopped watching, where they came from and devices). Cancel any time; links keep playing after Pro ends. Everything else in Reelbird stays free. See <a href="/pricing/">pricing</a>.`,
   },
   {
     id: "download-videos",
@@ -57,7 +64,7 @@ export const FAQ: Faq[] = [
   {
     id: "time-limit",
     q: "Is there a time limit?",
-    a: "Reelbird sets none. Limits come from your disk and, for links, your bucket.",
+    a: "Reelbird sets none. Limits come from your disk and, for links, your bucket. Reelbird Pro includes 100 GB.",
   },
   {
     id: "auto-zoom",
@@ -67,8 +74,8 @@ export const FAQ: Faq[] = [
   {
     id: "privacy",
     q: "Is my data private?",
-    a: "Recordings, edits and captions stay in ~/Movies/Reelbird. There's no analytics, telemetry, crash reporting or update checks. Captions use Apple's on-device frameworks. Share links are unlisted, not secret. Anyone with a link can watch.",
-    html: `Recordings, edits and captions stay in <code>~/Movies/Reelbird</code>. There's no analytics, telemetry, crash reporting or update checks. Captions use Apple's on-device frameworks. Share links are unlisted, not secret. Anyone with a link can watch. More on the <a href="/privacy/">privacy page</a>.`,
+    a: "Recordings, edits and captions stay in ~/Movies/Reelbird. The app has no analytics, telemetry, crash reporting or update checks. Captions use Apple's on-device frameworks. Share links are unlisted, not secret. Anyone with a link can watch. Reelbird Pro's viewer analytics use no cookies and store no IP addresses.",
+    html: `Recordings, edits and captions stay in <code>~/Movies/Reelbird</code>. The app has no analytics, telemetry, crash reporting or update checks. Captions use Apple's on-device frameworks. Share links are unlisted, not secret. Anyone with a link can watch. Reelbird Pro's viewer analytics use no cookies and store no IP addresses. More on the <a href="/privacy/">privacy page</a>.`,
   },
   {
     id: "crash",
@@ -90,14 +97,14 @@ export const FAQ: Faq[] = [
   {
     id: "vs-loom-screen-studio",
     q: "How is Reelbird different from Loom and Screen Studio?",
-    a: "Loom copies a share link when you stop but has no auto-zoom, and its free Starter plan stops each video at 5 minutes, keeps 25 videos, records up to 720p and can't download. Screen Studio has polished auto-zoom but costs $29 a month ($9 billed yearly), and its share link comes after you export. Reelbird copies a link when you stop, lets you add auto-zoom later under the same link, keeps every take as MP4 files on your Mac and is free under the MIT licence. Loom does more for teams (comments, view counts, every platform) and Screen Studio has a more mature editor and a signed download. Prices checked 12 October 2026.",
-    html: `Loom copies a share link when you stop but has no auto-zoom, and its free Starter plan stops each video at 5 minutes, keeps 25 videos, records up to 720p and can't download. Screen Studio has polished auto-zoom but costs $29 a month ($9 billed yearly), and its share link comes after you export. Reelbird copies a link when you stop, lets you add auto-zoom later under the same link, keeps every take as MP4 files on your Mac and is free under the MIT licence. Loom does more for teams (comments, view counts, every platform) and Screen Studio has a more mature editor and a signed download. Prices checked 12 October 2026; see the <a href="/compare/">full comparison</a>.`,
+    a: "Loom copies a share link when you stop but has no auto-zoom, and its free Starter plan stops each video at 5 minutes, keeps 25 videos, records up to 720p and can't download. Screen Studio has polished auto-zoom but costs $29 a month ($9 billed yearly), and its share link comes after you export. Reelbird copies a link when you stop, lets you add auto-zoom later under the same link, keeps every take as MP4 files on your Mac and is free under the MIT licence (optional Reelbird Pro, $5 a month, hosts links and shows who watched). Loom does more for teams (comments, workspaces, every platform) and Screen Studio has a more mature editor. Prices checked 12 October 2026.",
+    html: `Loom copies a share link when you stop but has no auto-zoom, and its free Starter plan stops each video at 5 minutes, keeps 25 videos, records up to 720p and can't download. Screen Studio has polished auto-zoom but costs $29 a month ($9 billed yearly), and its share link comes after you export. Reelbird copies a link when you stop, lets you add auto-zoom later under the same link, keeps every take as MP4 files on your Mac and is free under the MIT licence (optional <a href="/pricing/">Reelbird Pro</a>, $5 a month, hosts links and shows who watched). Loom does more for teams (comments, workspaces, every platform) and Screen Studio has a more mature editor. Prices checked 12 October 2026; see the <a href="/compare/">full comparison</a>.`,
   },
   {
     id: "cap-openscreen",
     q: "How is it different from Cap or OpenScreen?",
-    a: "Cap also does instant links and auto-zoom, but as separate recording modes (Instant and Studio). It runs on Mac, Windows and Linux, its code is mostly AGPLv3, its free plan is for personal use with 5-minute links, and your own S3 bucket is a Pro feature. OpenScreen is MIT, free and cross-platform with signed Mac builds, but has no share links. Reelbird is Mac-only and native Swift, links to your own bucket for free, and its links update in place after you edit.",
-    html: `Cap also does instant links and auto-zoom, but as separate recording modes (Instant and Studio). It runs on Mac, Windows and Linux, its code is mostly AGPLv3, its free plan is for personal use with 5-minute links, and your own S3 bucket is a Pro feature. OpenScreen is MIT, free and cross-platform with signed Mac builds, but has no share links. Reelbird is Mac-only and native Swift, links to your own bucket for free, and its links update in place after you edit. The <a href="/compare/">comparison</a> has the details.`,
+    a: "Cap also does instant links and auto-zoom, but as separate recording modes (Instant and Studio). It runs on Mac, Windows and Linux, its code is mostly AGPLv3, its free plan is for personal use with 5-minute links, and your own S3 bucket is a Pro feature. OpenScreen is MIT, free and cross-platform with signed Mac builds, but has no share links. Reelbird is Mac-only and native Swift, links to your own bucket for free (or hosts them with Reelbird Pro, $5 a month), and its links update in place after you edit.",
+    html: `Cap also does instant links and auto-zoom, but as separate recording modes (Instant and Studio). It runs on Mac, Windows and Linux, its code is mostly AGPLv3, its free plan is for personal use with 5-minute links, and your own S3 bucket is a Pro feature. OpenScreen is MIT, free and cross-platform with signed Mac builds, but has no share links. Reelbird is Mac-only and native Swift, links to your own bucket for free (or hosts them with Reelbird Pro, $5 a month), and its links update in place after you edit. The <a href="/compare/">comparison</a> has the details.`,
   },
 ];
 

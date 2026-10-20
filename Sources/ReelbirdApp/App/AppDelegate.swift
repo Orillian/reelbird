@@ -126,6 +126,7 @@ import ReelbirdCore
     @objc func newRecording(_ sender: Any?) { model.newRecording() }
     @objc func openLibrary(_ sender: Any?) { model.openLibrary() }
     @objc func openSettings(_ sender: Any?) { model.openSettings() }
+    @objc func openPro(_ sender: Any?) { model.openPro() }
     @objc func openPermissions(_ sender: Any?) { model.openSettings(.permissions) }
     @objc func openAbout(_ sender: Any?) { model.openSettings(.about) }
     @objc func showOnboarding(_ sender: Any?) { model.showOnboarding() }
