@@ -17,7 +17,7 @@ export const billing = {
   /** The Reelbird Pro product: only subscriptions to it count. */
   proProduct: process.env.STRIPE_PRO_PRODUCT?.trim() || "prod_VTSee5NkgzYUpl",
   /** Stripe's no-code customer portal login link (Settings › Billing › Customer portal). */
-  portalLink: process.env.STRIPE_PORTAL_LINK?.trim() || null,
+  portalLink: process.env.STRIPE_PORTAL_LINK?.trim() || "https://billing.stripe.com/p/login/9B68wOewEaXsgJxdiH3ks01",
 };
 
 const PAYING = new Set(["active", "trialing"]);

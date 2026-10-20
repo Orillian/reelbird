@@ -62,12 +62,12 @@ bun test        # end to end against the dev bucket and reelbird_cloud_test
 
 - **R2 key.** Replace the dev key with an R2 token limited to the hosted bucket (Object Read & Write). The temporary keys can never exceed their parent key's access.
 - **Email.** Magic-link sign-in through Tiffin auth and a mail service (Resend or similar). Until then only `DEV=1` can sign in.
-- **Stripe.** In the Dashboard:
-  - Add a webhook endpoint `<PUBLIC_URL>/stripe/webhook` for `checkout.session.completed` and `customer.subscription.*`, and put its signing secret in `STRIPE_WEBHOOK_SECRET`.
-  - Turn on the no-code customer portal and set `STRIPE_PORTAL_LINK`.
-  - The Reelbird Pro link exists (live). Its return URL assumes the production host `watch.reelbird.app`; change it in the Dashboard if the host differs.
+- **Stripe** is set up in live mode:
+  - A webhook endpoint (`we_1USXBdBbj7zje3qWfYSRjLgB`) sends `checkout.session.completed` and `customer.subscription.*` to `https://watch.reelbird.app/stripe/webhook`. Its signing secret is in `notes/deploy/cloud-prod.env` (gitignored) and goes in `STRIPE_WEBHOOK_SECRET`.
+  - A customer portal configuration "Reelbird Pro" (`bpc_1USXBVBbj7zje3qWnSI9LyWF`) allows cancel at period end, card updates and invoices. Its login link is the default `STRIPE_PORTAL_LINK`.
+  - The Pro Payment Link is live but unused until launch. Deactivate it in the Dashboard if it shouldn't take payments before then.
   - For local tests: `stripe listen --forward-to localhost:8788/stripe/webhook` in test mode.
-  - `/dev/plan` goes away in production (it only exists with `DEV=1`).
+  - `/dev/plan` only exists with `DEV=1`.
 - **Legal.** Terms, privacy page, DMCA agent, a report link on the viewer page, and an admin kill switch.
 - **Deploy.** Add this as an app in the `reelbird` Tiffin project on its own host, e.g. `watch.reelbird.app`. That's an A record at Namecheap, like the site, so no Cloudflare DNS is needed because the bucket is never public. Set the release command to `bun run migrate`, use Tiffin Postgres for `DATABASE_URL` and Valkey for the event rate limit, and run `measureRecent` from a cron instead of `setInterval`. Then point `CloudSettings.defaultServer` at the production URL.
 - **Country.** Countries need a GeoIP lookup (DB-IP Lite, as Tiffin's analytics uses). Today they're empty unless a proxy sends `cf-ipcountry`.
