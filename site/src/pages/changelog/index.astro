@@ -2,11 +2,17 @@
 import Base from "../../layouts/Base.astro";
 import PageHead from "../../components/PageHead.astro";
 import { RELEASES } from "../../data/changelog";
-import { GITHUB_URL } from "../../config/site";
+import { GITHUB_URL, SITE_URL } from "../../config/site";
 const fmt = (d: string) => new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 const crumbs = [{ name: "Changelog", path: "/changelog/" }];
 ---
-<Base title="Reelbird changelog" description="What changed in each Reelbird release." og="changelog" crumbs={crumbs}>
+<Base
+  title="Reelbird changelog"
+  description="What changed in each Reelbird release, newest first, with the date each version shipped. Follow new versions with the RSS feed."
+  og="changelog"
+  crumbs={crumbs}
+  schema={[{ "@type": "WebPage", url: `${SITE_URL}/changelog/`, name: "Reelbird changelog", dateModified: RELEASES[0].date }]}
+>
   <PageHead title="Changelog" lede="What changed in each release of Reelbird." crumbs={crumbs}>
     <p class="feeds"><a href="/changelog/rss.xml">RSS feed</a> · <a href={`${GITHUB_URL}/commits/main`}>Every commit on GitHub</a></p>
   </PageHead>

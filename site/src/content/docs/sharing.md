@@ -32,7 +32,7 @@ r/<id>/poster.<n>.jpg   preview image for link unfurls
 r/<id>/captions.<n>.vtt captions, if you made them
 ```
 
-`<n>` goes up by one with every update, so browsers and caches never show a stale video. Reelbird deletes the previous revision's files after an update.
+`<n>` goes up by one with every update, so browsers and caches never show a stale video. After an update is live, Reelbird deletes everything it no longer plays: the previous revision's files, captions you removed, and the stream from `hls/`, which may show what you blurred or cut.
 
 The link is `https://<your public URL>/r/<id>/`. It never changes, even when you update the video.
 
@@ -127,7 +127,7 @@ Reelbird Pro is the optional paid way to share: Reelbird hosts your links, so th
 
 New shares then go to Reelbird's hosting, and links look like `https://watch.reelbird.app/r/<id>/`. **Share while recording**, **Update link** and **Stop sharing** work the same as with your own bucket.
 
-- **Analytics.** Each link shows views, unique viewers, where people stopped watching (a retention curve), where they came from and their devices, in the Library and on your [account page](https://watch.reelbird.app/account). There are no cookies: a viewer is counted with a daily hash of IP address and browser, and no IP address is stored. Your own views and link-preview bots don't count.
+- **Analytics.** Each link shows views, daily unique viewers, where people stopped watching (a retention curve), where they came from and their devices. View counts show in the Library; the full stats are on your [account page](https://watch.reelbird.app/account) and from `reelbird cloud stats`. They're anonymous: you see how many people watched and how far, never who. A view counts once at least 3 seconds have played. There are no cookies: a viewer is counted with a daily hash of IP address and browser, so no IP address is stored, and one person who watches on three different days counts as three viewers. Your own views while signed in and link-preview bots don't count.
 - **What viewers see.** The video page plays in any browser with no sign-in, with a small "Made with Reelbird" footer. Link previews show the video's title and poster.
 - **Cancelling.** Choose **Manage billing** on your account page. Links you already shared keep playing after Pro ends; you can delete them from the account page or the app. To share again without Pro, switch back to your own bucket.
 - **Command line.** `reelbird cloud login` signs in, `reelbird cloud status` shows your plan and usage, `reelbird cloud links` lists your hosted links with view counts, `reelbird cloud stats PROJECT` shows one link's views, retention and sources, `reelbird cloud use bucket` or `use cloud` picks where new shares go, and `reelbird cloud logout` signs out. On a machine without a Keychain, scripts and agents can set `REELBIRD_CLOUD_TOKEN`.

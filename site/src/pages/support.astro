@@ -22,7 +22,7 @@ const lede = PRO.launched
       <section class="pro" aria-labelledby="pro-title">
         <div>
           <h2 id="pro-title">Reelbird Pro <span class="price">{PRO.price}<span class="per">/month</span></span></h2>
-          <p class="muted">Share without setting up storage: Reelbird hosts your links (unlimited, {PRO.storage}), with analytics that show who watched, where they stopped and where they came from. Recording, editing, exporting and sharing to your own bucket stay free. <a href="/pricing/">Free and Pro compared</a>.</p>
+          <p class="muted">Share without setting up storage: Reelbird hosts your links (unlimited, {PRO.storage}), with anonymous analytics that show how many people watched, where they stopped and where they came from. Recording, editing, exporting and sharing to your own bucket stay free. <a href="/pricing/">Free and Pro compared</a>.</p>
         </div>
         <a class="btn btn-primary" href={PRO.upgradeURL}><Icon name="arrowRight" />Get Reelbird Pro</a>
       </section>
@@ -33,7 +33,7 @@ const lede = PRO.launched
     <section class="once" aria-labelledby="once-title">
       <h2 id="once-title">Once</h2>
       <p class="muted">Any amount you like. Stripe handles the payment; Reelbird never sees your card.</p>
-      <a class="btn btn-primary" href={DONATION_LINKS.once}><Icon name="heart" />Give once</a>
+      <a class={PRO.launched ? "btn btn-ghost" : "btn btn-primary"} href={DONATION_LINKS.once}><Icon name="heart" />Give once</a>
     </section>
 
     <section class="monthly" aria-labelledby="monthly-title">
@@ -70,7 +70,7 @@ const lede = PRO.launched
   .top :global(.art) { margin-bottom: 2rem; }
   .pro { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1.5rem 2rem; margin-bottom: 2rem; padding: 1.75rem; border-radius: var(--radius-lg); border: 1px solid var(--line-strong); background: var(--bg-raised); }
   .pro h2 { font-size: var(--step-2); display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
-  .pro .price { font-family: var(--font-display); font-size: 1.25rem; font-weight: 520; color: var(--accent-text); }
+  .pro .price { font-family: var(--font-display); font-size: 1.25rem; font-weight: 520; }
   .pro p { max-width: 44rem; }
   .tiers { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 2rem; padding-bottom: 4rem; }
   .tiers section { border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: 1.75rem; background: var(--bg-raised); display: grid; align-content: start; gap: 0.9rem; justify-items: start; }

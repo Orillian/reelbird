@@ -10,12 +10,12 @@ import { faqPage, softwareApplication } from "../lib/jsonld";
 import statsLight from "../assets/shots/pro-stats-light.webp";
 import statsDark from "../assets/shots/pro-stats-dark.webp";
 const crumbs = [{ name: "Pricing", path: "/pricing/" }];
-const description = `Reelbird is free: record, edit, export and share to your own bucket, with no watermark and no account. Optional Reelbird Pro hosts your links for ${PRO.price} a month, with viewer analytics.`;
+const description = `Reelbird is free: record, edit, export and share to your own bucket, with no watermark or account. Reelbird Pro hosts your links for ${PRO.price} a month.`;
 ---
 <Base title="Reelbird pricing: free, with optional Pro hosting" description={description} og="pricing" crumbs={crumbs} schema={[softwareApplication(), faqPage(PRICING_FAQ)]}>
   <PageHead
     title="The recorder is free. Pro hosts your links."
-    lede={`Record, edit and export with no watermark and no account, and share from your own storage for free. If you'd rather not set anything up, Reelbird Pro hosts your links and shows who watched, for ${PRO.price} a month.`}
+    lede={`Record, edit and export with no watermark and no account, and share from your own storage for free. If you'd rather not set anything up, Reelbird Pro hosts your links and shows how many people watched and where they stopped, for ${PRO.price} a month.`}
     crumbs={crumbs}
   />
 
@@ -48,8 +48,8 @@ const description = `Reelbird is free: record, edit, export and share to your ow
 
     <section class="block showcase" aria-labelledby="see-title">
       <div class="showcase-text">
-        <h2 id="see-title">See who watched</h2>
-        <p class="muted">Every hosted link gets a page of its own. Views and unique viewers, how much people watched, the moment they stopped, and where they came from. No cookies, and your own plays don't count.</p>
+        <h2 id="see-title">See how it was watched</h2>
+        <p class="muted">Every hosted link gets a page of its own: views, daily unique viewers, how much people watched, the moment they stopped, and where they came from. It's anonymous and uses no cookies, and your own plays don't count.</p>
       </div>
       <Shot src={statsLight} dark={statsDark} alt="A Reelbird Pro stats page: 64 views, 37 unique viewers, 57% watched on average, and a curve of viewers still watching across a five-minute video." sizes="(min-width: 72rem) 1100px, 100vw" variant="frame" class="stats-shot" />
     </section>

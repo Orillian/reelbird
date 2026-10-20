@@ -38,30 +38,31 @@ const permissions = [
             <li>The welcome tour asks for Screen Recording, microphone and camera. macOS keeps them when you update.</li>
           </ol>
           <p class="muted small">SHA-256: <code class="hash">{PREBUILT.sha256}</code></p>
-          <p class="muted small">Prefer to build it yourself? The steps are below.</p>
+          <p class="muted small">Updating? Download the new version here and replace the app; <a href="#update">how updates work</a>. Prefer to build it yourself? <a href="#source">The steps are below</a>.</p>
         </section>
       )}
 
-      <ol class="steps">
+      <h2 id="source" class="source-title">{PREBUILT.enabled ? "Or build it from source" : "Build it from source"}</h2>
+      <ol class="steps" aria-labelledby="source">
         <li id="tools">
-          <h2>Install Apple's Command Line Tools</h2>
+          <h3>Install Apple's Command Line Tools</h3>
           <p>You need the Command Line Tools for Xcode 26 or later, which bring Swift 6.2 and the macOS 26 SDK. They install on macOS 15.6 and later. Xcode 26 works too, but you don't need it.</p>
           <Code code="xcode-select --install" />
           <p class="muted">Already have them? Check the Swift version. It needs to say 6.2 or later; if it doesn't, update the tools in System Settings → General → Software Update.</p>
           <Code code="swift --version" />
         </li>
         <li id="build">
-          <h2>Clone and build</h2>
+          <h3>Clone and build</h3>
           <Code code={`git clone ${GITHUB_URL}.git\ncd reelbird\nmake install`} />
           <p><code>make install</code> builds a release copy of the app and copies it to <code>/Applications</code>. If Reelbird is already there, it asks before replacing it. Run <code>make</code> to see every target.</p>
         </li>
         <li id="open">
-          <h2>Open it</h2>
+          <h3>Open it</h3>
           <Code code="open /Applications/Reelbird.app" />
           <p>Reelbird lives in the menu bar. Look for the robin. <kbd>⌥</kbd><kbd>⇧</kbd><kbd>R</kbd> starts a recording from any app.</p>
         </li>
         <li id="permissions">
-          <h2>Allow the permissions</h2>
+          <h3>Allow the permissions</h3>
           <p>The welcome tour asks for each one in turn. You can change them later in <strong>Settings… → Permissions</strong> or in <strong>System Settings → Privacy &amp; Security</strong>.</p>
           <div class="table-wrap">
             <table>
@@ -90,6 +91,8 @@ const permissions = [
         <p>Recording, editing and export work without it. For links, connect a storage bucket you own, once, for free; Cloudflare R2's free tier covers most people. <a href="/docs/sharing/">Sharing setup, step by step</a>. Or sign in to <a href="/pricing/">Reelbird Pro</a> ($5 a month) under Settings › Sharing › Reelbird Pro, with nothing to set up.</p>
 
         <h3 id="update">Update</h3>
+        <p><strong>If you downloaded the app:</strong> download the new zip from the top of this page, quit Reelbird, and drag the new copy to Applications to replace the old one. Your recordings, settings and permissions stay. Reelbird never checks for updates itself (see <a href="/privacy/">privacy</a>), so watch the <a href="/changelog/">changelog</a> or its <a href="/changelog/rss.xml">RSS feed</a> for new versions.</p>
+        <p><strong>If you built from source:</strong> pull the latest code and install again.</p>
         <Code code={`cd reelbird\ngit pull\nmake install`} />
 
         <h3 id="uninstall">Uninstall</h3>
@@ -196,7 +199,8 @@ const permissions = [
     border: 1px solid var(--line-strong); font-family: var(--font-display); font-size: 1.05rem;
   }
   .steps > li:not(:last-child)::after { content: ""; position: absolute; left: 1.125rem; top: 2.6rem; bottom: -2.4rem; width: 1px; background: var(--line); }
-  .steps h2 { font-size: var(--step-2); }
+  .source-title { font-size: var(--step-3); margin-bottom: 2rem; scroll-margin-top: 5rem; }
+  .steps h3 { font-family: var(--font-display); font-weight: 520; font-size: var(--step-2); letter-spacing: -0.015em; line-height: 1.1; }
   .steps p { color: var(--text-muted); }
   .steps p strong { color: var(--text); font-weight: 600; }
   .steps .note { color: var(--text); }

@@ -7,17 +7,20 @@ import posterDark from "../assets/launch-poster.png";
 import Icon from "./Icon.astro";
 import { LAUNCH_VIDEO } from "../config/site";
 const { url, kind, title, duration } = LAUNCH_VIDEO;
+// An embed plays from YouTube's no-cookie domain, and only after a click; the button says so.
+const host = kind === "embed" && url ? "YouTube" : "";
+const meta = [duration, host && `plays from ${host}`].filter(Boolean).join(" · ");
 const sizes = "(min-width: 72rem) 1104px, calc(100vw - 2rem)";
 const widths = [640, 960, 1280, 1800];
 ---
-<figure class="launch frame" data-launch={url ? kind : "none"} data-url={url || undefined}>
+<figure class="launch frame" data-launch={url ? kind : "none"} data-url={url || undefined} data-title={title}>
   <Picture src={poster} widths={widths} sizes={sizes} formats={["avif", "webp"]} fallbackFormat="webp" alt="" class="lv-poster only-light" loading="lazy" />
   <Picture src={posterDark} widths={widths} sizes={sizes} formats={["avif", "webp"]} fallbackFormat="webp" alt="" class="lv-poster only-dark" loading="lazy" />
   <div class="veil"></div>
   {url ? (
-    <button type="button" class="play" data-launch-play aria-label={`Play: ${title}`}>
+    <button type="button" class="play" data-launch-play>
       <span class="disc"><Icon name="play" size={22} /></span>
-      <span class="label"><strong>{title}</strong>{duration && <span class="muted-on">{duration}</span>}</span>
+      <span class="label"><strong>{title}</strong>{meta && <span class="muted-on">{meta}</span>}</span>
     </button>
   ) : (
     <figcaption class="soon">
@@ -39,7 +42,7 @@ const widths = [640, 960, 1280, 1800];
         f.src = url + (url.includes("?") ? "&" : "?") + "autoplay=1";
         f.allow = "autoplay; fullscreen; picture-in-picture";
         f.allowFullscreen = true;
-        f.title = btn.getAttribute("aria-label")?.replace(/^Play: /, "") ?? "Video";
+        f.title = fig.dataset.title ?? "Video";
         el = f;
       } else {
         const v = document.createElement("video");

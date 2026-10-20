@@ -43,7 +43,7 @@ Sharing is optional. By default it is serverless: the app uploads to an S3-compa
 1. When recording starts, the app reserves a short ID and uploads a placeholder viewer page, so the link exists before the first frame.
 2. While recording, a second writer produces an H.264 stream (screen scaled to at most 1920 px wide, the camera bubble where the live bubble is, mixed audio, 30 fps) in 2-second CMAF segments, kept in the bundle's `share/` folder and uploaded as they are written, plus an HLS playlist that grows (`EVENT`). If the app quits mid-upload, a small journal lets the next launch finish it.
 3. On stop, the link is copied immediately; the last segment and the end marker follow within about a second.
-4. After editing, **Update link** uploads the polished MP4 under a new revision name and rewrites `meta.json` and the viewer page, which switches to it. The link never changes.
+4. After editing, **Update link** uploads the polished MP4 under a new revision name and rewrites `meta.json` and the viewer page, which switches to it. Then it deletes everything the new revision doesn't play, the recorded stream included. The link never changes. The live stream is revision 0, and no writer replaces a higher revision, so a live upload that finishes late (or resumes after a relaunch) can't bring the stream back.
 
 The viewer page is static HTML that reads `meta.json`. Safari plays HLS natively; other browsers load a pinned, integrity-checked hls.js only while there is no polished MP4. The full bucket layout is in [Sharing setup](/docs/sharing/#what-reelbird-puts-in-the-bucket).
 

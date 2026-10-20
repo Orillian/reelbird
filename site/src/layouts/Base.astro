@@ -35,7 +35,7 @@ const ld = JSON.stringify(graph(...nodes)).replace(/</g, "\\u003c");
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
-    <link rel="canonical" href={canonical} />
+    {!noindex && <link rel="canonical" href={canonical} />}
     {noindex && <meta name="robots" content="noindex" />}
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFF4E8" />
@@ -87,6 +87,32 @@ const ld = JSON.stringify(graph(...nodes)).replace(/</g, "\\u003c");
         );
         els.forEach((el) => io.observe(el));
       } else els.forEach((el) => el.classList.add("is-in"));
+
+      // A table that scrolls sideways (phones) must be reachable by keyboard: make the scroller a
+      // focusable, named region only while it actually overflows.
+      // Markdown tables have no wrapper, so give them one (CSS keeps them scrollable without JS).
+      document.querySelectorAll<HTMLTableElement>(".prose table").forEach((t) => {
+        if (t.parentElement?.classList.contains("table-wrap")) return;
+        const w = document.createElement("div");
+        w.className = "table-wrap";
+        t.before(w); w.append(t);
+      });
+      const scrollers = document.querySelectorAll<HTMLElement>(".table-wrap");
+      const mark = (el: HTMLElement) => {
+        const scrolls = el.scrollWidth > el.clientWidth + 1;
+        if (scrolls && !el.hasAttribute("tabindex")) {
+          el.tabIndex = 0;
+          el.setAttribute("role", "region");
+          const cap = el.querySelector("caption")?.textContent?.trim();
+          el.setAttribute("aria-label", cap ? `${cap} (scrolls sideways)` : "Table (scrolls sideways)");
+        } else if (!scrolls && el.getAttribute("tabindex") === "0") {
+          el.removeAttribute("tabindex"); el.removeAttribute("role"); el.removeAttribute("aria-label");
+        }
+      };
+      if (scrollers.length) {
+        if ("ResizeObserver" in window) { const ro = new ResizeObserver((es) => es.forEach((e) => mark(e.target as HTMLElement))); scrollers.forEach((el) => ro.observe(el)); }
+        else scrollers.forEach(mark);
+      }
     </script>
   </body>
 </html>

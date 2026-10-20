@@ -27,10 +27,10 @@ export const PLAN_ROWS: { k: string; free: string; pro: string }[] = [
   { k: "Share links", free: "Hosted in your own bucket: Cloudflare R2 or any S3-compatible storage", pro: "Hosted by Reelbird at watch.reelbird.app" },
   { k: "Setup", free: "About ten minutes, once", pro: "None. Sign in from the Share button" },
   { k: "Storage", free: "Whatever your bucket holds. R2's free tier covers 10 GB", pro: `Unlimited links, ${PRO.storage}` },
-  { k: "Viewer analytics", free: "No", pro: "Views, unique viewers, where people stop, where they came from, devices" },
+  { k: "Viewer analytics", free: "No", pro: "Anonymous: views, daily unique viewers, where people stop, where they came from, devices" },
   { k: "If you cancel", free: "—", pro: "Links you've shared keep playing. New links need Pro or your own bucket" },
   { k: "Update link, same URL", free: "Yes", pro: "Yes" },
-  { k: "CLI and MCP", free: "Yes", pro: "Yes, plus reelbird cloud" },
+  { k: "CLI and MCP", free: "Yes", pro: "Yes, plus the reelbird cloud commands" },
 ];
 
 export const PRICING_FAQ: Faq[] = [
@@ -42,13 +42,13 @@ export const PRICING_FAQ: Faq[] = [
   {
     id: "what-pro",
     q: "What does Reelbird Pro add?",
-    a: `Reelbird hosts your share links, so there's nothing to set up: unlimited hosted links, ${PRO.storage} of storage, and viewer analytics with views, unique viewers, where people stopped watching, where they came from and their devices. The app itself is the same.`,
+    a: `Reelbird hosts your share links, so there's nothing to set up: unlimited hosted links, ${PRO.storage} of storage, and anonymous viewer analytics: views, daily unique viewers, where people stopped watching, where they came from and their devices. The app itself is the same.`,
   },
   {
     id: "need-pro",
     q: "Do I need Pro to share links?",
-    a: "No. Links to your own bucket are free. The setup takes about ten minutes, once, and Cloudflare R2's free tier (10 GB, free egress) covers most people. Pro is for skipping that setup and seeing who watched.",
-    html: `No. Links to your own bucket are free. The <a href="/docs/sharing/">setup</a> takes about ten minutes, once, and Cloudflare R2's free tier (10 GB, free egress) covers most people. Pro is for skipping that setup and seeing who watched.`,
+    a: "No. Links to your own bucket are free. The setup takes about ten minutes, once, and Cloudflare R2's free tier (10 GB, free egress) covers most people. Pro is for skipping that setup and seeing how many people watched and where they stopped.",
+    html: `No. Links to your own bucket are free. The <a href="/docs/sharing/">setup</a> takes about ten minutes, once, and Cloudflare R2's free tier (10 GB, free egress) covers most people. Pro is for skipping that setup and seeing how many people watched and where they stopped.`,
   },
   {
     id: "free-hosting",
@@ -70,8 +70,8 @@ export const PRICING_FAQ: Faq[] = [
   {
     id: "analytics-privacy",
     q: "How private are the viewer analytics?",
-    a: "They use no cookies. A viewer is counted with a daily hash of IP address and browser, so no IP address is stored and nobody can be followed across days or links. Your own views and link-preview bots aren't counted.",
-    html: `They use no cookies. A viewer is counted with a daily hash of IP address and browser, so no IP address is stored and nobody can be followed across days or links. Your own views and link-preview bots aren't counted. More on the <a href="/privacy/#pro">privacy page</a>.`,
+    a: "They're anonymous: you see how many people watched and how far, never who. They use no cookies. A view counts once at least 3 seconds have played. A viewer is counted with a daily hash of IP address and browser, so no IP address is stored and nobody can be followed across days or links; it also means one person who watches on three different days counts as three viewers. Your own views while signed in and link-preview bots aren't counted.",
+    html: `They're anonymous: you see how many people watched and how far, never who. They use no cookies. A view counts once at least 3 seconds have played. A viewer is counted with a daily hash of IP address and browser, so no IP address is stored and nobody can be followed across days or links; it also means one person who watches on three different days counts as three viewers. Your own views while signed in and link-preview bots aren't counted. More on the <a href="/privacy/#pro">privacy page</a>.`,
   },
   {
     id: "what-counts",

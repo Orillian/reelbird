@@ -189,7 +189,7 @@ struct SharingSettings: View {
                         ])
                     }
                     Text(model.target == .cloud
-                         ? "Reelbird hosts your links on watch.reelbird.app and shows who watched. Nothing to set up: Share just works."
+                         ? "Reelbird hosts your links on watch.reelbird.app and shows how many people watched. Nothing to set up: Share just works."
                          : model.cloudAvailable
                             ? "Links upload to a storage bucket you own. Nothing goes through Reelbird's servers. Free forever."
                             : "Links upload to a storage bucket you own. Nothing goes through Reelbird's servers, because there aren't any.")
@@ -283,7 +283,7 @@ struct SharingSettings: View {
     private var proPitch: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Reelbird Pro · $5 a month").font(.system(size: 12, weight: .semibold))
-            Text("Share from Reelbird with nothing to set up: unlimited links, 100 GB of video, and analytics that show who watched, where they stopped and where they came from. Cancel any time.")
+            Text("Share from Reelbird with nothing to set up: unlimited links, 100 GB of video, and anonymous analytics: how many people watched, where they stopped and where they came from. Cancel any time.")
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }

@@ -16,7 +16,7 @@ ${SITE_DESCRIPTION_LONG.replace(SITE_DESCRIPTION, "").trim()}
 
 - Price: free and open source (MIT). Recording, editing and exporting have no watermark, no limits and need no account
 - Sharing, free: share links to your own S3-compatible bucket (Cloudflare R2 recommended), about ten minutes of setup, once; nothing goes through Reelbird's servers
-- Sharing, paid (optional): Reelbird Pro, ${PRO.price}/month, hosts your links with nothing to set up: unlimited hosted links, ${PRO.storage} of storage, and viewer analytics (views, unique viewers, retention, referrers, devices) without cookies. Cancel any time; links keep playing after Pro ends. There is no free hosted tier
+- Sharing, paid (optional): Reelbird Pro, ${PRO.price}/month, hosts your links with nothing to set up: unlimited hosted links, ${PRO.storage} of storage, and anonymous viewer analytics (views, daily unique viewers, retention, referrers, devices) without cookies. Cancel any time; links keep playing after Pro ends. There is no free hosted tier
 - Platform: macOS only. Runs on ${REQUIREMENTS.runs}. ${REQUIREMENTS.hardware}
 - Download: ${PREBUILT.url} (signed and notarised by Apple)
 - Build from source: git clone ${GITHUB_URL}.git && cd reelbird && make install. Needs ${REQUIREMENTS.tools} (${REQUIREMENTS.toolsDetail.replace(/\.$/, "")})
