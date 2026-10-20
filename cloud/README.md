@@ -3,6 +3,7 @@
 Reelbird Pro: hosted share links and view analytics, $5/month. Optional: sharing to your own bucket stays free and needs none of this.
 
 - **Links** live in one private R2 bucket. The server serves the viewer page at `<PUBLIC_URL>/r/<id>/` and redirects video, segments and images to short-lived signed R2 URLs, so video bytes go straight from R2 to the viewer.
+- **Uploaded HTML never runs here.** The app uploads an `index.html` (it's what your own bucket serves), but this server renders the page itself from the share's `meta.json`, checked field by field, with every URL pointing back at this server (`src/viewer.ts`). The template is the app's own, copied by `bun scripts/sync-viewer.ts` into `src/viewer-template.ts`; a test fails if they drift. The page has a nonce CSP. Playlists and captions are served with fixed content types and an inert CSP.
 - **Uploads** come from the app, using the same code as for your own bucket. The server hands out R2 temporary keys limited to one share's folder (`r/<id>/`), valid for an hour and signed locally.
 - **Analytics** come from `/e.js`, which the server adds to the viewer page. It has no cookies. A viewer is a daily hash of IP, browser and link. It records views, unique viewers, a retention curve (2-second chunks), sources and devices. The owner's own views and link-preview bots don't count.
 - **Pro only.** Hosted links need Reelbird Pro ($5/month): unlimited links, 100 GB and full analytics. There is no free hosted tier; sharing to your own bucket is the free option. An account without Pro can sign in and pay, and its existing links keep playing. An upload that was in progress (touched in the last day) may finish, but it can't create or update links. In development, `/dev/plan` (or `reelbird cloud plan pro`) switches Pro on and off.
@@ -60,6 +61,13 @@ bun run check   # TypeScript
 bun test        # end to end against the dev bucket and reelbird_cloud_test
 ```
 
+## Operating it
+
+- **Deleting** a link stops it at once; its files and view records are purged, retried every 5 minutes until R2 confirms, and purged once more after any upload keys have expired.
+- **Reports** come to `hello@reelbird.app` from `/report` and the Report link on every hosted page. `bun scripts/admin.ts takedown <id>` removes a link; `bun scripts/admin.ts delete-account <email>` handles an account deletion request (cancel the subscription in Stripe first). Both need the production `DATABASE_URL` and `R2_*`.
+- **Billing**: each webhook's dedupe record and its effects commit in one transaction, and a subscription event older than the one already stored is ignored.
+- **Health**: `/healthz` (process up) and `/readyz` (database answers).
+
 ## Before launch
 
 - **Launch switches.** `CloudSettings.launched` (`Sources/ReelbirdShare/Cloud.swift`) shows Reelbird Cloud in the app and CLI; it is on since the server went live at `https://watch.reelbird.app`. `PRO.launched` (`site/src/config/site.ts`) adds the Pro section to /support.
@@ -72,6 +80,6 @@ bun test        # end to end against the dev bucket and reelbird_cloud_test
   - The Pro Payment Link is live but unused until launch. Deactivate it in the Dashboard if it shouldn't take payments before then.
   - For local tests: `stripe listen --forward-to localhost:8788/stripe/webhook` in test mode.
   - `/dev/plan` only exists with `DEV=1`.
-- **Legal.** Terms, privacy page, DMCA agent, a report link on the viewer page, and an admin kill switch.
+- **Legal.** Done: [terms](https://reelbird.app/terms/), [privacy](https://reelbird.app/privacy/), report link and takedown script. Still to do by hand: register a DMCA designated agent with the US Copyright Office, and set up the `hello@reelbird.app` inbox.
 - **Deploy.** Add this as an app in the `reelbird` Tiffin project on its own host, e.g. `watch.reelbird.app`. That's an A record at Namecheap, like the site, so no Cloudflare DNS is needed because the bucket is never public. Set the release command to `bun run migrate`, use Tiffin Postgres for `DATABASE_URL` and Valkey for the event rate limit, and run `measureRecent` from a cron instead of `setInterval`. Then point `CloudSettings.defaultServer` at the production URL.
 - **Country.** Countries need a GeoIP lookup (DB-IP Lite, as Tiffin's analytics uses). Today they're empty unless a proxy sends `cf-ipcountry`.

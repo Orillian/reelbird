@@ -1,6 +1,6 @@
 ---
 import Logo from "./Logo.astro";
-import { APP_VERSION, GITHUB_URL } from "../config/site";
+import { APP_VERSION, GITHUB_URL, LEGAL } from "../config/site";
 const cols = [
   { title: "Product", links: [
     { href: "/features/", label: "Features" },
@@ -8,6 +8,7 @@ const cols = [
     { href: "/pricing/", label: "Pricing" },
     { href: "/changelog/", label: "Changelog" },
     { href: "/privacy/", label: "Privacy" },
+    { href: "/terms/", label: "Terms" },
   ] },
   { title: "Docs", links: [
     { href: "/docs/sharing/", label: "Sharing setup" },
@@ -33,6 +34,7 @@ const cols = [
     <div class="about">
       <a href="/" aria-label="Reelbird home" class="brand"><Logo class="logo" /></a>
       <p class="muted">A free, open-source screen recorder for the Mac. Version {APP_VERSION}.</p>
+      <p class="muted small">Reelbird Pro is run by {LEGAL.operator}. <a href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a></p>
     </div>
     {cols.map((c) => (
       <nav aria-label={c.title}>
@@ -49,6 +51,7 @@ const cols = [
   .brand { display: inline-block; color: var(--text); }
   .brand :global(.logo) { height: 1.5rem; width: auto; margin-bottom: 1rem; }
   .about p { max-width: 18rem; }
+  .about .small { margin-top: 0.75rem; font-size: var(--step--1); }
   .col-title { font-family: var(--font-sans); font-size: var(--step--1); font-weight: 600; letter-spacing: 0; color: var(--text); margin-bottom: 0.9rem; }
   ul { list-style: none; padding: 0; display: grid; gap: 0.55rem; }
   a { color: var(--text-muted); text-decoration: none; }

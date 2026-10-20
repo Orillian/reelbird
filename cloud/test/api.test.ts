@@ -509,3 +509,20 @@ test("report page, readiness, and sign-in rate limits", async () => {
   expect(spoofed.status).toBe(429);
   expect((await call("/stripe/webhook", { method: "POST", body: "x".repeat(300 * 1024) })).status).toBe(413);
 });
+
+test("deleting a link deletes its view records; an operator takedown does the same", async () => {
+  const { takeDown } = await import("../src/shares");
+  const ivy = await appLogin("ivy@example.com");
+  await call("/api/dev/plan", { ...json({ plan: "pro" }), bearer: ivy.token });
+  const id = ShortIDForTest();
+  created.push(id);
+  await call(`/api/shares/${id}/credentials`, { ...json({}), bearer: ivy.token });
+  const bits = Buffer.from([0xff]).toString("base64");
+  await call("/e", { method: "POST", body: JSON.stringify({ s: id, v: crypto.randomUUID(), t: "beat", rev: 0, d: 10, p: 9, ws: 9, w: bits }), headers: { "user-agent": "Mozilla/5.0 Safari/605.1.15", "x-forwarded-for": "203.0.113.9" } });
+  const q = db();
+  expect((await q`select count(*)::int as n from views where share_id = ${id}`)[0]!.n).toBe(1);
+  expect(await takeDown(id)).toBe(true);
+  expect((await q`select count(*)::int as n from views where share_id = ${id}`)[0]!.n).toBe(0);
+  await q.end();
+  expect((await call(`/r/${id}/`)).status).toBe(404);
+});

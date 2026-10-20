@@ -96,7 +96,20 @@ export async function deleteShare(user: User, id: string) {
 
 async function purge(id: string) {
   await r2.deleteShare(`r/${id}`);
-  await sql`update shares set bytes = 0, sized_at = now(), purged_at = now() where id = ${id}`;
+  await sql.begin(async (tx) => {
+    await tx`delete from views where share_id = ${id}`;
+    await tx`delete from opens where share_id = ${id}`;
+    await tx`update shares set bytes = 0, sized_at = now(), purged_at = now() where id = ${id}`;
+  });
+}
+
+/** Operator takedown (abuse or a copyright notice): the same as the owner deleting the link. */
+export async function takeDown(id: string) {
+  const [s] = await sql<{ user_id: string }[]>`
+    update shares set deleted_at = coalesce(deleted_at, now()) where id = ${id} returning user_id`;
+  if (!s) return false;
+  await purge(id);
+  return true;
 }
 
 /** Deleted links whose files may still be in R2: never purged, or purged before their keys expired. */

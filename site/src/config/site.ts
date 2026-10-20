@@ -78,6 +78,14 @@ export const PRO = {
   linkPattern: "https://watch.reelbird.app/r/<id>/",
 } as const;
 
+/** Who runs Reelbird Pro and this site, for the terms and privacy pages. */
+export const LEGAL = {
+  operator: "Steamata LLC",
+  state: "Wyoming",
+  email: "hello@reelbird.app",
+  updated: "20 October 2026",
+} as const;
+
 /** Donations. Read by the /support page and the thank-you after a download. */
 export const DONATION_LINKS = {
   once: "https://buy.stripe.com/fZu14m0FO3v050PfqP3ks00",

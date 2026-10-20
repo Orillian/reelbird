@@ -1,0 +1,111 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import { LEGAL, PRO } from "../config/site";
+const crumbs = [{ name: "Terms", path: "/terms/" }];
+---
+<Base title="Reelbird terms of service" description={`The terms for Reelbird Pro, hosted links at watch.reelbird.app and this website, from ${LEGAL.operator}. The Reelbird app itself is free under the MIT licence.`} og="terms" crumbs={crumbs}>
+  <PageHead title="Terms of service" lede={`These terms cover Reelbird Pro, the hosted links at watch.reelbird.app, and this website. They're an agreement between you and ${LEGAL.operator}. The Reelbird app itself is free software under the MIT licence.`} crumbs={crumbs} />
+  <div class="wrap">
+    <div class="prose body">
+      <p class="summary"><strong>In short:</strong> you own your recordings. Pro is {PRO.price} a month and you can cancel any time. Don't use Reelbird to share anything illegal or anything you don't have the right to share. The service is provided as is, so keep your own copies (the app always does). Links you shared keep playing after Pro ends.</p>
+
+      <h2 id="who">1. Who we are</h2>
+      <p>Reelbird Pro and watch.reelbird.app are run by {LEGAL.operator}, a {LEGAL.state} limited liability company ("we", "us"). You can reach us at <a href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a>.</p>
+      <p>The Reelbird app and command line tools are open source under the <a href="https://github.com/btahir/reelbird/blob/main/LICENSE">MIT licence</a>. That licence, not these terms, governs your use of the software, including its "as is" terms. You don't need an account or these terms to record, edit, export, or share to storage you own.</p>
+
+      <h2 id="account">2. Your account</h2>
+      <ul>
+        <li>Your account is your email address. You sign in with emailed links and from the app with a code you approve in your browser. Keep access to your email secure: anyone who can read it can sign in.</li>
+        <li>You must be at least 13 years old to use Reelbird Pro, and old enough to enter a contract where you live (or have a parent's or guardian's permission) to pay for it.</li>
+        <li>You're responsible for what happens in your account, including links shared from your Macs and by tools you give your token to.</li>
+      </ul>
+
+      <h2 id="pro">3. Reelbird Pro and billing</h2>
+      <ul>
+        <li><strong>Price.</strong> Reelbird Pro costs {PRO.price} (US dollars) a month, plus any tax that applies. Payments are processed by Stripe under Stripe's terms; we never see your card number.</li>
+        <li><strong>Renewal.</strong> Your subscription renews every month until you cancel.</li>
+        <li><strong>Cancelling.</strong> Cancel any time from your <a href={PRO.accountURL}>account page</a> (Manage billing). Pro stays on until the end of the month you've paid for. We don't refund partial months, except where the law requires it.</li>
+        <li><strong>Failed payments.</strong> If a payment fails, Stripe retries it. If it keeps failing, Pro ends and your account works as if you'd cancelled.</li>
+        <li><strong>Price changes.</strong> We'll email you at least 30 days before a price change takes effect. You can cancel before it does.</li>
+        <li><strong>Discounts.</strong> Promotion codes apply as stated when you redeem them and can't be exchanged for cash.</li>
+      </ul>
+
+      <h2 id="links">4. Hosted links and storage</h2>
+      <ul>
+        <li>Pro includes unlimited links and {PRO.storage} of video. When storage is full, new uploads stop until you delete links.</li>
+        <li>Links are unlisted, not private: anyone who has a link can watch, download and forward the video. Don't share anything through a link that must stay confidential.</li>
+        <li>When Pro ends, links you already shared keep playing, but you can't add or update hosted links. If we ever need to remove links from accounts without Pro (for example, ones untouched for a year), we'll email you at least 30 days before, so you can download or delete them.</li>
+        <li>Deleting a link stops it straight away and removes its files from our storage. We can't recall copies that viewers downloaded.</li>
+        <li>Viewer analytics are anonymous counts (see the <a href="/privacy/#pro">privacy page</a>). Don't use Reelbird to identify or track individual viewers.</li>
+      </ul>
+
+      <h2 id="content">5. Your content</h2>
+      <ul>
+        <li>You keep all rights to your recordings, titles and captions.</li>
+        <li>You give us a licence to store, copy, process and show your content only as needed to run Reelbird Pro for you: hosting it, serving it to people with the link, making previews, and measuring views. The licence ends when you delete the content, apart from copies in backups that expire on their normal schedule.</li>
+        <li>You confirm that you have the rights and permissions needed for what you share, including the consent of people who appear or can be heard in it where the law requires it.</li>
+      </ul>
+
+      <h2 id="acceptable-use">6. Acceptable use</h2>
+      <p>Don't use Reelbird Pro or watch.reelbird.app to:</p>
+      <ul>
+        <li>share anything illegal, including sexual content involving minors (which we report to the authorities), content that promotes terrorism or violence against people, or threats;</li>
+        <li>share content that infringes someone's copyright, trademark, privacy or other rights, including private information about others without their permission;</li>
+        <li>harass, bully or defame anyone, or share sexual content of a person without their consent;</li>
+        <li>distribute malware, phishing pages or spam, or mislead people about who you are;</li>
+        <li>use the hosting as general file storage or a content delivery network for other sites, or get around storage limits;</li>
+        <li>probe, scan or test our systems for vulnerabilities, except as allowed by our <a href="https://github.com/btahir/reelbird/blob/main/SECURITY.md">security policy</a>, or disrupt the service or other people's use of it;</li>
+        <li>scrape the service, resell it, or access it other than through the Reelbird app, command line tools, documented API and web pages.</li>
+      </ul>
+      <p>We may remove content, disable links or suspend or close accounts that break these rules, without a refund. Where it's reasonable and safe, we'll tell you why and give you a chance to respond.</p>
+
+      <h2 id="report">7. Reporting a link</h2>
+      <p>Every hosted link has a <strong>Report</strong> link at the bottom of the page. You can also email <a href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a> with the link and what's wrong. We look at reports, usually within two working days, and act on them under these terms.</p>
+
+      <h2 id="copyright">8. Copyright notices</h2>
+      <p>We respond to notices of claimed copyright infringement under the US Digital Millennium Copyright Act (DMCA). To report a link, email <a href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a> (subject "Copyright notice") with:</p>
+      <ol>
+        <li>the work you believe is infringed;</li>
+        <li>the watch.reelbird.app link(s) you want removed;</li>
+        <li>your name, postal address, phone number and email address;</li>
+        <li>a statement that you have a good-faith belief the use isn't authorised by the copyright owner, its agent or the law;</li>
+        <li>a statement, under penalty of perjury, that the information in your notice is accurate and that you are the copyright owner or authorised to act for them;</li>
+        <li>your physical or electronic signature.</li>
+      </ol>
+      <p>If we remove your link because of a notice and you believe that was a mistake, you can send a counter-notice to the same address with: the removed link, a statement under penalty of perjury that you believe it was removed by mistake or misidentification, your name, address and phone number, your consent to the jurisdiction of the federal court for your address (or, outside the US, any district where we may be found), and your signature. We may restore the link after 10 business days unless the person who complained tells us they've filed a court action.</p>
+      <p>We close the accounts of repeat infringers where appropriate.</p>
+
+      <h2 id="changes">9. Changes</h2>
+      <p>We may change Reelbird Pro, for example by adding or removing features. If a change takes away something important you pay for, we'll tell you in advance and you can cancel. We may update these terms; for material changes we'll email Pro customers at least 30 days before they take effect. If you keep using Pro after that, the new terms apply.</p>
+
+      <h2 id="ending">10. Ending your account</h2>
+      <p>You can stop using Reelbird Pro at any time: cancel in billing, delete your links, and email us if you'd like your account deleted too. We may suspend or end your access if you break these terms, if the law requires it, or if we stop offering Reelbird Pro. If we stop offering it, we'll give you at least 60 days' notice, refund any time you've paid for but can't use, and keep your links available long enough for you to download them.</p>
+
+      <h2 id="disclaimers">11. Disclaimers</h2>
+      <p>Reelbird Pro is provided "as is" and "as available". To the extent the law allows, we make no warranties, express or implied, including of merchantability, fitness for a particular purpose and non-infringement, and we don't promise that the service will be uninterrupted, error-free or never lose data. Your original recordings stay on your Mac; keep them, because hosting isn't a backup.</p>
+
+      <h2 id="liability">12. Limitation of liability</h2>
+      <p>To the extent the law allows, {LEGAL.operator} won't be liable for indirect, incidental, special, consequential or punitive damages, or for lost profits, revenue, data or goodwill, arising from Reelbird Pro. Our total liability for any claim about the service is limited to the greater of the amount you paid us in the 12 months before the claim and US$50.</p>
+
+      <h2 id="indemnity">13. Indemnity</h2>
+      <p>If someone brings a claim against us because of content you shared or your breach of these terms, you agree to cover our reasonable costs of dealing with it, including legal fees, to the extent the law allows.</p>
+
+      <h2 id="law">14. Governing law</h2>
+      <p>These terms are governed by the laws of the State of {LEGAL.state}, USA, without regard to its conflict-of-law rules. Disputes go to the state or federal courts located in {LEGAL.state}, and you and we consent to their jurisdiction. If you're a consumer, nothing in these terms takes away rights you have under the consumer laws of the place where you live.</p>
+
+      <h2 id="general">15. Everything else</h2>
+      <p>These terms and the <a href="/privacy/">privacy policy</a> are the whole agreement between you and us about Reelbird Pro. If part of them can't be enforced, the rest still applies. If we don't enforce something straight away, we haven't waived it. You can't transfer your account; we may transfer these terms to a company that takes over Reelbird Pro, and we'll tell you if we do.</p>
+
+      <h2 id="contact">16. Contact</h2>
+      <p>{LEGAL.operator} · <a href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a></p>
+      <p class="muted">Effective {LEGAL.updated}.</p>
+    </div>
+  </div>
+</Base>
+
+<style>
+  .body { padding-bottom: var(--section); }
+  .summary { padding: 1rem 1.2rem; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--bg-raised); }
+  .body ol { padding-left: 1.3rem; }
+</style>

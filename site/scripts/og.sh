@@ -15,14 +15,14 @@ mkdir -p "$OUT"
 
 # slug | title | section | art (perch, camera, link, headphones, sleeping, celebrating)
 PAGES='home|Record. Get a link. Polish it later.||perch
-download|Build Reelbird from source in a few minutes|Download|perch
+download|Download Reelbird for Mac, free|Download|perch
 features|Auto-zoom, instant links and clean audio|Features|camera
 features-auto-zoom|Zooms that follow your clicks|Features|camera
 features-share-links|Share links from a bucket you own|Features|link
 features-audio-captions|Clear sound and on-device captions|Features|headphones
 features-agents|Your coding agent can record the demo|Features|perch
 docs|Install, share links, CLI and MCP|Docs|perch
-docs-install|Install Reelbird from source|Docs|perch
+docs-install|Install and update Reelbird|Docs|perch
 docs-sharing|Share links from a bucket you own|Docs|link
 docs-shortcuts|Keyboard shortcuts|Docs|perch
 docs-cli|The reelbird command line tool|Docs|perch
@@ -36,8 +36,9 @@ compare|Mac screen recorders compared|Compare|perch
 guide-internal-audio|Record your Mac screen with internal audio|Guide|headphones
 faq|Questions, answered|FAQ|perch
 support|Support Reelbird|Support|celebrating
-pricing|Free, or $5 a month if we host your links|Pricing|link
+pricing|The recorder is free. Pro hosts your links.|Pricing|link
 privacy|No account needed, no telemetry|Privacy|sleeping
+terms|Terms of service|Legal|perch
 changelog|What changed in each release|Changelog|celebrating'
 
 enc() { python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$1"; }
