@@ -18,10 +18,10 @@ export const RELEASES: Release[] = [
     version: "0.2.0",
     date: "2026-10-20",
     title: "Share without setting up storage",
-    summary: "Reelbird Pro hosts your links for you, with analytics that show who watched. Recording, editing, exporting and sharing to your own bucket stay free.",
+    summary: "Reelbird Pro hosts your links for you, with analytics that show how many people watched and where they stopped. Recording, editing, exporting and sharing to your own bucket stay free.",
     notes: [
       "Reelbird Pro ($5 a month): sign in from Settings › Sharing and Share just works, with no bucket to set up.",
-      "See who watched: views, unique viewers, where people stopped and where they came from, in the Library and on the web.",
+      "Anonymous viewer analytics: views, daily unique viewers, where people stopped and where they came from. View counts show in the Library; the full stats are on your account page.",
       "Sharing to your own bucket is unchanged and free. Links you already shared keep working.",
       "The Share panel offers both ways to get a link. Exports never carry a watermark.",
       "Shared pages now say what Reelbird is: a free screen recorder for Mac.",

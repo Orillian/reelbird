@@ -28,7 +28,7 @@ make install
 open /Applications/Reelbird.app
 ```
 
-Reelbird lives in the menu bar. Look for the robin.
+Reelbird lives in the menu bar. Look for the robin. To update a build from source later, run `git pull`, then `make install` again.
 
 Some Command Line Tools installs ship a stale SwiftPM file that breaks every `Package.swift`. The scripts detect this and work around it on their own (see `scripts/env.sh`), so you don't need to do anything. Run `make` to see every target.
 

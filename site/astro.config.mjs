@@ -7,6 +7,9 @@ const SITE = "https://reelbird.app";
 
 // Writes dist/sitemap.xml from the pages the build produced: every index.html except 404 and
 // pages marked noindex. No dependency, and it can't miss a page.
+// <lastmod> is only written when the page states a real content date: the newest "dateModified"
+// in its JSON-LD (docs from git, comparisons from the date their facts were checked). A build
+// date on every page would tell crawlers nothing, so other pages leave it out.
 const sitemap = () => ({
   name: "reelbird-sitemap",
   hooks: {
@@ -19,13 +22,14 @@ const sitemap = () => ({
           if (e.name !== "index.html") continue;
           const html = readFileSync(join(d, e.name), "utf8");
           if (/<meta name="robots" content="noindex"/.test(html)) continue;
-          urls.push(`/${rel}`);
+          const dates = [...html.matchAll(/"dateModified":"(\d{4}-\d{2}-\d{2})/g)].map((m) => m[1]).sort();
+          urls.push({ path: `/${rel}`, lastmod: dates.at(-1) });
         }
       };
       walk(root, "");
       const prio = (u) => (u === "/" ? "1.0" : /^\/(download|pricing|features|docs|loom-alternative|screen-studio-alternative|compare)\/$/.test(u) ? "0.8" : "0.6");
-      const today = new Date().toISOString().slice(0, 10);
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.sort().map((u) => `  <url><loc>${SITE}${u}</loc><lastmod>${today}</lastmod><priority>${prio(u)}</priority></url>`).join("\n")}\n</urlset>\n`;
+      const entry = ({ path, lastmod }) => `  <url><loc>${SITE}${path}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ""}<priority>${prio(path)}</priority></url>`;
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.sort((a, b) => a.path.localeCompare(b.path)).map(entry).join("\n")}\n</urlset>\n`;
       writeFileSync(join(root, "sitemap.xml"), xml);
     },
   },

@@ -6,12 +6,29 @@ const H = level === 2 ? "h2" : "h3";
 ---
 <div class="faq">
   {items.map((f) => (
-    <details id={f.id} open={f.id === open}>
+    <details id={`faq-${f.id}`} open={f.id === open}>
       <summary><H class="q">{f.q}</H><span class="chev" aria-hidden="true"></span></summary>
       <div class="a">{f.html ? <p set:html={f.html} /> : <p>{f.a}</p>}</div>
     </details>
   ))}
 </div>
+
+<script>
+  // Answers have ids like #faq-privacy, so they never clash with page sections (#privacy on the
+  // homepage). Old links such as /faq/#privacy still work: they open and scroll to #faq-privacy.
+  // Either way, the linked answer opens.
+  const openFromHash = () => {
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (!id) return;
+    const direct = document.getElementById(id);
+    const el = direct instanceof HTMLDetailsElement ? direct : direct ? null : document.getElementById(`faq-${id}`);
+    if (!(el instanceof HTMLDetailsElement)) return;
+    el.open = true;
+    if (el !== direct) el.scrollIntoView();
+  };
+  openFromHash();
+  addEventListener("hashchange", openFromHash);
+</script>
 
 <style>
   .faq { border-top: 1px solid var(--line); }

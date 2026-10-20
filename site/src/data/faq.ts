@@ -8,8 +8,8 @@ export const FAQ: Faq[] = [
   {
     id: "free",
     q: "Is Reelbird free?",
-    a: "Yes. It's MIT licensed, with no watermark, no export limit and no account. Share links to your own storage bucket are free too; Cloudflare R2's free tier (10 GB, free egress) covers most people. Reelbird Pro ($5 a month) is optional: it hosts your links so you don't need a bucket, and shows who watched.",
-    html: `Yes. It's MIT licensed, with no watermark, no export limit and no account. Share links to your own storage bucket are free too; Cloudflare R2's free tier (10 GB, free egress) covers most people. <a href="/pricing/">Reelbird Pro</a> ($5 a month) is optional: it hosts your links so you don't need a bucket, and shows who watched.`,
+    a: "Yes. It's MIT licensed, with no watermark, no export limit and no account. Share links to your own storage bucket are free too; Cloudflare R2's free tier (10 GB, free egress) covers most people. Reelbird Pro ($5 a month) is optional: it hosts your links so you don't need a bucket, and shows how many people watched and where they stopped.",
+    html: `Yes. It's MIT licensed, with no watermark, no export limit and no account. Share links to your own storage bucket are free too; Cloudflare R2's free tier (10 GB, free egress) covers most people. <a href="/pricing/">Reelbird Pro</a> ($5 a month) is optional: it hosts your links so you don't need a bucket, and shows how many people watched and where they stopped.`,
   },
   {
     id: "open-source",
@@ -53,8 +53,14 @@ export const FAQ: Faq[] = [
   {
     id: "pro",
     q: "What is Reelbird Pro?",
-    a: "An optional $5-a-month plan where Reelbird hosts your share links: nothing to set up, unlimited links, 100 GB of storage, and viewer analytics (views, unique viewers, where people stopped watching, where they came from and devices). Cancel any time; links keep playing after Pro ends. Everything else in Reelbird stays free.",
-    html: `An optional $5-a-month plan where Reelbird hosts your share links: nothing to set up, unlimited links, 100 GB of storage, and viewer analytics (views, unique viewers, where people stopped watching, where they came from and devices). Cancel any time; links keep playing after Pro ends. Everything else in Reelbird stays free. See <a href="/pricing/">pricing</a>.`,
+    a: "An optional $5-a-month plan where Reelbird hosts your share links: nothing to set up, unlimited links, 100 GB of storage, and anonymous viewer analytics (views, daily unique viewers, where people stopped watching, where they came from and devices). Cancel any time; links keep playing after Pro ends. Everything else in Reelbird stays free.",
+    html: `An optional $5-a-month plan where Reelbird hosts your share links: nothing to set up, unlimited links, 100 GB of storage, and anonymous viewer analytics (views, daily unique viewers, where people stopped watching, where they came from and devices). Cancel any time; links keep playing after Pro ends. Everything else in Reelbird stays free. See <a href="/pricing/">pricing</a>.`,
+  },
+  {
+    id: "update",
+    q: "How do I update Reelbird?",
+    a: "Download the new zip from the download page, quit Reelbird, and drag the new copy to Applications to replace the old one. Your recordings, settings and permissions stay. The app never checks for updates itself, so watch the changelog (it has an RSS feed) or GitHub Releases. If you built from source, run git pull, then make install.",
+    html: `Download the new zip from the <a href="/download/">download page</a>, quit Reelbird, and drag the new copy to Applications to replace the old one. Your recordings, settings and permissions stay. The app never checks for updates itself, so watch the <a href="/changelog/">changelog</a> (it has an <a href="/changelog/rss.xml">RSS feed</a>) or GitHub Releases. If you built from source, run <code>git pull</code>, then <code>make install</code>.`,
   },
   {
     id: "download-videos",
@@ -97,8 +103,8 @@ export const FAQ: Faq[] = [
   {
     id: "vs-loom-screen-studio",
     q: "How is Reelbird different from Loom and Screen Studio?",
-    a: "Loom copies a share link when you stop but has no auto-zoom, and its free Starter plan stops each video at 5 minutes, keeps 25 videos, records up to 720p and can't download. Screen Studio has polished auto-zoom but costs $29 a month ($9 billed yearly), and its share link comes after you export. Reelbird copies a link when you stop, lets you add auto-zoom later under the same link, keeps every take as MP4 files on your Mac and is free under the MIT licence (optional Reelbird Pro, $5 a month, hosts links and shows who watched). Loom does more for teams (comments, workspaces, every platform) and Screen Studio has a more mature editor. Prices checked 12 October 2026.",
-    html: `Loom copies a share link when you stop but has no auto-zoom, and its free Starter plan stops each video at 5 minutes, keeps 25 videos, records up to 720p and can't download. Screen Studio has polished auto-zoom but costs $29 a month ($9 billed yearly), and its share link comes after you export. Reelbird copies a link when you stop, lets you add auto-zoom later under the same link, keeps every take as MP4 files on your Mac and is free under the MIT licence (optional <a href="/pricing/">Reelbird Pro</a>, $5 a month, hosts links and shows who watched). Loom does more for teams (comments, workspaces, every platform) and Screen Studio has a more mature editor. Prices checked 12 October 2026; see the <a href="/compare/">full comparison</a>.`,
+    a: "Loom copies a share link when you stop but has no auto-zoom, and its free Starter plan stops each video at 5 minutes, keeps 25 videos, records up to 720p and can't download. Screen Studio has polished auto-zoom but costs $29 a month ($9 billed yearly), and its share link comes after you export. Reelbird copies a link when you stop, lets you add auto-zoom later under the same link, keeps every take as MP4 files on your Mac and is free under the MIT licence (optional Reelbird Pro, $5 a month, hosts links and shows how many people watched). Loom does more for teams (comments, workspaces, every platform) and Screen Studio has a more mature editor. Prices checked 12 October 2026.",
+    html: `Loom copies a share link when you stop but has no auto-zoom, and its free Starter plan stops each video at 5 minutes, keeps 25 videos, records up to 720p and can't download. Screen Studio has polished auto-zoom but costs $29 a month ($9 billed yearly), and its share link comes after you export. Reelbird copies a link when you stop, lets you add auto-zoom later under the same link, keeps every take as MP4 files on your Mac and is free under the MIT licence (optional <a href="/pricing/">Reelbird Pro</a>, $5 a month, hosts links and shows how many people watched). Loom does more for teams (comments, workspaces, every platform) and Screen Studio has a more mature editor. Prices checked 12 October 2026; see the <a href="/compare/">full comparison</a>.`,
   },
   {
     id: "cap-openscreen",

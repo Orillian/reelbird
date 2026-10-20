@@ -74,7 +74,7 @@ It's a native Swift app with no account needed and no telemetry: share links poi
 
 **Audio that sounds finished.** **Auto level** brings your voice to a steady −16 LUFS with a true-peak limiter. **Enhance voice** removes background noise and evens out your voice on your Mac, with a strength control and a blend back to the original; the raw microphone track is never changed. **Lower under voice** turns system audio down while you talk.
 
-**Instant share links to your own bucket.** With **Share while recording** on, Reelbird uploads a 1080p stream as you record and copies the link the moment you stop. After editing, **Update link** replaces the video and keeps the URL. Links to your own bucket are free; setup is in [docs/SHARING.md](docs/SHARING.md). Or skip the setup with [Reelbird Pro](https://reelbird.app/pricing/) ($5 a month), which hosts your links and shows who watched.
+**Instant share links to your own bucket.** With **Share while recording** on, Reelbird uploads a 1080p stream as you record and copies the link the moment you stop. After editing, **Update link** replaces the video and keeps the URL. Links to your own bucket are free; setup is in [docs/SHARING.md](docs/SHARING.md). Or skip the setup with [Reelbird Pro](https://reelbird.app/pricing/) ($5 a month), which hosts your links and shows how many people watched and where they stopped.
 
 **Captions on your Mac.** Captions come from Apple's on-device speech recognition. Burn them into the export, or let viewers turn them on from the share page. **Cut Long Silences** removes the pauses in one go. From the command line, `reelbird suggest` writes a title and chapters with Apple's on-device model on Macs with Apple Intelligence. No API keys. Markers you drop while recording show as flags on the timeline, and **Use Markers as Chapters** turns them into the chapter list on the share page.
 
@@ -109,6 +109,8 @@ Checked 12 October 2026 on each vendor's own pages: [Loom pricing](https://www.l
 
 Unzip it, drag **Reelbird** to your Applications folder and open it. It's signed with an Apple Developer ID and notarised by Apple, so it opens like any other app, and macOS keeps your permissions across updates. The SHA-256 of each zip is listed on its [release page](https://github.com/btahir/reelbird/releases).
 
+To update, download the new zip, quit Reelbird and drag the new copy to Applications to replace the old one; your recordings, settings and permissions stay. The app never checks for updates itself, so watch the [changelog](https://reelbird.app/changelog/) (it has an [RSS feed](https://reelbird.app/changelog/rss.xml)) or [GitHub Releases](https://github.com/btahir/reelbird/releases). If you built from source, `git pull` and `make install` again.
+
 ## Install from source
 
 Building it yourself takes a few minutes and needs no Xcode.
@@ -130,7 +132,7 @@ make install
 open /Applications/Reelbird.app
 ```
 
-Reelbird lives in the menu bar. Look for the robin.
+Reelbird lives in the menu bar. Look for the robin. To update a build from source later, run `git pull`, then `make install` again.
 
 Some Command Line Tools installs ship a stale SwiftPM file that breaks every `Package.swift`. The scripts detect this and work around it on their own (see `scripts/env.sh`), so you don't need to do anything. Run `make` to see every target.
 
@@ -295,7 +297,7 @@ Recording through an agent needs Screen Recording permission for the app that ru
 
 ## Sharing
 
-Sharing is optional; recording, editing and exporting work without it, with no watermark. Share links point at a storage bucket **you** own, for free, or at Reelbird Pro ($5 a month): sign in under Settings › Sharing › Reelbird Cloud and Share works with nothing to set up, plus analytics on who watched ([details](docs/SHARING.md#reelbird-pro-no-setup)). When you share to your own bucket, Reelbird uploads a small viewer page and the video to `https://<your public URL>/r/<id>/`, signed with your own keys; with Pro the link is `https://watch.reelbird.app/r/<id>/`. Anyone with the link can watch in a browser, and the link never changes, even after **Update link**.
+Sharing is optional; recording, editing and exporting work without it, with no watermark. Share links point at a storage bucket **you** own, for free, or at Reelbird Pro ($5 a month): sign in under Settings › Sharing and Share works with nothing to set up, plus anonymous analytics on how many people watched and where they stopped ([details](docs/SHARING.md#reelbird-pro-no-setup)). When you share to your own bucket, Reelbird uploads a small viewer page and the video to `https://<your public URL>/r/<id>/`, signed with your own keys; with Pro the link is `https://watch.reelbird.app/r/<id>/`. Anyone with the link can watch in a browser, and the link never changes, even after **Update link**.
 
 Cloudflare R2 is the recommended host: no download (egress) fees, and the free tier includes 10 GB of storage. Setup takes about ten minutes, once:
 

@@ -7,7 +7,7 @@ import { PRO } from "../config/site";
 import { PLAN_ROWS, PRICING_FAQ } from "../data/pricing";
 import { faqPage, softwareApplication } from "../lib/jsonld";
 const crumbs = [{ name: "Pricing", path: "/pricing/" }];
-const description = `Reelbird is free: record, edit, export and share to your own bucket, with no watermark and no account. Optional Reelbird Pro hosts your links for ${PRO.price} a month, with viewer analytics.`;
+const description = `Reelbird is free: record, edit, export and share to your own bucket, with no watermark or account. Reelbird Pro hosts your links for ${PRO.price} a month.`;
 ---
 <Base title="Reelbird pricing: free, with optional Pro hosting" description={description} og="pricing" crumbs={crumbs} schema={[softwareApplication(), faqPage(PRICING_FAQ)]}>
   <PageHead
@@ -30,10 +30,10 @@ const description = `Reelbird is free: record, edit, export and share to your ow
       <div class="plan" id="pro">
         <h2>Reelbird Pro</h2>
         <p class="price">{PRO.price}<span class="per"> a month</span></p>
-        <p class="muted">Reelbird hosts your links, with nothing to set up, and shows who watched and where they stopped. Cancel any time.</p>
+        <p class="muted">Reelbird hosts your links at watch.reelbird.app, with nothing to set up, and shows how many people watched and where they stopped. Cancel any time.</p>
         <div class="actions">
           <a class="btn btn-ghost" href={PRO.upgradeURL}><Icon name="arrowRight" />Get Reelbird Pro</a>
-          <span class="muted small">Or in the app: Settings › Sharing › Reelbird Cloud.</span>
+          <span class="muted small">Or in the app: Settings › Sharing.</span>
         </div>
       </div>
     </section>
@@ -55,7 +55,7 @@ const description = `Reelbird is free: record, edit, export and share to your ow
     <section class="block steps" aria-labelledby="how-title">
       <h2 id="how-title">Getting Pro</h2>
       <ol>
-        <li>In Reelbird, open <strong>Settings › Sharing › Reelbird Cloud</strong> and choose <strong>Sign In</strong>.</li>
+        <li>In Reelbird, open <strong>Settings › Sharing</strong>, pick the hosted option (not <strong>Your own bucket</strong>) and choose <strong>Sign In</strong>.</li>
         <li>Approve the code in your browser. Your account is your email address.</li>
         <li><a href={PRO.upgradeURL}>Upgrade to Pro</a>. New shares then go to Reelbird's hosting, at <code>watch.reelbird.app/r/&lt;id&gt;/</code>.</li>
       </ol>
