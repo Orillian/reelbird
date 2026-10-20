@@ -4,13 +4,12 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import postgres from "postgres";
 
 const TEST_DB = "postgres://postgres@127.0.0.1:54329/reelbird_cloud_test";
-process.env.DATABASE_URL = TEST_DB;
-process.env.DEV = "1";
 
 const { migrate } = await import("../src/migrate");
 const { app } = await import("../src/index");
 const { R2 } = await import("../src/r2");
 const { config } = await import("../src/config");
+const { signPayload, verifySignature, qualifies } = await import("../src/billing");
 const { ShortIDForTest } = { ShortIDForTest: () => {
   const a = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
   return Array.from(crypto.getRandomValues(new Uint8Array(14)), (b) => a[b % a.length]).join("");
@@ -174,4 +173,91 @@ test("deleting a link removes its files and the page", async () => {
 test("signing out revokes the app token", async () => {
   expect((await call("/api/logout", { method: "POST", bearer: bob.token })).status).toBe(204);
   expect((await call("/api/me", { bearer: bob.token })).status).toBe(401);
+});
+
+// MARK: Billing
+
+const stripeEvent = async (type: string, object: object, id = "evt_" + crypto.randomUUID().replaceAll("-", "")) => {
+  const payload = JSON.stringify({ id, type, data: { object } });
+  return call("/stripe/webhook", { method: "POST", body: payload, headers: { "stripe-signature": signPayload(payload, "whsec_test_reelbird"), "content-type": "application/json" } });
+};
+const sub = (id: string, customer: string, status: string, amount = 500, interval = "month") => ({
+  id, object: "subscription", customer, status,
+  items: { data: [{ quantity: 1, current_period_end: 1_800_000_000, price: { unit_amount: amount, currency: "usd", recurring: { interval } } }] },
+});
+const plan = async (bearer: string) => (await (await call("/api/me", { bearer })).json()).plan;
+
+test("signatures: Stripe's scheme, within five minutes", () => {
+  const body = '{"a":1}';
+  const now = Date.now();
+  expect(verifySignature(body, signPayload(body, "s", Math.floor(now / 1000)), "s", now)).toBe(true);
+  expect(verifySignature(body, signPayload(body, "other"), "s")).toBe(false);
+  expect(verifySignature(body + " ", signPayload(body, "s"), "s")).toBe(false);
+  expect(verifySignature(body, signPayload(body, "s", Math.floor(now / 1000) - 600), "s", now)).toBe(false);
+  expect(verifySignature(body, undefined, "s")).toBe(false);
+});
+
+test("which subscriptions make Pro", () => {
+  expect(qualifies({ status: "active", amount: 500, interval: "month" })).toBe(true);
+  expect(qualifies({ status: "trialing", amount: 1500, interval: "month" })).toBe(true);
+  expect(qualifies({ status: "active", amount: 4800, interval: "year" })).toBe(true);
+  expect(qualifies({ status: "active", amount: 300, interval: "month" })).toBe(false);
+  expect(qualifies({ status: "past_due", amount: 500, interval: "month" })).toBe(false);
+  expect(qualifies({ status: "canceled", amount: 500, interval: "month" })).toBe(false);
+});
+
+test("paying through the link makes the account Pro; cancelling makes it Free", async () => {
+  const carol = await appLogin("carol@example.com");
+  const me = await (await call("/api/me", { bearer: carol.token })).json();
+  expect(me.upgradeURL).toBe(`${base}/upgrade`);
+
+  // /upgrade sends the signed-in person to the Payment Link, tagged with their account.
+  const up = await call("/upgrade", { cookie: carol.cookie });
+  expect(up.status).toBe(302);
+  const link = new URL(up.headers.get("location")!);
+  expect(link.hostname).toBe("buy.stripe.com");
+  const ref = link.searchParams.get("client_reference_id")!;
+  expect(link.searchParams.get("prefilled_email")).toBe("carol@example.com");
+
+  // The subscription event can come first: nothing to link yet, the plan stays Free.
+  expect((await stripeEvent("customer.subscription.created", sub("sub_carol", "cus_carol", "active"))).status).toBe(200);
+  expect(await plan(carol.token)).toBe("free");
+  // Checkout links the customer to the account → Pro.
+  const done = { object: "checkout.session", mode: "subscription", customer: "cus_carol", subscription: "sub_carol",
+                 client_reference_id: ref, payment_status: "paid", amount_total: 500, currency: "usd", customer_details: { email: "carol@example.com" } };
+  expect((await stripeEvent("checkout.session.completed", done)).status).toBe(200);
+  expect(await plan(carol.token)).toBe("pro");
+  expect((await call("/upgrade", { cookie: carol.cookie })).headers.get("location")).toBe("/account");
+  expect(await (await call("/account", { cookie: carol.cookie })).text()).toContain("Manage subscription");
+  expect((await call("/billing", { cookie: carol.cookie })).headers.get("location")).toContain("billing.stripe.com/p/login/test_portal?prefilled_email=carol%40example.com");
+
+  // Payment fails → past_due → Free; paid again → Pro; cancelled → Free.
+  await stripeEvent("customer.subscription.updated", sub("sub_carol", "cus_carol", "past_due"));
+  expect(await plan(carol.token)).toBe("free");
+  await stripeEvent("customer.subscription.updated", sub("sub_carol", "cus_carol", "active"));
+  expect(await plan(carol.token)).toBe("pro");
+  await stripeEvent("customer.subscription.deleted", sub("sub_carol", "cus_carol", "canceled"));
+  expect(await plan(carol.token)).toBe("free");
+});
+
+test("checkout without a reference links by email; tiers under $5 don't unlock Pro", async () => {
+  const dan = await appLogin("Dan@Example.com");
+  await stripeEvent("checkout.session.completed", { mode: "subscription", customer: "cus_dan", subscription: "sub_dan_small",
+    payment_status: "paid", amount_total: 300, customer_details: { email: "dan@example.com" } });
+  await stripeEvent("customer.subscription.created", sub("sub_dan_small", "cus_dan", "active", 300));
+  expect(await plan(dan.token)).toBe("free");
+  await stripeEvent("customer.subscription.created", sub("sub_dan_big", "cus_dan", "active", 1500));
+  expect(await plan(dan.token)).toBe("pro");
+  // A supporter with no Reelbird account is just a donation: accepted, nothing changes.
+  expect((await stripeEvent("checkout.session.completed", { mode: "subscription", customer: "cus_x", subscription: "sub_x",
+    payment_status: "paid", amount_total: 500, customer_details: { email: "nobody@example.com" } })).status).toBe(200);
+});
+
+test("webhooks: bad signatures are refused, repeats are ignored", async () => {
+  const payload = JSON.stringify({ id: "evt_forged", type: "customer.subscription.created", data: { object: sub("sub_f", "cus_f", "active") } });
+  const forged = await call("/stripe/webhook", { method: "POST", body: payload, headers: { "stripe-signature": signPayload(payload, "wrong") } });
+  expect(forged.status).toBe(400);
+  const again = await stripeEvent("customer.subscription.updated", sub("sub_dan_big", "cus_dan", "active", 1500), "evt_same");
+  expect(again.status).toBe(200);
+  expect(await (await stripeEvent("customer.subscription.updated", sub("sub_dan_big", "cus_dan", "canceled", 1500), "evt_same")).json()).toMatchObject({ duplicate: true });
 });

@@ -170,6 +170,8 @@ public struct CloudAPI: Sendable {
         public var limits: Limits
         public var usage: Usage
         public var accountURL: String
+        /// Where Free accounts go to pay for Pro (the server sends them on to Stripe).
+        public var upgradeURL: String?
         public var storage: CloudAccount.Storage
     }
 

@@ -459,7 +459,8 @@ import SwiftUI
             ("signed-out", nil, .idle),
             ("waiting", nil, .waiting(code: "BKTW-QRNX", url: URL(string: "https://watch.reelbird.app/device?code=BKTW-QRNX")!)),
             ("free", CloudStatus(email: "sam@example.com", isPro: false, enabled: true, linksUsed: 3, linkLimit: 5,
-                                 storageUsed: 820_000_000, storageLimit: 5_000_000_000, accountURL: nil), .idle),
+                                 storageUsed: 820_000_000, storageLimit: 5_000_000_000, accountURL: nil,
+                                 upgradeURL: URL(string: "https://watch.reelbird.app/upgrade")), .idle),
             ("pro", CloudStatus(email: "sam@example.com", isPro: true, enabled: true, linksUsed: 42, linkLimit: nil,
                                 storageUsed: 18_400_000_000, storageLimit: 100_000_000_000, accountURL: nil), .idle),
         ]

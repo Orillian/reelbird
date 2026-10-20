@@ -7,6 +7,7 @@ import { credentials, deleteShare, limits, listShares, measureRecent, ShareRefus
 import { serveShare } from "./gateway";
 import { ingest, VIEWER_SCRIPT } from "./events";
 import { shareStats } from "./stats";
+import { billing, hasSubscription, portalURL, upgradeURL, webhook } from "./billing";
 import * as pages from "./pages";
 
 export const app = new Hono();
@@ -84,7 +85,26 @@ app.post("/device", async (c) => {
 app.get("/account", async (c) => {
   const user = await auth.webUser(c);
   if (!user) return c.redirect("/login?next=/account");
-  return c.html(pages.accountPage(user, await usage(user.id), limits(user.plan), await listShares(user.id)));
+  const billingState = { subscribed: await hasSubscription(user.id), portal: portalURL(user) !== null, welcome: c.req.query("welcome") === "pro" };
+  return c.html(pages.accountPage(user, await usage(user.id), limits(user.plan), await listShares(user.id), billingState));
+});
+
+// MARK: Billing (Stripe Payment Link + webhook + no-code customer portal)
+
+app.post("/stripe/webhook", webhook);
+
+app.get("/upgrade", async (c) => {
+  const user = await auth.webUser(c);
+  if (!user) return c.redirect("/login?next=/upgrade");
+  if (user.plan === "pro") return c.redirect("/account");
+  return c.redirect(upgradeURL(user));
+});
+
+app.get("/billing", async (c) => {
+  const user = await auth.webUser(c);
+  if (!user) return c.redirect("/login?next=/billing");
+  const url = portalURL(user);
+  return url ? c.redirect(url) : c.redirect("/account");
 });
 
 app.get("/account/s/:id", async (c) => {
@@ -141,7 +161,8 @@ const me = (c: Context) => c.get("user" as never) as unknown as auth.User;
 
 app.get("/api/me", async (c) => {
   const u = me(c);
-  return c.json({ email: u.email, plan: u.plan, limits: limits(u.plan), usage: await usage(u.id), accountURL: `${config.publicURL}/account`, storage: storageInfo() });
+  return c.json({ email: u.email, plan: u.plan, limits: limits(u.plan), usage: await usage(u.id), accountURL: `${config.publicURL}/account`,
+                 upgradeURL: `${config.publicURL}/upgrade`, storage: storageInfo() });
 });
 
 app.post("/api/logout", async (c) => {
@@ -201,5 +222,5 @@ app.onError((e, c) => {
 if (import.meta.main) {
   setInterval(() => measureRecent().catch((e) => console.error("measure:", e)), 5 * 60_000);
   const server = Bun.serve({ port: config.port, fetch: (req, srv) => app.fetch(req, { server: srv }) });
-  console.log(`Reelbird Cloud on ${config.publicURL} (port ${server.port}${config.dev ? ", DEV" : ""})`);
+  console.log(`Reelbird Cloud on ${config.publicURL} (port ${server.port}${config.dev ? ", DEV" : ""}${billing.webhookSecret ? "" : ", billing off: no STRIPE_WEBHOOK_SECRET"})`);
 }

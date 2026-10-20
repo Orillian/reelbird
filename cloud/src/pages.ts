@@ -140,8 +140,17 @@ export function accountPage(
   usage: { activeLinks: number; storageBytes: number },
   lim: { activeLinks: number | null; storageBytes: number },
   shares: { id: string; title: string | null; created_at: Date; bytes: string; views: number; opens: number }[],
+  billingState: { subscribed: boolean; portal: boolean; welcome: boolean } = { subscribed: false, portal: false, welcome: false },
 ) {
   const pro = user.plan === "pro";
+  const planAction = pro
+    ? billingState.subscribed && billingState.portal ? `<a class="btn small" href="/billing">Manage subscription</a>` : ""
+    : `<a class="btn primary small" href="/upgrade">Upgrade to Pro · $5/month</a>`;
+  const welcome = billingState.welcome
+    ? pro
+      ? `<div class="card" style="margin-top:16px"><b>Welcome to Pro.</b> <span class="muted">Unlimited links and full analytics are on. Thank you for supporting Reelbird.</span></div>`
+      : `<div class="card" style="margin-top:16px"><b>Thanks! Finishing up…</b> <span class="muted">Stripe is confirming the payment. Refresh in a few seconds.</span></div>`
+    : "";
   const linksLine = lim.activeLinks === null ? `${usage.activeLinks} links` : `${usage.activeLinks} of ${lim.activeLinks} links`;
   const pct = Math.min(100, (usage.storageBytes / lim.storageBytes) * 100);
   const rows = shares.length
@@ -153,7 +162,7 @@ export function accountPage(
     ? `<form method="post" action="/dev/plan" style="margin:0"><input type="hidden" name="plan" value="${pro ? "free" : "pro"}"><button class="btn small" type="submit">Dev: switch to ${pro ? "Free" : "Pro"}</button></form>`
     : "";
   return layout("Your links · Reelbird Cloud", `
-<div class="row"><div><h1>Your links</h1><p class="muted" style="margin:0">${esc(user.email)} <span class="pill${pro ? " pro" : ""}">${pro ? "Pro" : "Free"}</span></p></div>${devPlan}</div>
+<div class="row"><div><h1>Your links</h1><p class="muted" style="margin:0">${esc(user.email)} <span class="pill${pro ? " pro" : ""}">${pro ? "Pro" : "Free"}</span></p></div><div class="row">${planAction}${devPlan}</div></div>${welcome}
 <div class="grid2">
 <div class="card"><h2>Links</h2><b style="font-size:22px">${linksLine}</b>${pro ? `<p class="faint" style="margin:4px 0 0">Unlimited on Pro</p>` : `<p class="faint" style="margin:4px 0 0">Pro removes the limit</p>`}</div>
 <div class="card"><h2>Storage</h2><b style="font-size:22px">${fmtBytes(usage.storageBytes)}</b><span class="faint"> of ${fmtBytes(lim.storageBytes)}</span><div class="meter"><i style="width:${pct.toFixed(1)}%"></i></div></div>
@@ -189,7 +198,7 @@ export function statsPage(user: User, s: Stats) {
 <div class="row"><h1>${esc(s.title || "Untitled recording")}</h1><a class="btn small" href="/r/${esc(s.id)}/" target="_blank" rel="noopener">Open link</a></div>`;
   if (s.locked) {
     return layout(`${s.title ?? "Stats"} · Reelbird Cloud`, `${head}${kpis}
-<div class="card lock"><h2>See who's watching</h2><p class="muted">Pro shows where people stop watching, unique viewers, where they came from and every recent view.${s.views ? ` Your ${s.views} view${s.views === 1 ? " is" : "s are"} already recorded.` : ""}</p></div>`, { user });
+<div class="card lock"><h2>See who's watching</h2><p class="muted">Pro shows where people stop watching, unique viewers, where they came from and every recent view.${s.views ? ` Your ${s.views} view${s.views === 1 ? " is" : "s are"} already recorded.` : ""}</p><p style="margin:16px 0 0"><a class="btn primary" href="/upgrade">Upgrade to Pro · $5/month</a></p></div>`, { user });
   }
   const maxDay = Math.max(1, ...s.byDay.map((d) => d.views));
   const bars = s.byDay.map((d) => `<i class="${d.views ? "" : "zero"}" style="height:${d.views ? Math.max(4, (d.views / maxDay) * 100) : 2}%" title="${esc(d.day)}: ${d.views}"></i>`).join("");

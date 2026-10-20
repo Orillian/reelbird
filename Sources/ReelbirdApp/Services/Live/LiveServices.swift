@@ -208,7 +208,8 @@ struct LiveCloud: CloudService {
         CloudStatus(email: a.email, isPro: a.isPro, enabled: a.enabled,
                     linksUsed: me?.usage.activeLinks, linkLimit: me?.limits.activeLinks,
                     storageUsed: me?.usage.storageBytes, storageLimit: me?.limits.storageBytes,
-                    accountURL: me.flatMap { URL(string: $0.accountURL) } ?? URL(string: a.server + "/account"))
+                    accountURL: me.flatMap { URL(string: $0.accountURL) } ?? URL(string: a.server + "/account"),
+                    upgradeURL: me?.upgradeURL.flatMap(URL.init(string:)) ?? URL(string: a.server + "/upgrade"))
     }
 }
 

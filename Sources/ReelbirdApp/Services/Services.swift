@@ -144,6 +144,7 @@ struct CloudStatus: Equatable, Sendable {
     var storageUsed: Int64?
     var storageLimit: Int64?
     var accountURL: URL?
+    var upgradeURL: URL? = nil
 }
 
 /// A device sign-in in progress: show `userCode`, open `verifyURL`, then await `wait`.

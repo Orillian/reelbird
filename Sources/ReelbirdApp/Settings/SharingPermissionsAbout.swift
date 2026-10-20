@@ -113,6 +113,11 @@ import SwiftUI
         if let url = cloud?.accountURL { NSWorkspace.shared.open(url) }
     }
 
+    /// Opens Stripe checkout for Pro; the plan updates when Settings is next shown.
+    func upgrade() {
+        if let url = cloud?.upgradeURL { NSWorkspace.shared.open(url) }
+    }
+
     var destination: ShareDestination {
         ShareDestination(endpoint: endpoint.trimmingCharacters(in: .whitespaces), bucket: bucket.trimmingCharacters(in: .whitespaces),
                          region: region.isEmpty ? "auto" : region, accessKeyID: accessKeyID.trimmingCharacters(in: .whitespaces),
@@ -177,6 +182,8 @@ struct SharingSettings: View {
             if model.target == .cloud { cloudSections } else { bucketSections }
         }
         .onChange(of: model.destination) { _, _ in model.saved = false; if model.test != .testing { model.test = .idle } }
+        // Back from the browser (after upgrading or managing the account): show the new plan.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refreshCloud() }
     }
 
     // MARK: Reelbird Cloud
@@ -213,8 +220,14 @@ struct SharingSettings: View {
                     if !c.enabled { StatusLine(tone: .info, text: "New links go to your own bucket.") }
                     Spacer()
                     Button("Sign Out…") { confirmSignOut() }
-                    Button("Manage Account") { model.openAccount() }
-                        .buttonStyle(PrimaryButtonStyle())
+                    if c.isPro || c.upgradeURL == nil {
+                        Button("Manage Account") { model.openAccount() }
+                            .buttonStyle(PrimaryButtonStyle())
+                    } else {
+                        Button("Manage Account") { model.openAccount() }
+                        Button("Upgrade to Pro · $5/month") { model.upgrade() }
+                            .buttonStyle(PrimaryButtonStyle())
+                    }
                 }
             }
         } else {
