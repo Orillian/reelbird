@@ -29,7 +29,7 @@ const description = `Reelbird is free: record, edit, export and share to your ow
           {FREE_POINTS.map((p) => <li><Icon name="check" /><span set:html={p} /></li>)}
         </ul>
         <div class="actions">
-          <a class="btn btn-primary" href="/download/"><Icon name="download" />Download Reelbird</a>
+          <a class="btn btn-ghost" href="/download/"><Icon name="download" />Download Reelbird</a>
         </div>
       </div>
       <div class="plan" id="pro">
@@ -40,10 +40,10 @@ const description = `Reelbird is free: record, edit, export and share to your ow
           {PRO_POINTS.map((p) => <li><Icon name="check" /><span set:html={p} /></li>)}
         </ul>
         <div class="actions">
-          <a class="btn btn-ink" href={PRO.upgradeURL}>Get Reelbird Pro</a>
+          <a class="btn btn-primary" href={PRO.upgradeURL} data-umami-event="pro-pricing">Get Reelbird Pro</a>
           <span class="muted small">Cancel any time. Links you've shared keep playing.</span>
         </div>
-        <p class="muted small fine">Prices in US dollars, plus tax where it applies. Subscribing means you agree to the <a href="/terms/">terms</a>.</p>
+        <p class="muted small fine">Prices in US dollars, plus tax where it applies. Subscribing means you agree to the <a href="/terms/">terms</a>. Already on Pro? <a href={PRO.accountURL}>Your account</a>.</p>
       </div>
     </section>
 
@@ -72,11 +72,11 @@ const description = `Reelbird is free: record, edit, export and share to your ow
     <section class="block steps" aria-labelledby="how-title">
       <h2 id="how-title">Getting Pro</h2>
       <ol>
-        <li>In Reelbird, press <strong>Share</strong> on any recording and choose <strong>Get Reelbird Pro</strong>. Or open <strong>Settings › Sharing › Reelbird Pro</strong>.</li>
-        <li>Sign in with your email address and approve the code in your browser.</li>
+        <li><a href="/download/">Download Reelbird</a>, free, if you haven't yet.</li>
+        <li>Press <strong>Share</strong> on any recording and choose <strong>Get Reelbird Pro</strong>, or open <strong>Settings › Sharing › Reelbird Pro</strong>. Sign in with your email address and approve the code in your browser.</li>
         <li>Pay with Stripe. Back in Reelbird, press <strong>Share</strong>: the link is hosted at <code>watch.reelbird.app</code>.</li>
       </ol>
-      <p class="muted">Manage billing or cancel from <a href={PRO.accountURL}>your account</a>.</p>
+      <p class="muted">Paid on the website first? Sign in from the app with the same email address. Manage billing or cancel from <a href={PRO.accountURL}>your account</a>.</p>
     </section>
 
     <section class="block faqsec" aria-labelledby="pricing-faq">
@@ -89,7 +89,7 @@ const description = `Reelbird is free: record, edit, export and share to your ow
 <style>
   .plans { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line); }
   .plan { padding: 2rem 2.5rem 2.5rem 0; display: grid; align-content: start; gap: 0.75rem; scroll-margin-top: 5rem; }
-  .plan + .plan { padding-left: 2.5rem; padding-right: 0; border-left: 1px solid var(--line); }
+  .plan + .plan { padding-left: 2.5rem; padding-right: 2.5rem; border-left: 1px solid var(--line); background: var(--bg-raised); }
   .plan h2 { font-size: var(--step-2); }
   .price { font-family: var(--font-display); font-size: var(--step-3); font-weight: 520; line-height: 1; font-feature-settings: "lnum"; }
   .per { font-family: var(--font-sans); font-size: 1rem; font-weight: 400; color: var(--text-muted); }
@@ -117,6 +117,6 @@ const description = `Reelbird is free: record, edit, export and share to your ow
   @media (max-width: 48rem) {
     .plans { grid-template-columns: minmax(0, 1fr); }
     .plan { padding-right: 0; }
-    .plan + .plan { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
+    .plan + .plan { padding-inline: 1.25rem; border-left: 0; border-top: 1px solid var(--line); }
   }
 </style>

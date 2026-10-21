@@ -4,6 +4,7 @@
  * config/site.ts.
  */
 import { PRO } from "../config/site";
+import { CHECKED_LABEL } from "./compare";
 import type { Faq } from "./faq";
 
 /** The plan columns on /pricing. Short, and only what differs; the table below has the detail. */
@@ -90,9 +91,14 @@ export const PRICING_FAQ: Faq[] = [
     html: `Yes. <code>reelbird cloud login</code> signs in, <code>reelbird cloud links</code> and <code>reelbird cloud stats</code> show views, and <code>reelbird cloud use bucket</code> switches back to your own bucket. Scripts and agents can set <code>REELBIRD_CLOUD_TOKEN</code> instead of signing in.`,
   },
   {
+    id: "vs-loom",
+    q: "How does Pro compare with Loom?",
+    a: `As of ${CHECKED_LABEL}, Loom Business is $18 per user a month, billed monthly, and Loom's free Starter plan stops each video at 5 minutes, keeps 25 videos and can't download. Reelbird Pro is ${PRO.price} a month with no length limit, unlimited links and ${PRO.storage}, and every take is also MP4 files on your Mac. Loom has comments, team workspaces and apps beyond the Mac; Reelbird has none of those.`,
+    html: `As of ${CHECKED_LABEL}, Loom Business is $18 per user a month, billed monthly, and Loom's free Starter plan stops each video at 5 minutes, keeps 25 videos and can't download (<a href="https://www.loom.com/pricing">Loom pricing</a>). Reelbird Pro is ${PRO.price} a month with no length limit, unlimited links and ${PRO.storage}, and every take is also MP4 files on your Mac. Loom has comments, team workspaces and apps beyond the Mac; Reelbird has none of those. More in <a href="/loom-alternative/">Reelbird vs Loom</a>.`,
+  },
+  {
     id: "money",
     q: "Where does the money go?",
-    a: "Into Reelbird: the hosting, fixes and new features. Pro is the best way to support the project. If you don't need hosting, you can also give once or monthly.",
-    html: `Into Reelbird: the hosting, fixes and new features. Pro is the best way to support the project. If you don't need hosting, you can also <a href="/support/">give once or monthly</a>.`,
+    a: "Into Reelbird: the hosting, fixes and new features. Pro is how Reelbird pays for itself, and the app stays free either way.",
   },
 ];

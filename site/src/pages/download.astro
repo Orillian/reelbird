@@ -3,7 +3,7 @@ import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import Code from "../components/Code.astro";
 import Icon from "../components/Icon.astro";
-import { GITHUB_URL, PREBUILT, APP_VERSION, REQUIREMENTS, DONATION_LINKS } from "../config/site";
+import { GITHUB_URL, PREBUILT, APP_VERSION, REQUIREMENTS, PRO } from "../config/site";
 
 const permissions = [
   ["Screen & System Audio Recording", "Recording the screen and system sound. Required."],
@@ -150,12 +150,11 @@ const permissions = [
   <img src="/anim/celebrating-dark.svg" alt="" width="88" height="88" class="only-dark" />
   <h2 id="thanks-title">Your download has started</h2>
   <p>Unzip it, drag Reelbird to Applications and open it. Look for the robin in the menu bar.</p>
-  <p class="muted">Reelbird is free, with no account and no ads. If it saves you a subscription, a one-time tip keeps it going.</p>
+  <p class="muted">Recording, editing and exporting are free, with no account. For share links with nothing to set up, press Share and choose Reelbird Pro, {PRO.price} a month.</p>
   <div class="thanks-actions">
-    <a class="btn btn-primary" href={DONATION_LINKS.once} target="_blank" rel="noopener" data-umami-event="tip-after-download">Leave a tip</a>
-    <form method="dialog"><button class="btn btn-ghost" value="later">Maybe later</button></form>
+    <form method="dialog"><button class="btn btn-primary" value="ok">Got it</button></form>
+    <a class="btn btn-ghost" href="/pricing/" data-umami-event="pro-after-download">About Pro</a>
   </div>
-  <p class="muted small"><a href="/support/">Other ways to support Reelbird</a></p>
 </dialog>
 
 <script>

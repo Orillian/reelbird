@@ -177,7 +177,7 @@ export const HOME_VS = {
   rows: [
     { k: "Price", v: ["Free, then $18 per user a month", "$29 a month, or $9 billed yearly", "Free (MIT). Optional Pro hosting, $5 a month"] },
     { k: "Limits", v: ["5 min a video, 25 videos, 720p", "Links up to 30 min", "None set by Reelbird"] },
-    { k: "Link when you stop", v: ["Yes, on Loom's cloud", "No, after you export", "Yes, in your own bucket or on Pro"] },
+    { k: "Link when you stop", v: ["Yes, on Loom's cloud", "No, after you export", "Yes, hosted by Pro or in your own bucket"] },
     { k: "Auto-zoom polish", v: ["No", "Yes", "Yes, under the same link"] },
     { k: "Keep the file", v: ["No downloads on the free plan", "Yes", "Always: MP4s on your Mac"] },
   ],

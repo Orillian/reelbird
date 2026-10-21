@@ -55,7 +55,6 @@ ${docs.map((d) => `- [${d.data.title}](${u(`/docs/${d.id}.md`)}): ${d.data.descr
 
 - [Changelog](${u("/changelog/")})
 - [Privacy](${u("/privacy/")})
-- [Support Reelbird](${u("/support/")})
 - [Full text for LLMs](${u("/llms-full.txt")})
 `;
   return new Response(txt, { headers: { "Content-Type": "text/plain; charset=utf-8" } });

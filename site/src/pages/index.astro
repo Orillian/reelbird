@@ -8,7 +8,7 @@ import Faq from "../components/Faq.astro";
 import CtaBand from "../components/CtaBand.astro";
 import VsBand from "../components/VsBand.astro";
 import Icon from "../components/Icon.astro";
-import { GITHUB_URL, SITE_DESCRIPTION, APP_VERSION } from "../config/site";
+import { GITHUB_URL, SITE_DESCRIPTION, APP_VERSION, PRO } from "../config/site";
 import { HOME_FAQ } from "../data/faq";
 import { softwareApplication, softwareSourceCode, videoObject } from "../lib/jsonld";
 import pickerL from "../assets/shots/picker-raw-light.webp";
@@ -21,8 +21,8 @@ import zoomL from "../assets/shots/editor-zoom-light.webp";
 import zoomD from "../assets/shots/editor-zoom-dark.webp";
 import audioL from "../assets/shots/editor-audio-light.webp";
 import audioD from "../assets/shots/editor-audio-dark.webp";
-import sharingL from "../assets/shots/settings-sharing-light.webp";
-import sharingD from "../assets/shots/settings-sharing-dark.webp";
+import statsL from "../assets/shots/pro-stats-light.webp";
+import statsD from "../assets/shots/pro-stats-dark.webp";
 
 const audio = [
   { k: "Auto level", v: "Your voice is measured and set to −16 LUFS, so a quiet take comes out at a normal level." },
@@ -101,7 +101,7 @@ const facts: [string, string, string?][] = [
           <div class="step-text">
             <span class="num" aria-hidden="true">2</span>
             <h3>Stop. The link is on your clipboard.</h3>
-            <p>With <strong>Share while recording</strong> on, Reelbird uploads a 1080p stream to your own bucket as you go. Paste the link anywhere; it plays in any browser a moment later.</p>
+            <p>With <strong>Share while recording</strong> on, Reelbird uploads a 1080p stream as you go, to Reelbird Pro or your own bucket. Paste the link anywhere; it plays in any browser a moment later.</p>
           </div>
           <div class="step-visual stop-visual">
             <Shot src={hudL} dark={hudD} alt="The recording bar: timer at 1:14, microphone level, pause, restart, delete and a Stop button." sizes="(min-width: 60rem) 560px, 100vw" widths={[560, 840, 1120, 1480]} />
@@ -161,26 +161,33 @@ const facts: [string, string, string?][] = [
     <div class="wrap">
       <header class="head" data-reveal>
         <p class="eyebrow">Instant links</p>
-        <h2 id="links-title">Links that live in your own bucket.</h2>
-        <p class="lede">Share links point at an S3-compatible bucket you own, for free. Cloudflare R2 is the easy choice. It stores 10 GB free each month and charges nothing when people watch. Rather not set one up? Reelbird Pro hosts your links for $5 a month and shows how many people watched and where they stopped.</p>
+        <h2 id="links-title">Send the link. See how far they watched.</h2>
+        <p class="lede">Reelbird Pro hosts your links for {PRO.price} a month. Sign in from the Share button and there's nothing else to set up, and every link shows its views and the moment people stopped watching. If you'd rather host the files yourself, links to your own bucket are free.</p>
       </header>
-      <div class="links-grid" data-reveal>
-        <div class="flow" role="img" aria-label="Your Mac uploads to your bucket; viewers open the link in any browser.">
-          <div class="node"><Icon name="monitor" size={22} /><span><strong>Your Mac</strong><span class="muted">records and uploads</span></span></div>
-          <span class="wire" aria-hidden="true"></span>
-          <div class="node"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="7.5" ry="2.75"/><path d="M4.5 6v12c0 1.5 3.4 2.75 7.5 2.75s7.5-1.25 7.5-2.75V6M4.5 12c0 1.5 3.4 2.75 7.5 2.75s7.5-1.25 7.5-2.75"/></svg><span><strong>Your bucket</strong><span class="muted">R2, S3, B2 or MinIO</span></span></div>
-          <span class="wire" aria-hidden="true"></span>
-          <div class="node"><Icon name="link" size={22} /><span><strong>Any browser</strong><span class="muted">no app, no sign-in</span></span></div>
-        </div>
-        <ul class="ticks">
-          <li><strong>Setup takes about ten minutes, once.</strong> A bucket, a scoped API token and a public URL.</li>
-          <li><strong>The link never changes,</strong> even when you update the video.</li>
-          <li><strong>Unlisted, not secret.</strong> Anyone with a link can watch, so share accordingly.</li>
-          <li><strong>Stop sharing</strong> deletes every file under that link.</li>
-        </ul>
-        <Shot src={sharingL} dark={sharingD} variant="frame" alt="Reelbird's Sharing settings: endpoint, bucket, region, access keys, public URL and prefix, with Test Connection and Save." sizes="(min-width: 60rem) 440px, 100vw" widths={[440, 880, 1120]} class="links-shot" />
+      <div data-reveal>
+        <Shot src={statsL} dark={statsD} variant="frame" alt="A Reelbird Pro stats page for a five-minute video: 64 views, 37 unique viewers, 57% watched on average, 28% to the end, and a curve of viewers still watching." sizes="(min-width: 72rem) 1100px, 100vw" class="links-stats" />
       </div>
-      <p class="more links-more" data-reveal><a class="link-arrow" href="/docs/sharing/">Set up sharing with Cloudflare R2</a><a class="link-arrow" href="/pricing/">Free and Pro compared</a></p>
+      <div class="ways" data-reveal>
+        <div class="way">
+          <h3>Reelbird Pro <span class="way-price">{PRO.price} a month</span></h3>
+          <ul class="ticks">
+            <li><strong>Nothing to set up.</strong> Sign in from the Share button; links live at <code>watch.reelbird.app</code>.</li>
+            <li><strong>Views, unique viewers and drop-off</strong> for every link. Anonymous, with no cookies.</li>
+            <li><strong>Unlimited links and {PRO.storage}.</strong> Cancel any time; links you've shared keep playing.</li>
+          </ul>
+          <p class="way-cta"><a class="btn btn-ink btn-sm" href="/pricing/" data-umami-event="pro-home">See Reelbird Pro</a></p>
+        </div>
+        <div class="way">
+          <h3>Your own bucket <span class="way-price">Free</span></h3>
+          <ul class="ticks">
+            <li><strong>Cloudflare R2, S3, B2 or MinIO.</strong> About ten minutes to set up, once.</li>
+            <li><strong>R2 stores 10 GB free</strong> each month and charges nothing when people watch.</li>
+            <li><strong>No account.</strong> Your bucket's secret stays in your Mac's Keychain.</li>
+          </ul>
+          <p class="way-cta"><a class="link-arrow" href="/docs/sharing/">Set up sharing with Cloudflare R2</a></p>
+        </div>
+      </div>
+      <p class="both" data-reveal>Either way, the link stays the same when you update the video, anyone with it can watch (unlisted, not secret), and <strong>Stop sharing</strong> deletes every file under it.</p>
     </div>
   </section>
 
@@ -286,7 +293,6 @@ const facts: [string, string, string?][] = [
   .head .lede { margin-top: 1.25rem; }
   .more { margin-top: 2rem; }
   .split > .head .more { margin-top: 1.75rem; }
-  .links-more { display: flex; flex-wrap: wrap; gap: 0.75rem 2rem; }
 
   /* Steps: a rail with numbers */
   .steps { list-style: none; padding: 0; display: grid; gap: clamp(3.5rem, 2rem + 5vw, 6rem); counter-reset: step; }
@@ -321,19 +327,20 @@ const facts: [string, string, string?][] = [
   .spec dt { font-weight: 600; }
   .spec dd { color: var(--text-muted); }
 
-  /* Links */
-  .links-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); grid-template-areas: "flow flow" "ticks shot"; gap: 2.5rem clamp(2rem, 1rem + 4vw, 5rem); align-items: start; }
-  .flow { grid-area: flow; display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
-  .node { flex: none; }
-  .node { display: flex; align-items: center; gap: 0.7rem; padding: 0.85rem 1rem; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--bg-raised); line-height: 1.25; }
-  .node > span { display: grid; font-size: 0.9375rem; }
-  .node .muted { font-size: 0.8125rem; }
-  .wire { flex: 1 1 1.5rem; min-width: 1.5rem; height: 1px; background: repeating-linear-gradient(90deg, var(--text-muted) 0 4px, transparent 4px 8px); }
-  .ticks { grid-area: ticks; list-style: none; padding: 0; display: grid; gap: 1rem; }
+  /* Links: the Pro stats page, then the two ways to host, split by a hairline like /pricing */
+  :global(.links-stats) { box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-frame); }
+  .ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: clamp(2.5rem, 2rem + 2vw, 3.5rem); border-top: 1px solid var(--line-strong); }
+  .way { padding: 1.75rem 2.5rem 0 0; display: grid; align-content: start; gap: 1.1rem; }
+  .way + .way { padding-left: 2.5rem; padding-right: 0; border-left: 1px solid var(--line); }
+  .way h3 { font-family: var(--font-display); font-weight: 520; font-size: var(--step-2); letter-spacing: -0.015em; line-height: 1.15; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.75rem; }
+  .way-price { font-family: var(--font-sans); font-size: 1rem; font-weight: 500; letter-spacing: 0; color: var(--text-muted); }
+  .way-cta { margin-top: 0.25rem; }
+  .ticks { list-style: none; padding: 0; display: grid; gap: 0.85rem; }
   .ticks li { padding-left: 1.75rem; position: relative; color: var(--text-muted); }
   .ticks li::before { content: ""; position: absolute; left: 0.1rem; top: 0.55em; width: 0.7rem; height: 0.38rem; border-left: 1.75px solid var(--text); border-bottom: 1.75px solid var(--text); rotate: -45deg; }
   .ticks strong { color: var(--text); font-weight: 600; }
-  :global(.links-shot) { grid-area: shot; }
+  .both { margin-top: 2.5rem; color: var(--text-muted); font-size: 0.975rem; max-width: 48rem; }
+  .both strong { color: var(--text); font-weight: 600; }
 
   /* Agents terminal: always ink, like a terminal */
   .term { border-radius: var(--radius-lg); background: #1a1512; color: #fff4e8; box-shadow: var(--shadow-frame); overflow: hidden; border: 1px solid rgb(255 244 232 / 0.08); }
@@ -358,9 +365,9 @@ const facts: [string, string, string?][] = [
   .facts a { text-decoration-color: var(--line-strong); }
 
   @media (max-width: 60rem) {
-    .step, .split, .links-grid, .audio-grid { grid-template-columns: minmax(0, 1fr); }
-    .links-grid { grid-template-areas: "flow" "ticks" "shot"; }
-    :global(.links-shot) { max-width: 30rem; }
+    .step, .split, .audio-grid, .ways { grid-template-columns: minmax(0, 1fr); }
+    .way, .way + .way { padding: 1.75rem 0; border-left: 0; }
+    .way + .way { border-top: 1px solid var(--line); }
     .sticky { position: static; }
     .trio { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
     .grid6 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -372,8 +379,6 @@ const facts: [string, string, string?][] = [
     .grid6 li:nth-child(2n) { padding-left: 0; border-left: 0; }
     .spec { grid-template-columns: minmax(0, 1fr); gap: 0.3rem; }
     .step-text { padding-left: 0; padding-top: 3.25rem; }
-    .flow { flex-direction: column; align-items: stretch; }
-    .wire { flex: none; min-width: 0; width: 1px; height: 1.25rem; margin-left: 1.6rem; background: repeating-linear-gradient(180deg, var(--text-muted) 0 4px, transparent 4px 8px); }
     .term-body { font-size: 0.75rem; overflow-x: auto; }
     .hero h1 br { display: none; }
   }

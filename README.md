@@ -22,7 +22,7 @@
   <a href="#mcp-server">MCP</a> ·
   <a href="docs/SHARING.md">Sharing setup</a> ·
   <a href="#troubleshooting">Troubleshooting</a> ·
-  <a href="https://reelbird.app/support/">Support</a>
+  <a href="https://reelbird.app/pricing/">Pricing</a>
 </p>
 
 <p align="center">
@@ -363,6 +363,6 @@ Bug reports, fixes and features are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) 
 
 ## Support Reelbird
 
-Reelbird is free and always will be. The best way to support it is [Reelbird Pro](https://reelbird.app/pricing/), which hosts your links for $5 a month. If you don't need that, you can [give once or monthly](https://reelbird.app/support/). Stars, bug reports and pull requests help too.
+Reelbird is free and always will be. [Reelbird Pro](https://reelbird.app/pricing/) pays for it: $5 a month for hosted share links with view analytics, if you'd rather not set up a bucket. Stars, bug reports and pull requests help too.
 
 <sub>The Reelbird website is hosted on <a href="https://shiptiffin.com">ShipTiffin</a>, which puts all your apps on one server you own. It's open source too: <a href="https://github.com/shiptiffin/tiffin">shiptiffin/tiffin</a>.</sub>

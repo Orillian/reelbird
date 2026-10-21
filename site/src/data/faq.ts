@@ -47,8 +47,8 @@ export const FAQ: Faq[] = [
   {
     id: "sharing-setup",
     q: "Do I have to set up sharing?",
-    a: "Only if you want links. Recording, editing and export work with no setup. For links there are two ways: your own bucket, free, after a one-time setup of about ten minutes for R2 (Cloudflare asks for a payment method on file even on the free tier); or Reelbird Pro, $5 a month, where you sign in and there's nothing to set up.",
-    html: `Only if you want links. Recording, editing and export work with no setup. For links there are two ways: your own bucket, free, after a one-time setup of about ten minutes for R2 (Cloudflare asks for a payment method on file even on the free tier; see <a href="/docs/sharing/">Sharing setup</a>); or <a href="/pricing/">Reelbird Pro</a>, $5 a month, where you sign in and there's nothing to set up.`,
+    a: "Only if you want links. Recording, editing and export work with no setup. For links there are two ways: Reelbird Pro, $5 a month, where you sign in from the Share button and there's nothing to set up; or your own bucket, free, after a one-time setup of about ten minutes for R2 (Cloudflare asks for a payment method on file even on the free tier).",
+    html: `Only if you want links. Recording, editing and export work with no setup. For links there are two ways: <a href="/pricing/">Reelbird Pro</a>, $5 a month, where you sign in from the Share button and there's nothing to set up; or your own bucket, free, after a one-time setup of about ten minutes for R2 (Cloudflare asks for a payment method on file even on the free tier; see <a href="/docs/sharing/">Sharing setup</a>).`,
   },
   {
     id: "pro",

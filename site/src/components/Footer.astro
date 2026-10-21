@@ -1,11 +1,12 @@
 ---
 import Logo from "./Logo.astro";
-import { APP_VERSION, GITHUB_URL, LEGAL } from "../config/site";
+import { APP_VERSION, GITHUB_URL, LEGAL, PRO } from "../config/site";
 const cols = [
   { title: "Product", links: [
     { href: "/features/", label: "Features" },
     { href: "/download/", label: "Download" },
     { href: "/pricing/", label: "Pricing" },
+    { href: PRO.accountURL, label: "Pro account" },
     { href: "/changelog/", label: "Changelog" },
     { href: "/privacy/", label: "Privacy" },
     { href: "/terms/", label: "Terms" },
@@ -24,7 +25,7 @@ const cols = [
   { title: "Project", links: [
     { href: GITHUB_URL, label: "GitHub" },
     { href: `${GITHUB_URL}/issues`, label: "Report a bug" },
-    { href: "/support/", label: "Support Reelbird" },
+    { href: `${GITHUB_URL}/blob/main/CONTRIBUTING.md`, label: "Contribute" },
     { href: `${GITHUB_URL}/blob/main/LICENSE`, label: "MIT licence" },
   ] },
 ];

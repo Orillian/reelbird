@@ -41,6 +41,8 @@ export default defineConfig({
   integrations: [sitemap()],
   output: "static",
   trailingSlash: "always",
+  // Reelbird 0.2.3 and older link to /support/ from the app; donations gave way to Pro.
+  redirects: { "/support/": "/pricing/" },
   build: { format: "directory", inlineStylesheets: "always" },
   compressHTML: true,
   devToolbar: { enabled: false },

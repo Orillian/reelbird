@@ -136,6 +136,7 @@ td.go{width:1%;white-space:nowrap;text-align:right}
 .welcome .mascot{width:96px;height:96px;flex:none;color:var(--text)}
 .welcome h2{margin-bottom:4px}
 .welcome p{color:var(--muted);max-width:52ch}
+.welcome p+p{margin-top:6px}
 .offer{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:24px 48px;align-items:center;padding:32px;border:1px solid var(--line-strong);border-radius:20px;background:var(--raised);margin-bottom:8px}
 .offer h2{font-size:clamp(24px,1.4vw + 16px,30px);margin-bottom:8px}
 .offer .price{font-family:var(--display);font-size:22px;font-weight:500}
@@ -364,7 +365,7 @@ export function accountPage(
     : "";
   const welcome = billingState.welcome
     ? pro
-      ? `<div class="welcome" role="status">${MASCOT.celebrating}<div><h2>Welcome to Pro</h2><p>Thank you for supporting Reelbird. Press Share on any recording; its link shows up here with its views.</p></div></div>`
+      ? `<div class="welcome" role="status">${MASCOT.celebrating}<div><h2>Welcome to Pro</h2><p>Thank you for supporting Reelbird. Press Share on any recording; its link shows up here with its views.</p><p>No Reelbird on this Mac yet? <a href="${SITE}/download/">Download it</a>, free, then sign in from Share › Reelbird Pro with this email address.</p></div></div>`
       : `<div class="welcome" role="status"><div><h2>Finishing up…</h2><p>Stripe is confirming the payment. <a href="/account?welcome=pro">Refresh</a> in a few seconds.</p></div></div>`
     : "";
   const pct = lim.storageBytes ? Math.min(100, (usage.storageBytes / lim.storageBytes) * 100) : 0;

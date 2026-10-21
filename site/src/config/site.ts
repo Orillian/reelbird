@@ -1,5 +1,5 @@
 /**
- * Site-wide settings. This is the only file that holds Stripe URLs, the launch
+ * Site-wide settings. This is the only file that holds the Pro checkout URL, the launch
  * video URL and the prebuilt-download switch. Change them here and rebuild.
  */
 
@@ -63,11 +63,10 @@ export const PREBUILT = {
 };
 
 /**
- * Reelbird Pro: optional hosted share links with view analytics. `launched` (on since 0.2.0) shows it on the
- * /support page, which then leads with Pro, and on /pricing. Say the facts the same way everywhere.
+ * Reelbird Pro: optional hosted share links with view analytics, and the one way to pay for Reelbird
+ * (it replaced donations; /support/ redirects to /pricing/). Say the facts the same way everywhere.
  */
 export const PRO = {
-  launched: true,
   price: "$5",
   /** For JSON-LD offers. */
   priceAmount: "5.00",
@@ -86,18 +85,7 @@ export const LEGAL = {
   updated: "20 October 2026",
 } as const;
 
-/** Donations. Read by the /support page and the thank-you after a download. */
-export const DONATION_LINKS = {
-  once: "https://buy.stripe.com/fZu14m0FO3v050PfqP3ks00",
-  monthly: [
-    { amount: "$5", name: "Supporter", href: "https://buy.stripe.com/9B68wOewEaXsgJxdiH3ks01" },
-    { amount: "$15", name: "Backer", href: "https://buy.stripe.com/7sYbJ088g3v0gJx4Mb3ks02" },
-    { amount: "$50", name: "Sponsor", href: "https://buy.stripe.com/28EeVc88g5D80Kz2E33ks03" },
-    { amount: "$100", name: "Company sponsor", href: "https://buy.stripe.com/00w14m6088PkbpdceD3ks04" },
-  ],
-} as const;
-
-/** Absolute URL for a site path such as "/support/". */
+/** Absolute URL for a site path such as "/pricing/". */
 export const abs = (path: string): string => new URL(path, SITE_URL).toString();
 
 /**
