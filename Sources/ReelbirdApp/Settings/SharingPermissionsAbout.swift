@@ -555,8 +555,6 @@ struct AboutSettings: View {
                     .buttonStyle(SecondaryButtonStyle())
                 Button("Welcome Tour") { app?.showOnboarding() }
                     .buttonStyle(SecondaryButtonStyle())
-                Button("Support Reelbird") { open(ReelbirdInfo.supportURL) }
-                    .buttonStyle(PrimaryButtonStyle())
             }
             .padding(.top, Theme.Space.s)
             .padding(.bottom, Theme.Space.xl)

@@ -139,9 +139,6 @@ import ReelbirdCore
     @objc func reportIssue(_ sender: Any?) {
         if let u = URL(string: ReelbirdInfo.repositoryURL + "/issues/new") { NSWorkspace.shared.open(u) }
     }
-    @objc func openSupport(_ sender: Any?) {
-        if let u = URL(string: ReelbirdInfo.supportURL) { NSWorkspace.shared.open(u) }
-    }
     @objc func openDocument(_ sender: Any?) {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.init(filenameExtension: ProjectBundle.pathExtension, conformingTo: .package) ?? .package]

@@ -146,13 +146,6 @@ struct ExportSheet: View {
                     .keyboardShortcut(.defaultAction)
             }
             .padding(.top, 4)
-            Divider().padding(.top, Theme.Space.s)
-            HStack(spacing: 4) {
-                Text("Reelbird is free and open source.").foregroundStyle(.secondary)
-                Link("Support it", destination: URL(string: ReelbirdInfo.supportURL)!)
-                    .foregroundStyle(Theme.accentText)
-            }
-            .font(.system(size: 11.5))
         }
         .padding(Theme.Space.xl)
         .frame(maxWidth: .infinity)

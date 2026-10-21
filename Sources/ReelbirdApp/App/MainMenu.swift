@@ -153,8 +153,6 @@ import ReelbirdShare
         help.addItem(item("Reelbird Website", #selector(AppDelegate.openWebsite(_:)), target: target))
         help.addItem(item("Reelbird on GitHub", #selector(AppDelegate.openRepository(_:)), target: target))
         help.addItem(item("Report a Problem…", #selector(AppDelegate.reportIssue(_:)), target: target))
-        help.addItem(.separator())
-        help.addItem(item("Support Reelbird", #selector(AppDelegate.openSupport(_:)), target: target))
         NSApp.helpMenu = help
         add(help, title: "Help", to: main)
         return main
