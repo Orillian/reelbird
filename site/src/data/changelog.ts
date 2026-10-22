@@ -11,6 +11,22 @@ const newer = (a: string, b: string) => {
 
 const ALL: Release[] = [
   {
+    version: "0.3.0",
+    date: "2026-10-22",
+    title: "Every recording is a step-by-step guide",
+    summary: "Each click, run of typing and shortcut becomes a step with a picture of the screen. Shared links show a Guide and a Click-through next to the video, and viewers can copy text straight out of the paused video.",
+    notes: [
+      "Guide panel (⌘9): every step with its picture, what you clicked (read from the screen on your Mac) and what you said. Rewrite or hide steps, and read the screen again.",
+      "Shared links get Video, Guide and Click-through views. In Click-through, viewers click the highlighted spot to move through the steps themselves.",
+      "Copy text: pause a shared video and select any text in the frame. Text under a blur is never included.",
+      "Export a guide as a web page, Markdown with images, or a Claude skill.",
+      "On Macs with Apple Intelligence, steps you talked through get your reason added, like: Click \"Save\" to keep the draft.",
+      "Typed text stays out of guides unless you turn on Show what was typed, and anything that looks like an email, key, card or phone number is masked even then.",
+      "Command line and MCP: reelbird steps and reelbird guide, plus get_steps, describe_take, edit_step and export_guide, so an agent can read what a recording shows.",
+      "The in-app support links are gone; Reelbird Pro is how to support the project.",
+    ],
+  },
+  {
     version: "0.2.3",
     date: "2026-10-20",
     title: "Signing in to Reelbird Pro always saves",
