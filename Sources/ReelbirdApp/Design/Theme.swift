@@ -58,6 +58,8 @@ extension NSColor {
 
     static let rbAccent = NSColor(hex: 0xFF5A36)
     static let rbAccentPressed = NSColor(hex: 0xE5432B)
+    /// Hover on accent buttons: a touch lighter, so a click target reads as live before it is pressed.
+    static let rbAccentHover = NSColor(hex: 0xFF7350)
     static let rbAccentText = dynamic(light: NSColor(hex: 0xC93A1E), dark: NSColor(hex: 0xFF6E4D))
     static let rbRecording = rbAccent
     static let rbInkFixed = NSColor(hex: 0x1A1512)

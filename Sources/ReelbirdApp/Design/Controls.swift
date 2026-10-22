@@ -43,13 +43,26 @@ extension ToggleStyle where Self == BrandSwitchStyle {
     static var brand: BrandSwitchStyle { BrandSwitchStyle() }
 }
 
-/// The one accent button per surface (Record, Export, Continue).
+/// The one accent button per surface (Record, Export, Continue). Lighter on hover, darker and a hair smaller when
+/// pressed, so every primary button in the app answers the pointer the same way.
 struct PrimaryButtonStyle: ButtonStyle {
     var tint: Color = Theme.accent
     var large = false
-    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
+        PrimaryButtonBody(configuration: configuration, tint: tint, large: large)
+    }
+}
+
+private struct PrimaryButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    let tint: Color
+    let large: Bool
+    @Environment(\.isEnabled) private var isEnabled
+    @ViewState private var hovering = false
+
+    var body: some View {
+        let pressed = configuration.isPressed
         configuration.label
             .font(.system(size: large ? 14 : 13, weight: .semibold))
             .foregroundStyle(Theme.onAccent.opacity(isEnabled ? 1 : 0.6))
@@ -57,23 +70,39 @@ struct PrimaryButtonStyle: ButtonStyle {
             .frame(height: large ? 36 : 28)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                    .fill(configuration.isPressed ? Color(nsColor: .rbAccentPressed) : tint)
+                    .fill(pressed ? Color(nsColor: .rbAccentPressed) : tint)
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                        .fill(Color(nsColor: .rbAccentHover).opacity(hovering && !pressed && isEnabled ? 1 : 0)))
+                    .shadow(color: Color(nsColor: .rbAccent).opacity(hovering && !pressed && isEnabled ? 0.35 : 0), radius: 6, y: 2)
                     .opacity(isEnabled ? 1 : 0.4)
             )
             .contentShape(Rectangle())
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .animation(Theme.snappy, value: configuration.isPressed)
+            .scaleEffect(pressed ? 0.985 : 1)
+            .animation(Theme.snappy, value: pressed)
+            .animation(.easeOut(duration: 0.12), value: hovering)
+            .onHover { hovering = $0 }
     }
 }
 
-/// Neutral filled button for secondary actions.
+/// Neutral filled button for secondary actions: a stronger wash on hover, stronger again when pressed.
 struct SecondaryButtonStyle: ButtonStyle {
     var large = false
     /// Inline in a row (picker inputs): 22 pt tall.
     var small = false
-    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
+        SecondaryButtonBody(configuration: configuration, large: large, small: small)
+    }
+}
+
+private struct SecondaryButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    let large: Bool
+    let small: Bool
+    @Environment(\.isEnabled) private var isEnabled
+    @ViewState private var hovering = false
+
+    var body: some View {
         configuration.label
             .font(.system(size: large ? 14 : small ? 11.5 : 13, weight: .medium))
             .foregroundStyle(Color.primary.opacity(isEnabled ? 0.9 : 0.4))
@@ -81,9 +110,11 @@ struct SecondaryButtonStyle: ButtonStyle {
             .frame(height: large ? 36 : small ? 22 : 28)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                    .fill(Color.primary.opacity(configuration.isPressed ? 0.12 : 0.07))
+                    .fill(Color.primary.opacity(configuration.isPressed ? 0.14 : hovering && isEnabled ? 0.1 : 0.07))
             )
             .contentShape(Rectangle())
+            .animation(.easeOut(duration: 0.12), value: hovering)
+            .onHover { hovering = $0 }
     }
 }
 
