@@ -11,6 +11,21 @@ const newer = (a: string, b: string) => {
 
 const ALL: Release[] = [
   {
+    version: "0.3.1",
+    date: "2026-10-22",
+    title: "A calmer timeline, a Speed panel and better blurs",
+    summary: "Click any part of the video to select it and trim just that part. Cuts close up neatly, speed has its own panel from 0.25× to 4×, and blurs can be soft-edged, oval or a solid bar.",
+    notes: [
+      "Click the video on the timeline to select a part, then drag its edges to trim just that part. The timeline holds still while you drag and applies the trim when you let go.",
+      "Split points are saved with the recording.",
+      "Cut parts close up into a small scissors marker instead of a big hatched block. Click the marker to bring the part back. Cuts glide shut, and the timeline keeps its scale.",
+      "Speed is a button that shows the selected part's speed. Click it to drag the value, use a slider from 0.25× to 4×, or pick a preset.",
+      "Blurs can be square, rounded or oval, can have a soft edge that fades out around the area (never into it), and can be a solid redaction bar.",
+      "Buttons light up when you hover over them.",
+      "Fixed: the speed slider disappearing when dragged through 1×.",
+    ],
+  },
+  {
     version: "0.3.0",
     date: "2026-10-22",
     title: "Every recording is a step-by-step guide",
