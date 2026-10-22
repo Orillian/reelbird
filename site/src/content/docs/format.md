@@ -101,6 +101,10 @@ The first time a recording opens, the layouts switched while recording become se
 
 The first time a recording opens (no `edit.json` yet), the place comes from its `camera` events: the first is the start place, each later one a move. The recorded frame maps to `x`, `y` by how far the bubble was across the room it could move in on the visible screen, measured with the same proportional inset; within 2% of an edge (1% of the centre) it lands exactly there. So the live bubble's default spot, bottom right at 2.5% of the screen's shorter side, becomes the editor's default corner. The shape follows the live bubble's, and `size` is the live size it had longest, measured against the captured screen and scaled to the padded screen card, so the bubble keeps its size relative to the screen.
 
+## Parts and cuts
+
+`edit.json → splits` holds the split points (recording timeline, sorted; absent in older files). They change nothing in the output on their own: the editor divides the recording into parts at the split points, the edges of `cuts` and the trim (`Parts`). A click selects a part. Delete adds its range to `cuts`, which removes it from every track at once, so screen, voice, camera, zooms and overlays stay in sync. Dragging a part's edge inward cuts what it passes over. Dragging it outward brings back cut footage next to it, and at the recording's ends it moves `trim`. The editor's timeline closes cuts up (`CutSpace`): a cut takes no room and shows as a scissors chip at its join that restores it.
+
 ## Speed
 
 `edit.json → speed` plays parts of the recording faster or slower. Files without it play at normal speed throughout.
@@ -185,7 +189,8 @@ Both flags were added after the first release: files without them open as before
 ```
 
 - `kind`: `blur`, `arrow`, `box`, `text` or `highlight` (dims everything around `rect`). `color` applies to arrows, boxes and text labels; it defaults to coral when absent.
-- `style` (blur): `blur` (default) or `pixelate`. `strength` (blur): 0…1, default 0.5. Cells are anchored to the screen video and measured in its pixels: a side of at least 9 to 18 points (by strength) and a quarter to half of the area's shorter side. Each cell is reduced to one averaged colour (pixelate shows the cells; blur draws a smooth B-spline through them), so the content under a blur can't be recovered at any strength or zoom. A blur doesn't fade in or out: it covers its whole range.
+- `style` (blur): `blur` (default), `pixelate` or `solid` (a flat bar in `color`, near-black by default). `strength` (blur): 0…1, default 0.5.
+- `shape` (blur): `rectangle`, `rounded` (default) or `oval`. `softness` (blur): 0…1, default 0. The edge fades out *past* the area over up to 3% of the frame's shorter side; the area itself is always fully covered. Cells are anchored to the screen video and measured in its pixels: a side of at least 9 to 18 points (by strength) and a quarter to half of the area's shorter side. Each cell is reduced to one averaged colour (pixelate shows the cells; blur draws a smooth B-spline through them), so the content under a blur can't be recovered at any strength or zoom. A blur doesn't fade in or out: it covers its whole range.
 - `tail`, `head` (arrow): where it starts and where its head points. Absent = from `rect`'s top-left to its bottom-right (files written before arrows had ends). `rect` is their bounding box.
 - `text`, `fontSize` (text): the label and its letter size as a fraction of the screen video's height. Absent `fontSize` = 0.7 × `rect.height` (older files). The label is drawn in `color` with white text (ink on light colours), its left edge at `rect.x` and centred on `rect`'s middle; the editor sizes `rect` to the label.
 - `keys`: where the area is over time, sorted by `t` (written by Find Sensitive Info for text that moves). Before the first key the first area is used, after the last the last; between two keys the blur covers both areas, so text moving between two samples stays covered. `rect` is then the area covering every key, which older versions blur for the whole range.
