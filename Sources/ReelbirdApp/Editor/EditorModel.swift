@@ -139,8 +139,8 @@ enum CaptionState: Equatable {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var exportTask: Task<Void, Never>?
     @ObservationIgnored private var shareTask: Task<Void, Never>?
-    /// The selected part, trim and cuts when a part's edge drag began.
-    @ObservationIgnored var partTrimBase: (part: TimeRange, trim: TimeRange?, cuts: [TimeRange])?
+    /// The part edge being dragged on the timeline, if any.
+    var partTrim: PartTrimDrag?
     @ObservationIgnored private var stemTask: Task<Void, Never>?
     /// The enhance settings the stem was last checked for (enhance, strength, mix).
     @ObservationIgnored private var stemKey: String?
@@ -626,25 +626,53 @@ enum CaptionState: Equatable {
         Parts.part(containing: t, duration: duration, trim: edit.trim, splits: splits, cuts: edit.cuts)
     }
 
-    /// Dragging a selected part's edge: `beginPartTrim` keeps the state before the drag, each `dragPartEdge` applies
-    /// the edge's new place to it (one undo step per drag) and keeps the part selected.
-    func beginPartTrim() {
+    /// A part edge being dragged: the state before the drag and the result so far. The timeline shows the result
+    /// (what will be cut dimmed, the scale held still) and the edit changes once, on release, so the preview isn't
+    /// rebuilt on every step.
+    struct PartTrimDrag {
+        let leading: Bool
+        let part: TimeRange
+        let trim: TimeRange?
+        let cuts: [TimeRange]
+        var result: (trim: TimeRange?, cuts: [TimeRange], part: TimeRange)
+        /// The edge went out past where it started: the cut next to it opens up on the timeline to drag into.
+        var outward = false
+    }
+
+    func beginPartTrim(leading: Bool) {
         guard case .segment(let r) = selection else { return }
-        partTrimBase = (r, edit.trim, edit.cuts)
+        partTrim = PartTrimDrag(leading: leading, part: r, trim: edit.trim, cuts: edit.cuts, result: (edit.trim, edit.cuts, r))
     }
 
-    func dragPartEdge(leading: Bool, by seconds: Double) {
-        guard let base = partTrimBase else { return }
-        let target = (leading ? base.part.start : base.part.end) + seconds
-        let result = Parts.trimEdge(of: base.part, leading: leading, to: target, duration: duration, trim: base.trim, cuts: base.cuts)
-        change("Trim Part", coalesce: "part-trim") { e in
-            e.trim = result.trim
-            e.cuts = result.cuts
+    func dragPartEdge(by seconds: Double) {
+        guard var d = partTrim else { return }
+        let target = (d.leading ? d.part.start : d.part.end) + seconds
+        d.result = Parts.trimEdge(of: d.part, leading: d.leading, to: target, duration: duration, trim: d.trim, cuts: d.cuts)
+        if d.leading ? seconds < -1e-3 : seconds > 1e-3 { d.outward = true }
+        partTrim = d
+    }
+
+    func endPartTrim() {
+        guard let d = partTrim else { return }
+        partTrim = nil
+        change("Trim Part") { e in
+            e.trim = d.result.trim
+            e.cuts = d.result.cuts
         }
-        selection = .segment(result.part)
+        selection = .segment(d.result.part)
     }
 
-    func endPartTrim() { partTrimBase = nil }
+    /// The cuts the timeline closes up: the edit's, or while a part edge is dragged the ones from before the drag
+    /// (minus the cut next to the edge once it's pulled outward), so the scale holds still.
+    var timelineCuts: [TimeRange] {
+        guard let d = partTrim else { return edit.cuts }
+        guard d.outward else { return d.cuts }
+        let edge = d.leading ? d.part.start : d.part.end
+        return d.cuts.filter { abs((d.leading ? $0.end : $0.start) - edge) > 1e-3 }
+    }
+
+    /// The trim the timeline shows (the drag's result while one is under way).
+    var timelineTrim: TimeRange? { partTrim?.result.trim ?? edit.trim }
 
     func cut(_ range: TimeRange) {
         change("Cut") { e in

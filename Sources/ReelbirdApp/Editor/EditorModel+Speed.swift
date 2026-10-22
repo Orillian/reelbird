@@ -28,8 +28,15 @@ extension EditorModel {
         }
     }
 
-    /// The speed slider's range: fine control around normal speed. Presets outside it stay in the menu and on R.
-    static let speedSliderRange = 0.5...2.0
+    /// The speed control's range (8× stays on the speed lane's right-click menu).
+    static let speedSliderRange = 0.25...4.0
+
+    /// The stretch the speed control acts on: the selected speed segment or the selected part.
+    var speedTargetRange: TimeRange? {
+        if let s = selectedSpeed { return s.range }
+        if case .segment(let r) = selection { return r }
+        return nil
+    }
 
     /// The rate the speed slider shows: the selected speed segment's, 1× for a selected part, nil when it's hidden.
     var speedSliderRate: Double? {

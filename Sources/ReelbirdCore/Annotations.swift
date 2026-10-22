@@ -22,6 +22,12 @@ extension Annotation {
 
     public var blurStyle: BlurStyle { style ?? .blur }
     public var blurStrength: Double { min(1, max(0, strength ?? Self.defaultStrength)) }
+    public var blurShape: BlurShape { shape ?? .rounded }
+    public var blurSoftness: Double { min(1, max(0, softness ?? 0)) }
+    /// The soft edge new blurs get in the editor.
+    public static let defaultSoftness = 0.4
+    /// A solid bar's colour when none was picked: near-black ink.
+    public static let solidColor = RGBA(hex: "#1A1512")!
 
     /// The area at recording time `t`. Without keys, `rect`. With keys: the first or last key's area outside
     /// them, and between two keys the area covering both (so text moving between two samples stays hidden).
@@ -87,7 +93,11 @@ extension Annotation {
         switch kind {
         case .blur:
             if let d = detected, let k = SensitiveKind(rawValue: d) { return k.title }
-            return blurStyle == .pixelate ? "Pixelate" : "Blur"
+            switch blurStyle {
+            case .pixelate: return "Pixelate"
+            case .solid: return "Redact"
+            case .blur: return "Blur"
+            }
         case .arrow: return "Arrow"
         case .box: return "Box"
         case .text: return text.map { $0.isEmpty ? "Text" : $0 } ?? "Text"

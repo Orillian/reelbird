@@ -317,14 +317,23 @@ fragment float4 sprite_fragment(VOut in [[stage_in]],
         c.a = 1;
         return c * (a * u.color.a);
     }
-    if (mode == 6 || mode == 10) {
+    if (mode == 6 || mode == 10 || mode == 12) {
         // Privacy blur of the screen inside a rounded rect. Cells are anchored to the screen texture, so they hold
         // still through zoom and pan, and each cell is reduced to one average colour: nothing under it survives.
         // 6 = pixelate (flat cells); 10 = blur (a quadratic B-spline through the 3 × 3 nearest cell averages).
-        // params: half size, corner radius; card.xy: cell size (uv); params2: uv clamp (the crop).
-        float d = sdRoundRect(centred, u.params.xy, u.params.z);
-        float a = saturate(0.5 - d);
+        // 12 = a solid bar in u.color. params: half size, corner radius (-1 = an oval), soft edge (px, outside
+        // the area only); card.xy: cell size (uv); params2: uv clamp (the crop).
+        float d;
+        if (u.params.z < 0) {
+            float2 h = max(u.params.xy, float2(1e-3));
+            d = (length(centred / h) - 1.0) * min(h.x, h.y);
+        } else {
+            d = sdRoundRect(centred, u.params.xy, u.params.z);
+        }
+        float feather = u.params.w;
+        float a = feather > 0.5 ? 1.0 - smoothstep(0.0, feather, d) : saturate(0.5 - d);
         if (a <= 0) { return float4(0); }
+        if (mode == 12) { return u.color * a; }
         float2 p = u.rect.xy + lp;
         float2 uv = u.camera.xy + p * u.camera.zw;
         float2 cell = max(u.card.xy, float2(1e-5));

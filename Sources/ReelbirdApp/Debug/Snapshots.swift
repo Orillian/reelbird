@@ -199,6 +199,14 @@ import SwiftUI
             }
         }
         scenes.append(editor(.background))
+        // The speed popover for a selected part at 1.5×.
+        scenes.append(Scene(name: "speed-popover", size: CGSize(width: 340, height: 290), backdrop: true) {
+            guard let m = try? EditorModel(bundle: demo, services: services) else { return AnyView(Text("Editor failed")) }
+            m.autosaveEnabled = false
+            m.selection = .segment(TimeRange(start: 6, end: 12))
+            m.setSpeedFromSlider(1.5)
+            return AnyView(SpeedPopover(model: m).background(RoundedRectangle(cornerRadius: 12).fill(Theme.raised)))
+        })
         // Parts: two split points, the middle part selected with its edge handles; the mock's cut is a chip.
         scenes.append(editor(.background, variant: "parts") { m in
             m.setPlayheadForSnapshot(9)

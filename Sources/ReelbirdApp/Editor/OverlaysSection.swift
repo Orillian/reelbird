@@ -103,19 +103,57 @@ struct SelectedOverlay: View {
             case .blur:
                 PillTabs(selection: Binding(get: { a.blurStyle }, set: { v in
                     model.overlays.blurStyle = v
-                    model.updateAnnotation(a.id, "Blur Style", coalesce: "style") { $0.style = v }
+                    model.updateAnnotation(a.id, "Blur Style", coalesce: "style") { x in
+                        x.style = v
+                        // A solid bar starts in near-black; blurs don't use the colour.
+                        if v == .solid, x.color == Annotation.defaultColor { x.color = Annotation.solidColor }
+                    }
                 }), items: [
                     .init(value: .blur, title: "Blur", symbol: nil),
                     .init(value: .pixelate, title: "Pixelate", symbol: nil),
+                    .init(value: .solid, title: "Solid", symbol: nil),
                 ], compact: true)
-                FieldRow(label: "Strength") {
-                    ValueSlider(value: Binding(get: { a.blurStrength }, set: { v in
-                        model.overlays.blurStrength = v
-                        model.updateAnnotation(a.id, "Blur Strength", coalesce: "strength") { $0.strength = v }
-                    }), range: 0...1) { "\(Int(($0 * 100).rounded()))" }
+                PillTabs(selection: Binding(get: { a.blurShape }, set: { v in
+                    model.overlays.blurShape = v
+                    model.updateAnnotation(a.id, "Blur Shape", coalesce: "shape") { $0.shape = v }
+                }), items: [
+                    .init(value: .rectangle, title: "Square", symbol: "square"),
+                    .init(value: .rounded, title: "Rounded", symbol: "app"),
+                    .init(value: .oval, title: "Oval", symbol: "circle"),
+                ], compact: true)
+                if a.blurStyle == .solid {
+                    FieldRow(label: "Colour") {
+                        HStack(spacing: 6) {
+                            ForEach(Annotation.palette.filter { $0.name != "Coral" }, id: \.name) { p in
+                                Button { model.updateAnnotation(a.id, "Redaction Colour", coalesce: "color") { $0.color = p.color } } label: {
+                                    Circle().fill(Color(red: p.color.r, green: p.color.g, blue: p.color.b))
+                                        .frame(width: 18, height: 18)
+                                        .overlay(Circle().strokeBorder(a.color == p.color ? Theme.accent : Color.black.opacity(0.2),
+                                                                       lineWidth: a.color == p.color ? 2 : 0.5))
+                                }
+                                .buttonStyle(.plain)
+                                .help(p.name)
+                                .accessibilityLabel(p.name)
+                            }
+                        }
+                    }
+                } else {
+                    FieldRow(label: "Strength") {
+                        ValueSlider(value: Binding(get: { a.blurStrength }, set: { v in
+                            model.overlays.blurStrength = v
+                            model.updateAnnotation(a.id, "Blur Strength", coalesce: "strength") { $0.strength = v }
+                        }), range: 0...1) { "\(Int(($0 * 100).rounded()))" }
+                    }
                 }
-                Text("Every strength leaves text unreadable. Higher is coarser.")
-                    .font(.system(size: 11)).foregroundStyle(.tertiary)
+                FieldRow(label: "Soft edge") {
+                    ValueSlider(value: Binding(get: { a.blurSoftness }, set: { v in
+                        model.overlays.blurSoftness = v
+                        model.updateAnnotation(a.id, "Soft Edge", coalesce: "softness") { $0.softness = v }
+                    }), range: 0...1) { $0 < 0.005 ? "Off" : "\(Int(($0 * 100).rounded()))" }
+                }
+                Text(a.blurStyle == .solid ? "A solid bar hides everything under it."
+                     : "Every strength leaves text unreadable. A soft edge fades out around the area, never into it.")
+                    .font(.system(size: 11)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
             case .text:
                 TextField("Text", text: Binding(get: { a.text ?? "" }, set: { v in
                     model.updateAnnotation(a.id, "Edit Text", coalesce: "text") { $0.text = v }

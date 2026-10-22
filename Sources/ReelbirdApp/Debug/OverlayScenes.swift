@@ -46,6 +46,10 @@ import ReelbirdCore
             m.setPlayheadForSnapshot(7)
             m.selection = .annotation(ids[4])
         })
+        out.append(editor(.overlays, "solid-selected") { m in
+            let id = m.addAnnotation(.blur, rect: NormRect(x: 0.18, y: 0.36, width: 0.5, height: 0.06))
+            m.updateAnnotation(id, "x", coalesce: "x") { a in a.style = .solid; a.color = Annotation.solidColor; a.shape = .rectangle }
+        })
         out.append(editor(.overlays, "arrow-selected") { m in
             let ids = sample(m)
             m.setPlayheadForSnapshot(5)

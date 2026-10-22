@@ -409,8 +409,10 @@ public struct CaptionSettings: Codable, Hashable, Sendable {
 /// marks through zoom, crop, padding and aspect. Optional keys are left out of the JSON; see `Annotations.swift`.
 public struct Annotation: Codable, Hashable, Sendable, Identifiable {
     public enum Kind: String, Codable, Hashable, Sendable, CaseIterable { case arrow, box, text, highlight, blur }
-    /// How a blur hides what's under it.
-    public enum BlurStyle: String, Codable, Hashable, Sendable, CaseIterable { case blur, pixelate }
+    /// How a blur hides what's under it: blurred, pixelated, or a solid bar in `color`.
+    public enum BlurStyle: String, Codable, Hashable, Sendable, CaseIterable { case blur, pixelate, solid }
+    /// A blur's outline.
+    public enum BlurShape: String, Codable, Hashable, Sendable, CaseIterable { case rectangle, rounded, oval }
     /// Where the area is at recording time `t` (auto-detected text that moves).
     public struct Key: Codable, Hashable, Sendable {
         public var t: Double
@@ -430,6 +432,11 @@ public struct Annotation: Codable, Hashable, Sendable, Identifiable {
     public var style: BlurStyle?
     /// Blur only: 0...1 (default 0.5). Every strength leaves text unreadable; higher is coarser.
     public var strength: Double?
+    /// Blur only: the outline (default `rounded`).
+    public var shape: BlurShape?
+    /// Blur only: 0...1, how far the edge fades out past the area (default 0, a crisp edge). The area itself is
+    /// always fully covered: the fade is outside it.
+    public var softness: Double?
     /// Text only: letter size as a fraction of the screen video's height. `nil` = 0.7 × `rect.height` (older files).
     public var fontSize: Double?
     /// Arrow only: where it starts and where its head points. `nil` = from `rect`'s top-left to its bottom-right.
@@ -456,6 +463,8 @@ public struct Annotation: Codable, Hashable, Sendable, Identifiable {
         color = (try? c.decodeIfPresent(RGBA.self, forKey: .color)) ?? Annotation.defaultColor
         style = try? c.decodeIfPresent(BlurStyle.self, forKey: .style)
         strength = try c.decodeIfPresent(Double.self, forKey: .strength).map { min(1, max(0, $0.isFinite ? $0 : 0.5)) }
+        shape = try? c.decodeIfPresent(BlurShape.self, forKey: .shape)
+        softness = ((try? c.decodeIfPresent(Double.self, forKey: .softness)) ?? nil).map { min(1, max(0, $0.isFinite ? $0 : 0)) }
         fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize).flatMap { $0.isFinite && $0 > 0 ? min(0.5, $0) : nil }
         tail = try c.decodeIfPresent(NormPoint.self, forKey: .tail)
         head = try c.decodeIfPresent(NormPoint.self, forKey: .head)

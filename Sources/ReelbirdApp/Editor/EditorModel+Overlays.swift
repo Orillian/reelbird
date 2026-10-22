@@ -19,6 +19,8 @@ struct SensitiveSuggestion: Identifiable {
     /// Defaults for the next overlay: the last style, strength and colour used.
     var blurStyle: Annotation.BlurStyle = .blur
     var blurStrength = Annotation.defaultStrength
+    var blurShape: Annotation.BlurShape = .rounded
+    var blurSoftness = Annotation.defaultSoftness
     var color: RGBA = Annotation.defaultColor
 
     /// Find Sensitive Info: suggestions waiting for a decision, progress while scanning (`nil` = idle).
@@ -147,6 +149,9 @@ extension EditorModel {
         case .blur:
             a.style = overlays.blurStyle
             a.strength = overlays.blurStrength
+            a.shape = overlays.blurShape
+            a.softness = overlays.blurSoftness
+            if overlays.blurStyle == .solid { a.color = Annotation.solidColor }
         case .arrow:
             a.color = overlays.color
             a.setArrow(tail: tail ?? NormPoint(x: rect.x, y: rect.y), head: head ?? NormPoint(x: rect.x + rect.width, y: rect.y + rect.height))
@@ -221,7 +226,10 @@ extension EditorModel {
 
     func keepSuggestion(_ id: String) {
         guard let s = overlays.suggestions.first(where: { $0.id == id }) else { return }
-        let a = s.detection.annotation(style: overlays.blurStyle, strength: overlays.blurStrength)
+        var a = s.detection.annotation(style: overlays.blurStyle, strength: overlays.blurStrength)
+        a.shape = overlays.blurShape
+        a.softness = overlays.blurSoftness
+        if a.blurStyle == .solid { a.color = Annotation.solidColor }
         change("Blur \(s.detection.kind.title)") { e in
             if !e.annotations.contains(where: { $0.id == a.id }) { e.annotations.append(a) }
         }
@@ -232,10 +240,14 @@ extension EditorModel {
     func keepAllSuggestions() {
         let all = overlays.suggestions
         guard !all.isEmpty else { return }
-        let style = overlays.blurStyle, strength = overlays.blurStrength
+        let style = overlays.blurStyle, strength = overlays.blurStrength, shape = overlays.blurShape, softness = overlays.blurSoftness
         change("Blur Sensitive Info") { e in
             for s in all where !e.annotations.contains(where: { $0.id == s.id }) {
-                e.annotations.append(s.detection.annotation(style: style, strength: strength))
+                var a = s.detection.annotation(style: style, strength: strength)
+                a.shape = shape
+                a.softness = softness
+                if style == .solid { a.color = Annotation.solidColor }
+                e.annotations.append(a)
             }
         }
         overlays.remove(Set(all.map(\.id)))

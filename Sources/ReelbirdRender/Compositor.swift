@@ -274,19 +274,27 @@ final class Compositor {
                 draw(&su)
             case .blur:
                 guard let f = screenFrame else { continue }
-                su.rect = rect(r)
-                su.mode.x = a.blurStyle == .pixelate ? 6 : 10
+                // A soft edge fades out past the area, never into it: the area itself stays fully covered.
+                let feather = CGFloat(a.blurSoftness) * 0.03 * short * s
+                su.rect = rect(r.insetBy(dx: -feather, dy: -feather))
+                su.mode.x = a.blurStyle == .pixelate ? 6 : a.blurStyle == .solid ? 12 : 10
                 // Cells anchored to the screen video, sized from the area in screen pixels: the same cells at
                 // every zoom, crop, preview size and export size.
                 let ref = a.blurReferenceRect
                 let cellPx = PrivacyBlur.cellPixels(shortSidePixels: min(ref.width * screenW, ref.height * screenH),
                                                     strength: a.blurStrength, captureScale: plan.manifest.capture.scale)
                 su.card = SIMD4(Float(cellPx / screenW), Float(cellPx / screenH), 0, 0)
-                su.params = SIMD4(Float(r.width / 2), Float(r.height / 2), Float(min(min(r.width, r.height) * 0.1, 0.008 * short * s)), 0)
+                // Corner radius: none, small, or -1 for an oval.
+                let radius: Float = switch a.blurShape {
+                case .rectangle: 0
+                case .rounded: Float(min(min(r.width, r.height) * 0.1, 0.008 * short * s))
+                case .oval: -1
+                }
+                su.params = SIMD4(Float(r.width / 2), Float(r.height / 2), radius, Float(feather))
                 su.params2 = u.uvClamp
                 su.camera = uvMap
                 if let y = f.yuv { su.yuv0 = y.r0; su.yuv1 = y.r1; su.yuv2 = y.r2; su.yuvOffset = y.offset }
-                su.color = SIMD4(1, 1, 1, 1)
+                su.color = a.blurStyle == .solid ? premul(RGBA(a.color.r, a.color.g, a.color.b, 1)) : SIMD4(1, 1, 1, 1)
                 draw(&su, f.t0, f.t1)
             case .text:
                 guard let str = a.text, !str.isEmpty else { continue }

@@ -69,3 +69,18 @@ import Testing
         #expect(try JSONCoding.decoder.decode(EditDocument.self, from: Data(#"{"splits": "x"}"#.utf8)).splits.isEmpty)
     }
 }
+
+@Suite struct BlurOptionTests {
+    @Test func blurShapeSoftnessAndSolidRoundTrip() throws {
+        var a = Annotation(kind: .blur, range: TimeRange(start: 0, end: 2), rect: NormRect(x: 0.1, y: 0.1, width: 0.2, height: 0.1))
+        #expect(a.blurShape == .rounded && a.blurSoftness == 0 && a.blurStyle == .blur)
+        a.style = .solid; a.shape = .oval; a.softness = 0.4
+        let back = try JSONCoding.decoder.decode(Annotation.self, from: JSONCoding.encoder.encode(a))
+        #expect(back.blurStyle == .solid && back.blurShape == .oval && back.blurSoftness == 0.4)
+        #expect(back.title == "Redact")
+        // Unknown shapes and out-of-range softness read safely.
+        let odd = #"{"kind":"blur","range":{"start":0,"end":1},"rect":{"x":0,"y":0,"width":1,"height":1},"shape":"star","softness":7}"#
+        let o = try JSONCoding.decoder.decode(Annotation.self, from: Data(odd.utf8))
+        #expect(o.blurShape == .rounded && o.blurSoftness == 1)
+    }
+}

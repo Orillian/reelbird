@@ -12,6 +12,9 @@ enum PrivacyCLI {
         .value("from", "TIME", "Start, in seconds or m:ss (default 0)"),
         .value("to", "TIME", "End (default: the end of the recording)"),
         .flag("pixelate", "Pixelate instead of blur"),
+        .flag("solid", "Cover with a solid near-black bar instead of blur"),
+        .value("shape", "rect|rounded|oval", "Outline (default rounded)"),
+        .value("soft", "0-1", "Soft edge that fades out past the area (default 0)"),
         .value("strength", "0-1", "Coarseness (default 0.5); every strength leaves text unreadable"),
     ], discussion: "Rects are in screen-video coordinates (top-left origin), so the blur stays on the content through zoom, crop and aspect. Prints the new overlay's ID.")
 
@@ -46,8 +49,9 @@ enum PrivacyCLI {
         switch name {
         case "blur":
             guard let rect = a.value("rect") else { throw CLIError.usage("Missing --rect X,Y,W,H.", hint: "See: reelbird blur --help") }
-            return try ops.addOverlay(project, kind: a.has("pixelate") ? "pixelate" : "blur", rect: rect, arrow: nil,
-                                      from: a.value("from"), to: a.value("to"), text: nil, size: nil, color: nil, strength: try a.double("strength"))
+            return try ops.addOverlay(project, kind: a.has("solid") ? "solid" : a.has("pixelate") ? "pixelate" : "blur", rect: rect, arrow: nil,
+                                      from: a.value("from"), to: a.value("to"), text: nil, size: nil, color: nil, strength: try a.double("strength"),
+                                      shape: a.value("shape"), softness: try a.double("soft"))
         case "redact":
             guard a.has("auto") else {
                 throw CLIError.usage("redact needs --auto (scan the recording for sensitive text).", hint: "To blur an area by hand: reelbird blur --help")
@@ -139,7 +143,7 @@ extension Operations {
 
     static func json(_ a: Annotation) -> JSONValue {
         var o: [String: JSONValue] = [
-            "id": .string(a.id), "kind": .string(a.kind == .blur && a.blurStyle == .pixelate ? "pixelate" : a.kind.rawValue),
+            "id": .string(a.id), "kind": .string(Self.kindName(a)),
             "start": JSONValue(a.range.start), "end": JSONValue(a.range.end),
             "rect": ["x": JSONValue(a.rect.x), "y": JSONValue(a.rect.y), "width": JSONValue(a.rect.width), "height": JSONValue(a.rect.height)],
         ]
@@ -164,7 +168,7 @@ extension Operations {
     }
 
     static func line(_ a: Annotation) -> String {
-        let kind = a.kind == .blur && a.blurStyle == .pixelate ? "pixelate" : a.kind.rawValue
+        let kind = Self.kindName(a)
         var s = "\(a.id)  \(kind.padding(toLength: 9, withPad: " ", startingAt: 0)) \(Format.duration(a.range.start))–\(Format.duration(a.range.end))"
         s += String(format: "  at %.3f,%.3f %.3f×%.3f", a.rect.x, a.rect.y, a.rect.width, a.rect.height)
         if let t = a.text, a.kind == .text { s += "  \"\(t)\"" }
@@ -179,22 +183,39 @@ extension Operations {
                       text: items.isEmpty ? "No overlays." : items.map(Self.line).joined(separator: "\n"))
     }
 
-    /// Adds one overlay (blur, pixelate, arrow, box, text, highlight).
+    /// "blur", "pixelate", "solid", or the kind for other overlays.
+    static func kindName(_ a: Annotation) -> String {
+        guard a.kind == .blur else { return a.kind.rawValue }
+        return a.blurStyle == .pixelate ? "pixelate" : a.blurStyle == .solid ? "solid" : "blur"
+    }
+
+    /// Adds one overlay (blur, pixelate, solid, arrow, box, text, highlight).
     func addOverlay(_ project: String, kind kindName: String, rect: String?, arrow: String?, from: String?, to: String?,
-                    text: String?, size: Double?, color: String?, strength: Double?) throws -> Report {
+                    text: String?, size: Double?, color: String?, strength: Double?,
+                    shape: String? = nil, softness: Double? = nil) throws -> Report {
         let (bundle, manifest, _) = try load(project)
         let screen = manifest.track(.screen)?.pixelSize ?? manifest.capture.pixelSize
         let name = kindName.lowercased()
         let kind: Annotation.Kind
         switch name {
-        case "pixelate": kind = .blur
+        case "pixelate", "solid": kind = .blur
         default:
             guard let k = Annotation.Kind(rawValue: name) else {
-                throw CLIError.usage("Unknown overlay '\(kindName)'. Use blur, pixelate, arrow, box, text or highlight.")
+                throw CLIError.usage("Unknown overlay '\(kindName)'. Use blur, pixelate, solid, arrow, box, text or highlight.")
             }
             kind = k
         }
         if let strength, !(0...1).contains(strength) { throw CLIError.usage("--strength must be between 0 and 1.") }
+        if let softness, !(0...1).contains(softness) { throw CLIError.usage("--soft must be between 0 and 1.") }
+        var parsedShape: Annotation.BlurShape?
+        if let shape {
+            switch shape.lowercased() {
+            case "rect", "rectangle", "square": parsedShape = .rectangle
+            case "rounded": parsedShape = .rounded
+            case "oval", "ellipse", "circle": parsedShape = .oval
+            default: throw CLIError.usage("--shape must be rect, rounded or oval.")
+            }
+        }
         if let size, !(0.005...0.5).contains(size) { throw CLIError.usage("--size must be between 0.005 and 0.5 (a fraction of the screen's height).") }
         var parsedColor: RGBA?
         if let color {
@@ -227,8 +248,11 @@ extension Operations {
             guard let rect else { throw CLIError.usage("Give the area with --rect X,Y,W,H.") }
             a = Annotation(kind: kind, range: range, rect: try Self.parseRect(rect, screen: screen))
             if kind == .blur {
-                a.style = name == "pixelate" ? .pixelate : .blur
+                a.style = name == "pixelate" ? .pixelate : name == "solid" ? .solid : .blur
                 a.strength = strength ?? Annotation.defaultStrength
+                a.shape = parsedShape
+                a.softness = softness
+                if name == "solid" { a.color = parsedColor ?? Annotation.solidColor }
             }
         }
         if let parsedColor, [.arrow, .box, .text].contains(kind) { a.color = parsedColor }
@@ -237,7 +261,7 @@ extension Operations {
             return edit.annotations.count
         }
         return Report(json: ["added": Self.json(a), "count": .int(count)],
-                      text: "Added \(kind == .blur ? (a.blurStyle == .pixelate ? "pixelate" : "blur") : kind.rawValue) \(a.id) from \(Format.duration(range.start)) to \(Format.duration(range.end)).")
+                      text: "Added \(Self.kindName(a)) \(a.id) from \(Format.duration(range.start)) to \(Format.duration(range.end)).")
     }
 
     func removeOverlays(_ project: String, ids: [String], all: Bool) throws -> Report {

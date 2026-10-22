@@ -62,8 +62,18 @@ extension MockPreviewView {
                 ctx.saveGState()
                 ctx.addPath(CGPath(roundedRect: screen, cornerWidth: 0, cornerHeight: 0, transform: nil))
                 ctx.clip()
-                ctx.addPath(CGPath(roundedRect: r, cornerWidth: min(r.width, r.height) * 0.1, cornerHeight: min(r.width, r.height) * 0.1, transform: nil))
+                switch a.blurShape {
+                case .rectangle: ctx.addRect(r)
+                case .rounded: ctx.addPath(CGPath(roundedRect: r, cornerWidth: min(r.width, r.height) * 0.1, cornerHeight: min(r.width, r.height) * 0.1, transform: nil))
+                case .oval: ctx.addEllipse(in: r)
+                }
                 ctx.clip()
+                if a.blurStyle == .solid {
+                    ctx.setFillColor(color(a.color))
+                    ctx.fill(r)
+                    ctx.restoreGState()
+                    continue
+                }
                 let ref = a.blurReferenceRect
                 let screenPx = Double(max(1, sourceSize.width))
                 let cellPx = PrivacyBlur.cellPixels(shortSidePixels: min(ref.width * screenPx, ref.height * Double(sourceSize.height)),

@@ -29,7 +29,7 @@ struct TimelineView: View {
         GeometryReader { geo in
             let visible = geo.size.width - Self.gutter
             let width = max(visible, (visible - Self.inset * 2) * model.timelineZoom + Self.inset * 2)
-            let scale = TimeScale(duration: model.duration, width: width, inset: Self.inset, cuts: model.edit.cuts)
+            let scale = TimeScale(duration: model.duration, width: width, inset: Self.inset, cuts: model.timelineCuts)
             HStack(spacing: 0) {
                 laneIcons
                 ScrollView(.horizontal) {
@@ -284,7 +284,8 @@ struct TimelineContent: View {
     /// Each cut is closed up on the timeline: a seam through the lanes at its join, and a scissors chip on the video
     /// that brings it back.
     private var cutsOverlay: some View {
-        ForEach(Array(model.edit.cuts.enumerated()), id: \.offset) { _, cut in
+        ForEach(Array(model.edit.cuts.filter { c in scale.space.cuts.contains { $0.start <= c.start + 1e-3 && $0.end >= c.end - 1e-3 } }.enumerated()),
+                id: \.offset) { _, cut in
             let selected = model.selection == .cut(cut)
             let x = scale.x(cut.start)
             ZStack(alignment: .top) {
@@ -300,7 +301,7 @@ struct TimelineContent: View {
     }
 
     private var trimOverlay: some View {
-        let trim = model.edit.trim ?? TimeRange(start: 0, end: model.duration)
+        let trim = model.timelineTrim ?? TimeRange(start: 0, end: model.duration)
         return ZStack(alignment: .topLeading) {
             // Dim what's trimmed away.
             Rectangle().fill(Theme.panel.opacity(0.72))
@@ -369,8 +370,25 @@ struct TimelineContent: View {
 
     /// The selected part: an outline, and a handle on each edge that trims just this part (dragging in cuts, dragging
     /// out brings back what was cut there; at the recording's ends it moves the trim).
+    /// While a part edge is dragged: what will be cut, dimmed like the trim (it closes up on release).
+    @ViewBuilder private var pendingCuts: some View {
+        if let d = model.partTrim {
+            ForEach(Array(d.result.cuts.enumerated()), id: \.offset) { _, c in
+                let x0 = scale.x(c.start), x1 = scale.x(c.end)
+                if x1 - x0 > 0.5 {
+                    Rectangle().fill(Theme.panel.opacity(0.72))
+                        .frame(width: x1 - x0, height: lanesBottom - videoTop)
+                        .offset(x: x0, y: videoTop)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+    }
+
     @ViewBuilder private var segmentSelection: some View {
-        if case .segment(let r) = model.selection {
+        let shown: TimeRange? = model.partTrim?.result.part ?? { if case .segment(let r) = model.selection { r } else { nil } }()
+        pendingCuts
+        if let r = shown {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .strokeBorder(Theme.accent, lineWidth: 2)
                 .background(RoundedRectangle(cornerRadius: 7).fill(Theme.accent.opacity(0.08)))
@@ -387,8 +405,8 @@ struct TimelineContent: View {
             .offset(x: leading ? x : x - PartHandle.width, y: videoTop)
             .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("timeline"))
                 .onChanged { v in
-                    if model.partTrimBase == nil { model.beginPartTrim() }
-                    model.dragPartEdge(leading: leading, by: Double(v.translation.width / scale.pps))
+                    if model.partTrim == nil { model.beginPartTrim(leading: leading) }
+                    model.dragPartEdge(by: Double(v.translation.width / scale.pps))
                 }
                 .onEnded { _ in model.endPartTrim() })
             .help(leading ? "Drag to trim the start of this part" : "Drag to trim the end of this part")

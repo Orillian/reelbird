@@ -16,8 +16,12 @@ extension MCPTools {
                 "project": project,
                 "rect": rect,
                 "from": time, "to": time,
-                "style": ["type": "string", "enum": ["blur", "pixelate"], "default": "blur"],
+                "style": ["type": "string", "enum": ["blur", "pixelate", "solid"], "default": "blur",
+                          "description": "solid covers the area with a near-black bar."],
                 "strength": ["type": "number", "minimum": 0, "maximum": 1, "default": 0.5],
+                "shape": ["type": "string", "enum": ["rect", "rounded", "oval"], "default": "rounded"],
+                "softness": ["type": "number", "minimum": 0, "maximum": 1, "default": 0,
+                             "description": "Soft edge that fades out past the area (never into it)."],
              ], required: ["project", "rect"])),
         tool("find_sensitive_info", "Find and blur sensitive info",
              "Reads the screen video on this Mac (Vision text recognition, nothing uploaded) and finds emails, API keys and tokens, card numbers (Luhn-checked) and phone numbers, plus any `words`. Returns each finding with a stable id, a masked preview (never the full value), its time range and area. Nothing changes unless keep_all is true or `keep` lists ids; kept findings become blurs that follow the text if it moves. Run this before sharing a recording that showed settings, terminals or dashboards.",
@@ -37,7 +41,7 @@ extension MCPTools {
              "Adds an overlay. kind: blur, pixelate, arrow, box, text or highlight. Areas are 0–1 fractions of the screen video (top-left origin). An arrow goes from `tail` to `head`; text needs `text` (size is a fraction of the screen's height, default 0.03). color is #RRGGBB (default coral #FF5A36).",
              object([
                 "project": project,
-                "kind": ["type": "string", "enum": ["blur", "pixelate", "arrow", "box", "text", "highlight"]],
+                "kind": ["type": "string", "enum": ["blur", "pixelate", "solid", "arrow", "box", "text", "highlight"]],
                 "rect": rect,
                 "tail": object(["x": ["type": "number"], "y": ["type": "number"]], required: ["x", "y"]),
                 "head": object(["x": ["type": "number"], "y": ["type": "number"]], required: ["x", "y"]),
@@ -99,10 +103,10 @@ extension MCPServer {
         case "blur_region":
             guard let rect = try a.rectString("rect") else { throw CLIError.usage("Missing required argument 'rect'.") }
             let style = try a.string("style") ?? "blur"
-            guard ["blur", "pixelate"].contains(style) else { throw CLIError.usage("style must be blur or pixelate.") }
+            guard ["blur", "pixelate", "solid"].contains(style) else { throw CLIError.usage("style must be blur, pixelate or solid.") }
             return try ops.addOverlay(try a.requiredString("project"), kind: style, rect: rect, arrow: nil,
                                       from: try a.timeString("from"), to: try a.timeString("to"), text: nil, size: nil, color: nil,
-                                      strength: try a.double("strength"))
+                                      strength: try a.double("strength"), shape: try a.string("shape"), softness: try a.double("softness"))
         case "find_sensitive_info":
             let keepIDs = try a.strings("keep")
             let keepAll = try a.bool("keep_all") ?? false

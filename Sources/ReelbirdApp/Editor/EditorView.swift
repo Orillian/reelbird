@@ -244,12 +244,7 @@ struct TransportBar: View {
                 if model.hasCamera {
                     ToolButton(symbol: "person.crop.rectangle", title: "Layout", key: "C") { model.addLayoutAtPlayhead() }
                 }
-                if let rate = model.speedSliderRate {
-                    SpeedRateSlider(rate: rate, set: { model.setSpeedFromSlider($0) }, next: { model.speedKey() })
-                        .transition(.opacity)
-                } else {
-                    ToolButton(symbol: "gauge.with.dots.needle.67percent", title: "Speed", key: EditorKeys.changeSpeed.display) { model.speedKey() }
-                }
+                SpeedControl(model: model)
                 if model.selection == nil, !model.speedSuggestionsDismissed, case let s = model.speedSuggestions, !s.isEmpty {
                     SpeedOffer(model: model, suggestions: s)
                         .transition(.opacity)
@@ -292,36 +287,6 @@ extension TimelineSelection {
     var isLayout: Bool { if case .layout = self { true } else { false } }
     var isAnnotation: Bool { if case .annotation = self { true } else { false } }
     var isSpeed: Bool { if case .speed = self { true } else { false } }
-}
-
-/// The selected speed segment's (or selected part's) speed, 0.5× to 2× in 0.05× steps, with a notch at 1×.
-/// A rate outside the range (4× typing, 0.25×) pins the knob to the end and still reads true.
-struct SpeedRateSlider: View {
-    let rate: Double
-    let set: (Double) -> Void
-    /// The gauge (and R): the next preset, as the Speed button does.
-    let next: () -> Void
-
-    var body: some View {
-        let range = EditorModel.speedSliderRange
-        HStack(spacing: 6) {
-            Button(action: next) {
-                Image(systemName: "gauge.with.dots.needle.67percent").font(.system(size: 11.5, weight: .medium))
-                    .frame(width: 18, height: 26).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Next preset speed (\(EditorKeys.changeSpeed.display))")
-            .accessibilityLabel("Next preset speed")
-            ValueSlider(value: Binding(get: { min(range.upperBound, max(range.lowerBound, rate)) }, set: { set($0) }),
-                        range: range, detent: 1) { _ in SpeedSegment.label(rate) }
-                .environment(\.fieldLabel, "Speed")
-                .frame(width: 124)
-        }
-            .padding(.leading, 4).padding(.trailing, 7)
-            .frame(height: 26)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.primary.opacity(0.045)))
-            .help("Drag to set this part's speed. Right-click a speed segment for 0.25×, 4× or 8×.")
-    }
 }
 
 struct ToolButton: View {
