@@ -224,6 +224,15 @@ import ReelbirdRender
         check(abs((unsped - editor.outputDuration) - (1 - 1 / 1.2)) < 0.01, "1.2× shortens the part")
         editor.undoManager.undo()
         check(editor.edit.speed.segments.isEmpty, "one slider drag undoes in one step")
+        // A cut keeps the timeline's scale (it ends earlier instead of refitting); zooming refits it.
+        editor.timelineZoom = 1.5; editor.timelineZoom = 1
+        let shownBefore = CutSpace(duration: editor.duration, cuts: editor.edit.cuts).collapsedDuration
+        editor.cut(TimeRange(start: 4.2, end: 4.8))
+        check(editor.timelineFitDuration.map { abs($0 - shownBefore) < 1e-9 } == true, "a cut keeps the timeline's scale")
+        editor.timelineZoom = 2
+        check(editor.timelineFitDuration == nil, "zooming the timeline refits it")
+        editor.timelineZoom = 1
+        editor.undoManager.undo()
         editor.setTrim(start: 0.5)
         check(editor.edit.trim?.start == 0.5, "trim start")
         try? await Task.sleep(for: .milliseconds(900))

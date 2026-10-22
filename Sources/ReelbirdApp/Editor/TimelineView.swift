@@ -28,8 +28,12 @@ struct TimelineView: View {
     var body: some View {
         GeometryReader { geo in
             let visible = geo.size.width - Self.gutter
-            let width = max(visible, (visible - Self.inset * 2) * model.timelineZoom + Self.inset * 2)
-            let scale = TimeScale(duration: model.duration, width: width, inset: Self.inset, cuts: model.timelineCuts)
+            // Fitted to `timelineFitDuration` when a cut froze the scale, else to what's shown now.
+            let space = CutSpace(duration: model.duration, cuts: model.timelineCuts)
+            let fit = max(0.001, model.timelineFitDuration ?? space.collapsedDuration)
+            let pps = (visible - Self.inset * 2) * model.timelineZoom / CGFloat(fit)
+            let width = max(visible, CGFloat(space.collapsedDuration) * pps + Self.inset * 2)
+            let scale = TimeScale(duration: model.duration, width: width, inset: Self.inset, cuts: model.timelineCuts, pps: pps)
             HStack(spacing: 0) {
                 laneIcons
                 ScrollView(.horizontal) {
@@ -73,15 +77,18 @@ struct TimeScale {
     let inset: CGFloat
     let space: CutSpace
 
-    init(duration: Double, width: CGFloat, inset: CGFloat, cuts: [TimeRange] = []) {
+    /// Points per second of what's shown.
+    let pps: CGFloat
+
+    /// `pps` defaults to fitting what's shown into `width`.
+    init(duration: Double, width: CGFloat, inset: CGFloat, cuts: [TimeRange] = [], pps: CGFloat? = nil) {
         self.duration = duration; self.width = width; self.inset = inset
         space = CutSpace(duration: duration, cuts: cuts)
+        self.pps = pps ?? (width - inset * 2) / CGFloat(max(0.001, space.collapsedDuration))
     }
 
     /// Seconds shown: the recording without its cuts.
     var visibleDuration: Double { space.collapsedDuration }
-    /// Points per second of what's shown.
-    var pps: CGFloat { (width - inset * 2) / CGFloat(max(0.001, visibleDuration)) }
     func x(_ t: Double) -> CGFloat { xShown(space.collapsed(t)) }
     /// The x of a time on the closed-up timeline (the ruler's time).
     func xShown(_ c: Double) -> CGFloat { inset + CGFloat(c) * pps }

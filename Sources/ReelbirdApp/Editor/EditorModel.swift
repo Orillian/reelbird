@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import SwiftUI
 import ReelbirdAI
 import ReelbirdCore
 import ReelbirdRender
@@ -71,7 +72,13 @@ enum CaptionState: Equatable {
     var splits: [Double] { edit.splits }
     var section: InspectorSection = .background
     /// Timeline magnification: 1 = whole recording fits.
-    var timelineZoom: Double = 1
+    var timelineZoom: Double = 1 {
+        // Zooming the timeline fits it to the window again.
+        didSet { if timelineZoom != oldValue { timelineFitDuration = nil } }
+    }
+    /// The seconds the timeline's width was fitted to (`nil` = fit what's shown now). A cut keeps the scale it had,
+    /// so nothing you weren't touching moves; the timeline just ends earlier. Zooming refits it.
+    var timelineFitDuration: Double?
 
     var exportState: ExportState = .idle
     /// When the running export started, for the time-left estimate.
@@ -275,8 +282,23 @@ enum CaptionState: Equatable {
         if !merge { registerUndo(previous: edit, actionName: actionName) }
         coalesceKey = coalesce
         coalesceUntil = now.addingTimeInterval(1)
-        edit = next
+        apply(next)
         editDidChange()
+    }
+
+    /// How a cut closing up (or opening again) moves the timeline: a short glide, so the eye follows what moved.
+    static let closeUp = Animation.easeInOut(duration: 0.22)
+
+    /// Sets the edit. A change to the cuts keeps the timeline's scale and glides the parts into place.
+    private func apply(_ next: EditDocument) {
+        guard next.cuts != edit.cuts else { edit = next; return }
+        freezeTimelineScale()
+        withAnimation(Self.closeUp) { edit = next }
+    }
+
+    /// Holds the timeline's current scale (until the next zoom), so a change in what's shown doesn't refit it.
+    func freezeTimelineScale() {
+        if timelineFitDuration == nil { timelineFitDuration = CutSpace(duration: duration, cuts: edit.cuts).collapsedDuration }
     }
 
     private func registerUndo(previous: EditDocument, actionName: String) {
@@ -291,7 +313,7 @@ enum CaptionState: Equatable {
         coalesceKey = nil
         // Undoing Remove Captions brings the captions file back; bring its transcript back with it.
         let captionsChanged = doc.captions.file != edit.captions.file
-        edit = doc
+        apply(doc)
         if captionsChanged { transcript = doc.captions.file == nil ? nil : Self.loadTranscript(bundle: bundle, edit: doc) }
         if selection?.isZoom == true {
             selectZooms(selectedZoomIDs.filter { id in doc.zoom.regions.contains { $0.id == id } })
@@ -641,6 +663,7 @@ enum CaptionState: Equatable {
 
     func beginPartTrim(leading: Bool) {
         guard case .segment(let r) = selection else { return }
+        freezeTimelineScale()
         partTrim = PartTrimDrag(leading: leading, part: r, trim: edit.trim, cuts: edit.cuts, result: (edit.trim, edit.cuts, r))
     }
 
