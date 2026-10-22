@@ -92,6 +92,10 @@ The first time a recording opens, the layouts switched while recording become se
 
 The first time a recording opens (no `edit.json` yet), the place comes from its `camera` events: the first is the start place, each later one a move. The recorded frame maps to `x`, `y` by how far the bubble was across the room it could move in on the visible screen, measured with the same proportional inset; within 2% of an edge (1% of the centre) it lands exactly there. So the live bubble's default spot, bottom right at 2.5% of the screen's shorter side, becomes the editor's default corner. The shape follows the live bubble's, and `size` is the live size it had longest, measured against the captured screen and scaled to the padded screen card, so the bubble keeps its size relative to the screen.
 
+## Parts and cuts
+
+`edit.json → splits` holds the split points (recording timeline, sorted; absent in older files). They change nothing in the output on their own: the editor divides the recording into parts at the split points, the edges of `cuts` and the trim (`Parts`). A click selects a part. Delete adds its range to `cuts`, which removes it from every track at once, so screen, voice, camera, zooms and overlays stay in sync. Dragging a part's edge inward cuts what it passes over. Dragging it outward brings back cut footage next to it, and at the recording's ends it moves `trim`. The editor's timeline closes cuts up (`CutSpace`): a cut takes no room and shows as a scissors chip at its join that restores it.
+
 ## Speed
 
 `edit.json → speed` plays parts of the recording faster or slower. Files without it play at normal speed throughout.

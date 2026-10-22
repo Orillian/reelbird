@@ -44,6 +44,9 @@ extension EditorModel {
         let rate = (value * 20).rounded() / 20
         if let s = selectedSpeed {
             updateSpeed(s.id, actionName: "Change Speed", coalesce: "rate") { $0.rate = rate }
+            // At 1× the segment goes away (normal speed needs none). Keep its stretch selected, so the slider stays
+            // under the pointer and dragging on gives the same stretch a new speed.
+            if selectedSpeed == nil { selection = .segment(s.range) }
         } else {
             applySpeed(rate, coalesce: true)
         }

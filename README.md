@@ -187,7 +187,8 @@ In the editor:
 | J / K / L | Back 2 seconds / pause / play |
 | ← / → | Step back or forward 1/30 second (with ⇧: one second) |
 | Home / End | Jump to start or end |
-| S | Split at the playhead |
+| S | Split at the playhead (splits are saved with the recording) |
+| Click the video lane | Select the part there; drag its edges to trim just that part |
 | Z | Add a zoom at the playhead |
 | M | Add a marker at the playhead (click a flag to jump to it, double-click to rename, right-click to delete) |
 | C | Add a camera layout at the playhead (or select the one there) |
@@ -197,7 +198,7 @@ In the editor:
 | 1 to 9 | Zoom depth of the selected zoom, or the one under the pointer (1 = 1.25×, 9 = 3.5×) |
 | 0 | Turn that zoom off without deleting it, or back on |
 | I | Make that zoom instant: it cuts in and out with no animation |
-| Delete | Cut the selected part, delete the selected zooms, layout, speed or overlay, or restore a cut |
+| Delete | Cut the selected part (it closes up into a scissors chip; click the chip to bring it back), delete the selected zooms, layout, speed or overlay, or restore a selected cut |
 | Esc | Put down the drawing tool, or clear the selection |
 | ⌘C / ⌘V | Copy the selected zooms / paste them at the playhead |
 | ⌘A | Select every zoom (shift-click or drag a box on the zoom lane to select some) |

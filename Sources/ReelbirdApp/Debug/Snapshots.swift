@@ -199,6 +199,15 @@ import SwiftUI
             }
         }
         scenes.append(editor(.background))
+        // Parts: two split points, the middle part selected with its edge handles; the mock's cut is a chip.
+        scenes.append(editor(.background, variant: "parts") { m in
+            m.setPlayheadForSnapshot(9)
+            m.splitAtPlayhead()
+            m.setPlayheadForSnapshot(15)
+            m.splitAtPlayhead()
+            m.selection = .segment(m.segment(containing: 12))
+            m.setPlayheadForSnapshot(12)
+        })
         scenes.append(editor(.guide) { m in
             m.change("x") { $0.guide.setEdit(id: "c8120", text: .some("Click \"Checkout\" at the top right")) }
             m.setGuideForSnapshot()

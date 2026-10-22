@@ -10,6 +10,9 @@ public struct EditDocument: Codable, Hashable, Sendable {
     public var trim: TimeRange?
     /// Ranges removed from the output (pauses are added here automatically).
     public var cuts: [TimeRange] = []
+    /// Split points on the recording timeline, sorted: where the editor divides the video into parts to select,
+    /// trim or cut. They change nothing in the output on their own. Older files have none.
+    public var splits: [Double] = []
     /// Stretches played faster or slower (recording time). Older files have none.
     public var speed = SpeedSettings()
     /// Extra clips appended after this recording, in order (other `.reelbird` bundles, relative or absolute paths).
@@ -44,6 +47,7 @@ public struct EditDocument: Codable, Hashable, Sendable {
         formatVersion = try c.decodeIfPresent(Int.self, forKey: .formatVersion) ?? d.formatVersion
         trim = try c.decodeIfPresent(TimeRange.self, forKey: .trim)
         cuts = try c.decodeIfPresent([TimeRange].self, forKey: .cuts) ?? d.cuts
+        splits = (((try? c.decodeIfPresent([Double].self, forKey: .splits)) ?? nil) ?? d.splits).filter { $0.isFinite && $0 > 0 }.sorted()
         // A speed block this version can't read leaves the edit at normal speed instead of failing to open.
         speed = (try? c.decodeIfPresent(SpeedSettings.self, forKey: .speed)) ?? d.speed
         appended = try c.decodeIfPresent([String].self, forKey: .appended) ?? d.appended

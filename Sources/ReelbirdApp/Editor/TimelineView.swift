@@ -2,9 +2,9 @@ import AppKit
 import ReelbirdCore
 import SwiftUI
 
-/// The editor timeline on the recording (source) timeline: ruler, filmstrip with trim handles,
-/// waveform, zoom lane, the camera layouts lane (recordings with a camera), speed lane, overlays lane, cuts (hatched), split
-/// points and the playhead.
+/// The editor timeline: ruler, filmstrip with trim handles, waveform, zoom lane, the camera layouts lane (recordings
+/// with a camera), speed lane, overlays lane, split points and the playhead. Positions are recording times, with cut
+/// stretches closed up (each cut is a small restore chip at its join), so the parts sit back to back as in the video.
 struct TimelineView: View {
     @Bindable var model: EditorModel
 
@@ -29,7 +29,7 @@ struct TimelineView: View {
         GeometryReader { geo in
             let visible = geo.size.width - Self.gutter
             let width = max(visible, (visible - Self.inset * 2) * model.timelineZoom + Self.inset * 2)
-            let scale = TimeScale(duration: model.duration, width: width, inset: Self.inset)
+            let scale = TimeScale(duration: model.duration, width: width, inset: Self.inset, cuts: model.edit.cuts)
             HStack(spacing: 0) {
                 laneIcons
                 ScrollView(.horizontal) {
@@ -66,14 +66,27 @@ struct TimelineView: View {
     }
 }
 
-/// Maps seconds to x positions.
+/// Maps recording seconds to x positions, with cut stretches taking no room.
 struct TimeScale {
     let duration: Double
     let width: CGFloat
     let inset: CGFloat
-    var pps: CGFloat { (width - inset * 2) / CGFloat(max(0.001, duration)) }
-    func x(_ t: Double) -> CGFloat { inset + CGFloat(t) * pps }
-    func t(_ x: CGFloat) -> Double { min(max(0, Double((x - inset) / pps)), duration) }
+    let space: CutSpace
+
+    init(duration: Double, width: CGFloat, inset: CGFloat, cuts: [TimeRange] = []) {
+        self.duration = duration; self.width = width; self.inset = inset
+        space = CutSpace(duration: duration, cuts: cuts)
+    }
+
+    /// Seconds shown: the recording without its cuts.
+    var visibleDuration: Double { space.collapsedDuration }
+    /// Points per second of what's shown.
+    var pps: CGFloat { (width - inset * 2) / CGFloat(max(0.001, visibleDuration)) }
+    func x(_ t: Double) -> CGFloat { xShown(space.collapsed(t)) }
+    /// The x of a time on the closed-up timeline (the ruler's time).
+    func xShown(_ c: Double) -> CGFloat { inset + CGFloat(c) * pps }
+    /// The recording time at `x`; a join lands just after its cut.
+    func t(_ x: CGFloat) -> Double { space.source(Double((x - inset) / pps)) }
 }
 
 struct TimelineContent: View {
@@ -126,13 +139,8 @@ struct TimelineContent: View {
             .onEnded { v in
                 let t = scale.t(v.location.x)
                 if v.translation == .zero, v.location.y >= videoTop, v.location.y <= videoTop + TimelineView.videoHeight {
-                    if let cut = model.edit.cuts.first(where: { $0.contains(t) }) {
-                        model.selection = .cut(cut)
-                    } else if !model.splits.isEmpty {
-                        model.selection = .segment(model.segment(containing: t))
-                    } else {
-                        model.selection = nil
-                    }
+                    // A click on the video selects the part there (between split points, cuts and the trim).
+                    model.selection = .segment(model.segment(containing: t))
                 } else if v.translation == .zero {
                     model.selection = nil
                 }
@@ -153,7 +161,9 @@ struct TimelineContent: View {
                 var x: CGFloat = 0
                 var i = 0
                 while x < rect.width {
-                    let img = frames[min(frames.count - 1, Int(Double(x / rect.width) * Double(frames.count)))]
+                    // The frame at this place's recording time (cut stretches take no room).
+                    let t = scale.t(rect.minX + x + fw / 2)
+                    let img = frames[min(frames.count - 1, max(0, Int(t / max(0.001, model.duration) * Double(frames.count))))]
                     ctx.draw(Image(decorative: img, scale: 1), in: CGRect(x: x, y: 0, width: fw, height: rect.height))
                     x += fw; i += 1
                 }
@@ -178,7 +188,8 @@ struct TimelineContent: View {
             let count = Int(size.width / (barW + gap))
             var path = Path()
             for i in 0..<max(0, count) {
-                let v = CGFloat(w[min(w.count - 1, i * w.count / max(1, count))])
+                let t = scale.t(rect.minX + CGFloat(i) * (barW + gap) + barW / 2)
+                let v = CGFloat(w[min(w.count - 1, max(0, Int(t / max(0.001, model.duration) * Double(w.count))))])
                 let h = max(1.5, v * (size.height - 8))
                 path.addRoundedRect(in: CGRect(x: CGFloat(i) * (barW + gap), y: (size.height - h) / 2, width: barW, height: h),
                                     cornerSize: CGSize(width: 1, height: 1))
@@ -270,16 +281,21 @@ struct TimelineContent: View {
 
     // MARK: Overlays
 
+    /// Each cut is closed up on the timeline: a seam through the lanes at its join, and a scissors chip on the video
+    /// that brings it back.
     private var cutsOverlay: some View {
         ForEach(Array(model.edit.cuts.enumerated()), id: \.offset) { _, cut in
             let selected = model.selection == .cut(cut)
-            let x0 = scale.x(cut.start), x1 = scale.x(cut.end)
-            Hatch(selected: selected)
-                .frame(width: max(2, x1 - x0), height: lanesBottom - videoTop)
-                .offset(x: x0, y: videoTop)
-                .onTapGesture { model.selection = .cut(cut) }
-                .help("Cut \(TimeFormat.clock(cut.duration, tenths: true)). Press Delete to restore.")
-                .accessibilityLabel("Cut from \(TimeFormat.clock(cut.start)) to \(TimeFormat.clock(cut.end))")
+            let x = scale.x(cut.start)
+            ZStack(alignment: .top) {
+                Rectangle().fill(Theme.accent.opacity(selected ? 0.9 : 0.45))
+                    .frame(width: 1.5, height: lanesBottom - videoTop)
+                    .allowsHitTesting(false)
+                CutChip(duration: cut.duration, selected: selected) { model.restoreCut(cut) }
+                    .offset(y: TimelineView.videoHeight / 2 - CutChip.size / 2)
+            }
+            .frame(width: CutChip.size)
+            .offset(x: x - CutChip.size / 2, y: videoTop)
         }
     }
 
@@ -351,15 +367,32 @@ struct TimelineContent: View {
         }
     }
 
+    /// The selected part: an outline, and a handle on each edge that trims just this part (dragging in cuts, dragging
+    /// out brings back what was cut there; at the recording's ends it moves the trim).
     @ViewBuilder private var segmentSelection: some View {
         if case .segment(let r) = model.selection {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(Theme.ink, lineWidth: 2)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Theme.ink.opacity(0.06)))
-                .frame(width: scale.x(r.end) - scale.x(r.start), height: TimelineView.videoHeight)
+                .strokeBorder(Theme.accent, lineWidth: 2)
+                .background(RoundedRectangle(cornerRadius: 7).fill(Theme.accent.opacity(0.08)))
+                .frame(width: max(4, scale.x(r.end) - scale.x(r.start)), height: TimelineView.videoHeight)
                 .offset(x: scale.x(r.start), y: videoTop)
                 .allowsHitTesting(false)
+            partHandle(leading: true, at: scale.x(r.start))
+            partHandle(leading: false, at: scale.x(r.end))
         }
+    }
+
+    private func partHandle(leading: Bool, at x: CGFloat) -> some View {
+        PartHandle(leading: leading)
+            .offset(x: leading ? x : x - PartHandle.width, y: videoTop)
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("timeline"))
+                .onChanged { v in
+                    if model.partTrimBase == nil { model.beginPartTrim() }
+                    model.dragPartEdge(leading: leading, by: Double(v.translation.width / scale.pps))
+                }
+                .onEnded { _ in model.endPartTrim() })
+            .help(leading ? "Drag to trim the start of this part" : "Drag to trim the end of this part")
+            .accessibilityLabel(leading ? "Start of the selected part" : "End of the selected part")
     }
 }
 
@@ -371,10 +404,11 @@ struct Ruler: View {
             let step = candidates.first { CGFloat($0) * scale.pps >= 64 } ?? 600
             let minor = step / 5
             var i = 0
-            while Double(i) * minor <= scale.duration + 0.001 {
-                // Index-based so ticks don't drift and sub-second labels read 0:00.5, not 0:00 twice.
+            while Double(i) * minor <= scale.visibleDuration + 0.001 {
+                // Index-based so ticks don't drift and sub-second labels read 0:00.5, not 0:00 twice. Times are
+                // the closed-up timeline's: cut stretches don't count.
                 let t = Double(i) * minor
-                let x = scale.x(t)
+                let x = scale.xShown(t)
                 let isMajor = i % 5 == 0
                 var p = Path()
                 p.move(to: CGPoint(x: x, y: size.height - (isMajor ? 8 : 4)))
@@ -391,23 +425,48 @@ struct Ruler: View {
     }
 }
 
-struct Hatch: View {
+/// A closed-up cut: a small scissors chip at its join. Click to bring the cut part back.
+struct CutChip: View {
+    static let size: CGFloat = 20
+    let duration: Double
     let selected: Bool
+    let restore: () -> Void
+    @ViewState private var hovering = false
+
     var body: some View {
-        Canvas { ctx, size in
-            let rect = CGRect(origin: .zero, size: size)
-            ctx.fill(Path(rect), with: .color(Theme.panel.opacity(0.78)))
-            var p = Path()
-            var x: CGFloat = -size.height
-            while x < size.width {
-                p.move(to: CGPoint(x: x, y: size.height)); p.addLine(to: CGPoint(x: x + size.height, y: 0))
-                x += 7
-            }
-            ctx.clip(to: Path(rect))
-            ctx.stroke(p, with: .color(Color.primary.opacity(selected ? 0.4 : 0.18)), lineWidth: 1)
-            if selected { ctx.stroke(Path(rect.insetBy(dx: 1, dy: 1)), with: .color(Theme.ink), lineWidth: 2) }
+        Button(action: restore) {
+            Image(systemName: "scissors")
+                .font(.system(size: 9.5, weight: .bold))
+                .foregroundStyle(selected || hovering ? Theme.onAccent : Theme.accentText)
+                .frame(width: Self.size, height: Self.size)
+                .background(Circle().fill(selected || hovering ? Theme.accent : Theme.raised))
+                .overlay(Circle().strokeBorder(Theme.accent.opacity(0.7), lineWidth: 1))
+                .shadow(color: .black.opacity(0.15), radius: 1.5, y: 0.5)
+                .contentShape(Circle())
         }
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("\(TimeFormat.clock(duration, tenths: true)) cut here. Click to bring it back.")
+        .accessibilityLabel("Cut of \(TimeFormat.clock(duration, tenths: true)). Bring it back")
+    }
+}
+
+/// An edge handle of the selected part.
+struct PartHandle: View {
+    static let width: CGFloat = 9
+    let leading: Bool
+    @ViewState private var hovering = false
+    var body: some View {
+        UnevenRoundedRectangle(topLeadingRadius: leading ? 7 : 1, bottomLeadingRadius: leading ? 7 : 1,
+                               bottomTrailingRadius: leading ? 1 : 7, topTrailingRadius: leading ? 1 : 7, style: .continuous)
+            .fill(Theme.accent.opacity(hovering ? 1 : 0.9))
+            .overlay(Capsule().fill(Color.white.opacity(0.9)).frame(width: 2, height: 14))
+            .frame(width: Self.width, height: TimelineView.videoHeight)
+            .contentShape(Rectangle().inset(by: -4))
+            .onHover { inside in
+                hovering = inside
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
     }
 }
 

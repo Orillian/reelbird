@@ -67,7 +67,8 @@ enum CaptionState: Equatable {
     private(set) var playhead: Double = 0
     private(set) var isPlaying = false
     var selection: TimelineSelection?
-    private(set) var splits: [Double] = []
+    /// Split points (saved in edit.json).
+    var splits: [Double] { edit.splits }
     var section: InspectorSection = .background
     /// Timeline magnification: 1 = whole recording fits.
     var timelineZoom: Double = 1
@@ -138,6 +139,8 @@ enum CaptionState: Equatable {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var exportTask: Task<Void, Never>?
     @ObservationIgnored private var shareTask: Task<Void, Never>?
+    /// The selected part, trim and cuts when a part's edge drag began.
+    @ObservationIgnored var partTrimBase: (part: TimeRange, trim: TimeRange?, cuts: [TimeRange])?
     @ObservationIgnored private var stemTask: Task<Void, Never>?
     /// The enhance settings the stem was last checked for (enhance, strength, mix).
     @ObservationIgnored private var stemKey: String?
@@ -609,18 +612,39 @@ enum CaptionState: Equatable {
 
     func splitAtPlayhead() {
         let t = playhead
-        guard t > 0.05, t < duration - 0.05, !splits.contains(where: { abs($0 - t) < 0.05 }) else { return }
-        splits.append(t)
-        splits.sort()
+        guard t > 0.05, t < duration - 0.05, !splits.contains(where: { abs($0 - t) < 0.05 }),
+              !edit.cuts.contains(where: { $0.contains(t) }) else { return }
+        change("Split") { e in
+            e.splits.append(t)
+            e.splits.sort()
+        }
         selection = .segment(segment(containing: t + 0.001))
     }
 
-    /// The segment between split points / trim bounds that contains `t`.
+    /// The part (between split points, cut edges and the trim) that contains `t`.
     func segment(containing t: Double) -> TimeRange {
-        let lower = ([edit.trim?.start ?? 0] + splits).filter { $0 <= t }.max() ?? 0
-        let upper = ([edit.trim?.end ?? duration] + splits).filter { $0 > t }.min() ?? duration
-        return TimeRange(start: lower, end: upper)
+        Parts.part(containing: t, duration: duration, trim: edit.trim, splits: splits, cuts: edit.cuts)
     }
+
+    /// Dragging a selected part's edge: `beginPartTrim` keeps the state before the drag, each `dragPartEdge` applies
+    /// the edge's new place to it (one undo step per drag) and keeps the part selected.
+    func beginPartTrim() {
+        guard case .segment(let r) = selection else { return }
+        partTrimBase = (r, edit.trim, edit.cuts)
+    }
+
+    func dragPartEdge(leading: Bool, by seconds: Double) {
+        guard let base = partTrimBase else { return }
+        let target = (leading ? base.part.start : base.part.end) + seconds
+        let result = Parts.trimEdge(of: base.part, leading: leading, to: target, duration: duration, trim: base.trim, cuts: base.cuts)
+        change("Trim Part", coalesce: "part-trim") { e in
+            e.trim = result.trim
+            e.cuts = result.cuts
+        }
+        selection = .segment(result.part)
+    }
+
+    func endPartTrim() { partTrimBase = nil }
 
     func cut(_ range: TimeRange) {
         change("Cut") { e in
