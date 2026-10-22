@@ -3,7 +3,9 @@ import Foundation
 import ReelbirdAI
 import ReelbirdCapture
 import ReelbirdCore
+import ReelbirdGuide
 import ReelbirdRender
+import ReelbirdShare
 
 // The app talks to the engine modules only through these protocols. Each one mirrors a module's
 // public contract (REELBIRD-BRIEF.md) one to one, turning its static API into instance methods
@@ -126,13 +128,30 @@ protocol ShareServiceProtocol: Sendable {
     /// Returns the share when there was work to do.
     func resumeIfNeeded(bundle: ProjectBundle) async throws -> ShareInfo?
     func testConnection(_ d: ShareDestination, secret: String) async throws
-    func publish(bundle: ProjectBundle, video: URL?, poster: ShareAsset<CGImage>, captions: ShareAsset<URL>, destination: ShareDestination,
+    func publish(bundle: ProjectBundle, video: URL?, poster: ShareAsset<CGImage>, captions: ShareAsset<URL>,
+                 guide: ShareAsset<SharedGuide>, text: ShareAsset<URL>, destination: ShareDestination,
                  secret: String, progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo
     func unpublish(_ info: ShareInfo, destination: ShareDestination, secret: String) async throws
     /// Where an existing link lives (Reelbird Cloud or your bucket), so it updates in place after switching.
     func destination(for share: ShareInfo) -> (destination: ShareDestination, secret: String)?
     /// Your own bucket, whether or not Reelbird Cloud is on.
     func ownBucket() -> (destination: ShareDestination, secret: String?)?
+}
+
+/// `ReelbirdGuide`: a take's guide steps, their images, guide exports and what a link publishes with them.
+protocol GuideService: Sendable {
+    /// Whether Apple Intelligence can word the steps (macOS 26+, turned on).
+    var modelAvailable: Bool { get }
+    /// The steps the guide shows for `edit` (scanned once and cached in steps.json; `refresh` scans again).
+    func steps(bundle: ProjectBundle, edit: EditDocument, refresh: Bool,
+               progress: @escaping @Sendable (Double) -> Void) async throws -> [GuideStep]
+    /// One image per step, in order, at most `maxWidth` wide (the click not drawn in).
+    func images(bundle: ProjectBundle, edit: EditDocument, steps: [GuideStep], maxWidth: Int) async throws -> [CGImage]
+    /// The guide and the text layer a publish of `video` carries, following `edit.guide`.
+    func shareAssets(bundle: ProjectBundle, edit: EditDocument, video: URL, steps: [GuideStep]?, workDir: URL,
+                     progress: @escaping @Sendable (Double) -> Void) async -> (guide: ShareAsset<SharedGuide>, text: ShareAsset<URL>)
+    /// Writes the guide into `folder` and returns its main file.
+    func export(bundle: ProjectBundle, edit: EditDocument, format: GuideExport.Format, to folder: URL) async throws -> URL
 }
 
 /// The Cloud account as the UI shows it.
@@ -210,15 +229,17 @@ protocol AIService: Sendable {
     let share: any ShareServiceProtocol
     let cloud: any CloudService
     let ai: any AIService
+    let guide: any GuideService
     let inputs: any InputPreviewService
     /// True when the engine is simulated (`--mock`, snapshots, `--selftest`).
     let isMock: Bool
 
     init(permissions: any PermissionsService, capture: any CaptureSourceService, recorder: any RecorderService,
          render: any RenderService, share: any ShareServiceProtocol, cloud: any CloudService, ai: any AIService,
-         inputs: any InputPreviewService, isMock: Bool) {
+         guide: any GuideService, inputs: any InputPreviewService, isMock: Bool) {
         self.permissions = permissions; self.capture = capture; self.recorder = recorder
-        self.render = render; self.share = share; self.cloud = cloud; self.ai = ai; self.inputs = inputs; self.isMock = isMock
+        self.render = render; self.share = share; self.cloud = cloud; self.ai = ai; self.guide = guide; self.inputs = inputs
+        self.isMock = isMock
     }
 
     /// Simulated engine with real system permission checks (`--mock`, snapshots, `--selftest`).
@@ -230,6 +251,7 @@ protocol AIService: Sendable {
                  share: MockShare(),
                  cloud: MockCloud(),
                  ai: MockAI(),
+                 guide: MockGuide(),
                  inputs: MockInputPreview(),
                  isMock: true)
     }

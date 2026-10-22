@@ -2,6 +2,7 @@ import AppKit
 import ReelbirdAI
 import ReelbirdCapture
 import ReelbirdCore
+import ReelbirdGuide
 import ReelbirdRender
 import ReelbirdShare
 
@@ -156,9 +157,10 @@ struct LiveShare: ShareServiceProtocol {
     func testConnection(_ d: ShareDestination, secret: String) async throws {
         try await ShareService.testConnection(d, secret: secret)
     }
-    func publish(bundle: ProjectBundle, video: URL?, poster: ShareAsset<CGImage>, captions: ShareAsset<URL>, destination: ShareDestination,
+    func publish(bundle: ProjectBundle, video: URL?, poster: ShareAsset<CGImage>, captions: ShareAsset<URL>,
+                 guide: ShareAsset<SharedGuide>, text: ShareAsset<URL>, destination: ShareDestination,
                  secret: String, progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo {
-        try await ShareService.publish(bundle: bundle, video: video, poster: poster, captions: captions,
+        try await ShareService.publish(bundle: bundle, video: video, poster: poster, captions: captions, guide: guide, text: text,
                                        destination: destination, secret: secret, progress: progress)
     }
     func unpublish(_ info: ShareInfo, destination: ShareDestination, secret: String) async throws {
@@ -170,6 +172,29 @@ struct LiveShare: ShareServiceProtocol {
     func ownBucket() -> (destination: ShareDestination, secret: String?)? {
         guard let d = ShareSettings.ownBucket() else { return nil }
         return (d, ShareSettings.secret(forOwnBucket: d))
+    }
+}
+
+/// `ReelbirdGuide` (steps from `ReelbirdAI`, images from `ReelbirdRender`).
+struct LiveGuide: GuideService {
+    var modelAvailable: Bool { StepWriter.isAvailable }
+
+    func steps(bundle: ProjectBundle, edit: EditDocument, refresh: Bool,
+               progress: @escaping @Sendable (Double) -> Void) async throws -> [GuideStep] {
+        try await StepScanner.steps(bundle: bundle, edit: edit, options: StepScanner.Options(refresh: refresh), progress: progress)
+    }
+    func images(bundle: ProjectBundle, edit: EditDocument, steps: [GuideStep], maxWidth: Int) async throws -> [CGImage] {
+        try await StepImages.render(bundle: bundle, edit: edit, steps: steps, maxWidth: maxWidth)
+    }
+    func shareAssets(bundle: ProjectBundle, edit: EditDocument, video: URL, steps: [GuideStep]?, workDir: URL,
+                     progress: @escaping @Sendable (Double) -> Void) async -> (guide: ShareAsset<SharedGuide>, text: ShareAsset<URL>) {
+        await GuideBuilder.shareAssets(bundle: bundle, edit: edit, video: video, steps: steps, workDir: workDir, progress: progress)
+    }
+    func export(bundle: ProjectBundle, edit: EditDocument, format: GuideExport.Format, to folder: URL) async throws -> URL {
+        let built = try await GuideBuilder.build(bundle: bundle, edit: edit)
+        let manifest = try bundle.readManifest()
+        let title = (edit.title?.isEmpty == false ? edit.title : nil) ?? manifest.title
+        return try GuideExport.write(built, title: title, createdAt: manifest.createdAt, format: format, to: folder, overwrite: true)
     }
 }
 
@@ -225,6 +250,7 @@ extension Services {
                  share: LiveShare(),
                  cloud: LiveCloud(),
                  ai: LiveAI(),
+                 guide: LiveGuide(),
                  inputs: LiveInputPreview(),
                  isMock: false)
     }

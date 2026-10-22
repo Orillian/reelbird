@@ -32,17 +32,84 @@ export type Meta = {
   captionsLanguage?: string;
   chapters: { time: number; title: string }[];
   revision: number;
+  /** The step guide: the page's Guide and Click-through views. */
+  guide?: { steps: GuideStep[] };
+  /** The text layer for Copy text: "text.<rev>.json". */
+  text?: string;
+};
+
+export const STEP_KINDS = ["click", "doubleClick", "rightClick", "drag", "type", "shortcut", "key"] as const;
+
+/** One guide step, as the page shows it (ViewerMeta.Guide.Step in the app). */
+export type GuideStep = {
+  id: string;
+  n: number;
+  /** Output seconds: "Play from here". */
+  t: number;
+  kind: (typeof STEP_KINDS)[number];
+  text: string;
+  note?: string;
+  section?: string;
+  /** "steps.<rev>/NN.jpg" and its pixel size. */
+  image?: string;
+  w?: number;
+  h?: number;
+  /** Where the pointer acted, normalized to the image. Absent for key steps. */
+  x?: number;
+  y?: number;
+  box?: { x: number; y: number; width: number; height: number };
+  keys?: string;
 };
 
 // Asset names are paths inside the share folder: "hls/index.m3u8", "video.3.mp4". Never URLs.
 const ASSET = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}(\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}){0,2}$/;
+/** The text layer is a file at the folder root: "text.3.json". */
+export const TEXT_LAYER = /^text\.\d+\.json$/;
+const MAX_STEPS = 300;
 const asset = (v: unknown) => (typeof v === "string" && ASSET.test(v) && !v.includes("..") ? v : undefined);
 const num = (v: unknown, max: number) => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= max ? v : undefined);
 const int = (v: unknown, max: number) => { const n = num(v, max); return n === undefined ? undefined : Math.trunc(n); };
 const text = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : undefined);
 const date = (v: unknown) => (typeof v === "string" && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString().replace(/\.\d{3}Z$/, "Z") : undefined);
+/** A finite number clamped to 0…1 (a position normalized to the step image). */
+const unit = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : undefined);
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 export const shareURL = (id: string) => `${config.publicURL}/r/${id}/`;
+
+/** One step, checked field by field; null drops it (a malformed step never fails the page). */
+function guideStep(raw: unknown): GuideStep | null {
+  if (!isObject(raw)) return null;
+  const id = text(raw.id, 40), n = int(raw.n, 1e6), t = num(raw.t, 1e6), body = text(raw.text, 500);
+  const kind = STEP_KINDS.find((k) => k === raw.kind);
+  if (id === undefined || n === undefined || t === undefined || body === undefined || !kind) return null;
+  const step: GuideStep = { id, n, t, kind, text: body };
+  const note = text(raw.note, 1000), section = text(raw.section, 200), keys = text(raw.keys, 40), image = asset(raw.image);
+  if (note !== undefined) step.note = note;
+  if (section !== undefined) step.section = section;
+  if (image !== undefined) step.image = image;
+  const w = int(raw.w, 16384), h = int(raw.h, 16384);
+  if (w) step.w = w;
+  if (h) step.h = h;
+  const x = unit(raw.x), y = unit(raw.y);
+  if (x !== undefined && y !== undefined) { step.x = x; step.y = y; }
+  if (isObject(raw.box)) {
+    const b = { x: unit(raw.box.x), y: unit(raw.box.y), width: unit(raw.box.width), height: unit(raw.box.height) };
+    if (b.x !== undefined && b.y !== undefined && b.width !== undefined && b.height !== undefined) {
+      step.box = { x: b.x, y: b.y, width: b.width, height: b.height };
+    }
+  }
+  if (keys !== undefined) step.keys = keys;
+  return step;
+}
+
+function guide(raw: unknown): Meta["guide"] {
+  if (!isObject(raw) || !Array.isArray(raw.steps)) return undefined;
+  const steps = raw.steps.slice(0, MAX_STEPS).flatMap((s) => guideStep(s) ?? []);
+  return steps.length ? { steps } : undefined;
+}
+
+const textLayer = (v: unknown) => { const name = asset(v); return name && TEXT_LAYER.test(name) ? name : undefined; };
 
 /** Uploaded meta.json → a Meta that only names files in this share and only points at this server. */
 export function sanitizeMeta(raw: unknown, id: string): Meta | null {
@@ -78,6 +145,8 @@ export function sanitizeMeta(raw: unknown, id: string): Meta | null {
     captionsLanguage: lang && /^[A-Za-z0-9-]+$/.test(lang) ? lang : undefined,
     chapters,
     revision: int(m.revision, 1e9) ?? 0,
+    guide: guide(m.guide),
+    text: textLayer(m.text),
   };
 }
 

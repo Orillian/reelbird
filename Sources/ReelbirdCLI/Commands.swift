@@ -1,6 +1,7 @@
 import Foundation
 import ReelbirdAI
 import ReelbirdCore
+import ReelbirdGuide
 import ReelbirdShare
 
 /// Command table, help and dispatch.
@@ -69,6 +70,23 @@ enum CLI {
                     positionals: ["PROJECT"], options: [
             .flag("as-chapters", "Replace the chapters with the markers (saved to edit.json)"),
         ], discussion: "Drop markers with the marker shortcut (default ⌥⇧M) or the flag on the control bar while recording, or with MCP add_marker. Times are on the recording; outputTime is where each lands in the edited video."),
+        CommandSpec(name: "steps", summary: "List the guide's steps: each click, typing and shortcut, with what was clicked.",
+                    positionals: ["PROJECT"], options: [
+            .value("text", "ID=TEXT", "Rewrite a step's instruction (IDs are in the list)", repeatable: true),
+            .value("hide", "ID", "Leave a step out of the guide", repeatable: true),
+            .value("show", "ID", "Bring a hidden step back", repeatable: true),
+            .value("typed-text", "on|off", "Quote what was typed in typing steps (sensitive-looking text is always masked)"),
+            .flag("refresh", "Read the screen again instead of using steps.json"),
+            .flag("no-model", "Word the steps with the plain template, not Apple Intelligence"),
+        ], discussion: "Steps come from the clicks and key presses logged while recording (typing and shortcuts need --keystrokes); what was clicked is read from the screen on this Mac. Turn the guide off on share links with `reelbird edit PROJECT --set guide.share=false`, and selectable text with --set guide.copyText=false."),
+        CommandSpec(name: "guide", summary: "Write the step guide: an HTML page with Guide and Click-through, Markdown, or a Claude skill.",
+                    positionals: ["PROJECT"], options: [
+            .value("format", "html|md|skill", "What to write (default html)"),
+            .value("out", "DIR", "Folder to write into (default: the project's exports folder)"),
+            .flag("force", "Replace a guide already in that folder"),
+            .flag("refresh", "Read the screen again instead of using steps.json"),
+            .flag("no-model", "Word the steps with the plain template, not Apple Intelligence"),
+        ], discussion: "html writes index.html and steps/; md writes guide.md and images/ with each click marked; skill writes SKILL.md and images/ for Claude Code or other agents."),
         CommandSpec(name: "silences", summary: "Find silent stretches; --apply cuts them.", positionals: ["PROJECT"], options: [
             .value("threshold", "DB", "Silence level in dBFS (default -45)"),
             .value("min", "SECONDS", "Shortest silence to report (default 1.2)"),
@@ -220,6 +238,37 @@ enum CLI {
             return try await ops.suggest(project, apply: !a.has("dry-run"), locale: a.value("locale"))
         case "markers":
             return try ops.markers(project, asChapters: a.has("as-chapters"))
+        case "steps":
+            var changes = Operations.StepChanges()
+            for item in a.all("text") {
+                guard let eq = item.firstIndex(of: "="), eq != item.startIndex else {
+                    throw CLIError.usage("--text expects ID=TEXT, e.g. --text c1622=\"Open the inbox\" (got '\(item)').")
+                }
+                changes.texts.append((String(item[..<eq]), String(item[item.index(after: eq)...])))
+            }
+            changes.hide = a.all("hide")
+            changes.show = a.all("show")
+            if let v = a.value("typed-text") {
+                switch v.lowercased() {
+                case "on", "true", "yes": changes.showTypedText = true
+                case "off", "false", "no": changes.showTypedText = false
+                default: throw CLIError.usage("--typed-text must be on or off.")
+                }
+            }
+            let bar = ProgressLine("Reading steps…")
+            defer { bar.finish() }
+            return try await ops.steps(project, changes: changes, refresh: a.has("refresh"), useModel: !a.has("no-model"), progress: { bar.update($0) })
+        case "guide":
+            var format = GuideExport.Format.html
+            if let f = a.value("format") {
+                guard let g = GuideExport.Format(name: f) else { throw CLIError.usage("Unknown format '\(f)'. Use html, md or skill.") }
+                format = g
+            }
+            let out = a.value("out").map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }
+            let bar = ProgressLine("Making the guide…")
+            defer { bar.finish() }
+            return try await ops.guide(project, format: format, out: out, overwrite: a.has("force"), refresh: a.has("refresh"),
+                                       useModel: !a.has("no-model"), progress: { bar.update($0) })
         case "silences":
             let min = try a.double("min") ?? 1.2
             let padding = try a.double("padding") ?? 0.15

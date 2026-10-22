@@ -40,6 +40,50 @@ public struct ViewerMeta: Codable, Hashable, Sendable {
     public var chapters: [Chapter]
     /// Increases with every publish; versioned asset names make them safe to cache forever.
     public var revision: Int
+    /// The step guide (Guide and Click-through on the page), when the link shares it.
+    public var guide: Guide?
+    /// The text layer for selecting text in the paused video ("text.<rev>.json", a `TextLayer`).
+    public var text: String?
+
+    /// The steps as the page shows them.
+    public struct Guide: Codable, Hashable, Sendable {
+        public var steps: [Step]
+        public init(steps: [Step]) { self.steps = steps }
+
+        public struct Step: Codable, Hashable, Sendable {
+            public var id: String
+            /// 1, 2, … in guide order.
+            public var n: Int
+            /// Output seconds: "Play from here".
+            public var t: Double
+            /// `GuideStep.Kind` raw value.
+            public var kind: String
+            /// The instruction.
+            public var text: String
+            /// What was said around the step.
+            public var note: String?
+            /// The marker that opens a section at this step.
+            public var section: String?
+            /// The step image ("steps.<rev>/01.jpg") and its pixel size.
+            public var image: String?
+            public var w: Int?
+            public var h: Int?
+            /// Where the pointer acted, normalized to the image. Absent for keys.
+            public var x: Double?
+            public var y: Double?
+            /// What was clicked, normalized to the image.
+            public var box: NormRect?
+            /// The key or shortcut ("⌘S", "Return").
+            public var keys: String?
+
+            public init(id: String, n: Int, t: Double, kind: String, text: String, note: String? = nil, section: String? = nil,
+                        image: String? = nil, w: Int? = nil, h: Int? = nil, x: Double? = nil, y: Double? = nil,
+                        box: NormRect? = nil, keys: String? = nil) {
+                self.id = id; self.n = n; self.t = t; self.kind = kind; self.text = text; self.note = note; self.section = section
+                self.image = image; self.w = w; self.h = h; self.x = x; self.y = y; self.box = box; self.keys = keys
+            }
+        }
+    }
 
     public init(id: String, title: String, status: Status, createdAt: Date = Date(), updatedAt: Date = Date(),
                 duration: Double? = nil, pageURL: String, baseURL: String, hls: String? = nil, video: String? = nil,

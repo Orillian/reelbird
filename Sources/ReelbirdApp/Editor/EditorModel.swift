@@ -5,7 +5,7 @@ import ReelbirdCore
 import ReelbirdRender
 
 enum InspectorSection: String, CaseIterable, Identifiable {
-    case background, cursor, zoom, camera, canvas, audio, captions, overlays
+    case background, cursor, zoom, camera, canvas, audio, captions, overlays, guide
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
     var symbol: String {
@@ -18,6 +18,7 @@ enum InspectorSection: String, CaseIterable, Identifiable {
         case .audio: "waveform"
         case .captions: "captions.bubble"
         case .overlays: "square.on.square.dashed"
+        case .guide: "list.number"
         }
     }
 }
@@ -132,6 +133,8 @@ enum CaptionState: Equatable {
     @ObservationIgnored let services: Services
     /// Overlay tools, drafts and Find Sensitive Info (EditorModel+Overlays.swift).
     let overlays: OverlayState
+    /// The Guide panel's steps and thumbnails (EditorModel+Guide.swift).
+    let guidePanel = GuidePanelState()
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var exportTask: Task<Void, Never>?
     @ObservationIgnored private var shareTask: Task<Void, Never>?
@@ -973,12 +976,19 @@ enum CaptionState: Equatable {
             defer { try? FileManager.default.removeItem(at: tmp) }
             do {
                 try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+                // The guide's steps are read from the screen while the video renders.
+                async let scanned: [GuideStep]? = edit.guide.share
+                    ? (try? await services.guide.steps(bundle: bundle, edit: edit, refresh: false, progress: { _ in })) : nil
                 let video = try await services.render.export(bundle: bundle, edit: edit,
                                                              options: ExportOptions(format: .mp4H264, height: 1080,
                                                                                     destination: tmp.appendingPathComponent("video.mp4"))) { p in
-                    Task { @MainActor in self.shareState = .working("Rendering", p * 0.6) }
+                    Task { @MainActor in self.shareState = .working("Rendering", p * 0.55) }
                 }
                 let poster = try? await services.render.poster(bundle: bundle, at: 0, maxWidth: 1280)
+                shareState = .working("Preparing the guide", 0.55)
+                let assets = await services.guide.shareAssets(bundle: bundle, edit: edit, video: video, steps: await scanned, workDir: tmp) { p in
+                    Task { @MainActor in self.shareState = .working("Preparing the guide", 0.55 + p * 0.1) }
+                }
                 // No captions in the edit takes the published ones down too.
                 var captions = ShareAsset<URL>.remove
                 if let captionsVTT {
@@ -987,8 +997,9 @@ enum CaptionState: Equatable {
                     captions = .replace(url)
                 }
                 let info = try await services.share.publish(bundle: bundle, video: video, poster: poster.map { .replace($0) } ?? .keep,
-                                                            captions: captions, destination: dest, secret: secret) { p in
-                    Task { @MainActor in self.shareState = .working("Uploading", 0.6 + p * 0.4) }
+                                                            captions: captions, guide: assets.guide, text: assets.text,
+                                                            destination: dest, secret: secret) { p in
+                    Task { @MainActor in self.shareState = .working("Uploading", 0.65 + p * 0.35) }
                 }
                 var m = manifest
                 m.share = info

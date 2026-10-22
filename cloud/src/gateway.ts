@@ -16,15 +16,31 @@ import { renderViewer, sanitizeMeta, viewerCSP } from "./viewer";
 
 // Only the page, its meta and the text files the player reads go through this server, each capped;
 // media is a redirect to R2, and only for the file types a share has, served with our content type.
-const PROXIED = /^(index\.html|meta\.json)$|\.(m3u8|vtt)$/;
 const MAX_META = 256 * 1024, MAX_TEXT = 4 * 1024 * 1024;
 const MEDIA: Record<string, string> = {
   mp4: "video/mp4", m4s: "video/iso.segment", m4a: "audio/mp4", aac: "audio/aac",
   jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
 };
 const WINDOW = 3600;
-const TYPES: [RegExp, string][] = [[/\.m3u8$/, "application/vnd.apple.mpegurl"], [/\.vtt$/, "text/vtt; charset=utf-8"]];
+// Text files the page reads: playlists, captions, and the Copy text layer (text.<rev>.json, at the root only).
+const TYPES: [RegExp, string][] = [
+  [/\.m3u8$/, "application/vnd.apple.mpegurl"],
+  [/\.vtt$/, "text/vtt; charset=utf-8"],
+  [/^text\.\d+\.json$/, "application/json"],
+];
 const INERT = "default-src 'none'; sandbox";
+
+export type Route = { kind: "page" } | { kind: "meta" } | { kind: "text"; type: string } | { kind: "media"; type: string } | null;
+
+/** How a file in a share is served, from its path inside the share folder; null is a 404. */
+export function route(path: string): Route {
+  if (path === "index.html") return { kind: "page" };
+  if (path === "meta.json") return { kind: "meta" };
+  const text = TYPES.find(([re]) => re.test(path));
+  if (text) return { kind: "text", type: text[1] };
+  const type = MEDIA[path.split(".").pop()!.toLowerCase()];
+  return type ? { kind: "media", type } : null;
+}
 
 async function readMeta(id: string) {
   const text = await r2.getText(`r/${id}/meta.json`, MAX_META);
@@ -48,13 +64,15 @@ export async function serveShare(c: Context) {
   const [share] = await sql`select 1 from shares where id = ${id} and deleted_at is null`;
   if (!share) return c.html(notFoundPage(), 404);
   const key = `r/${id}/${path}`;
+  const how = route(path);
+  if (!how) return c.body(null, 404);
 
-  if (PROXIED.test(path)) {
+  if (how.kind !== "media") {
     const base = { "cache-control": "no-cache", "x-robots-tag": "noindex" };
-    if (path === "index.html" || path === "meta.json") {
+    if (how.kind === "page" || how.kind === "meta") {
       const meta = await readMeta(id);
-      if (!meta) return path === "index.html" ? c.html(notFoundPage("This recording is still starting. Try again in a moment."), 404) : c.body(null, 404);
-      if (path === "meta.json") return c.json(meta, 200, { ...base, "content-security-policy": INERT });
+      if (!meta) return how.kind === "page" ? c.html(notFoundPage("This recording is still starting. Try again in a moment."), 404) : c.body(null, 404);
+      if (how.kind === "meta") return c.json(meta, 200, { ...base, "content-security-policy": INERT });
       const nonce = randomBytes(16).toString("base64");
       return c.body(renderViewer(meta, nonce), 200, {
         ...base, "content-type": "text/html; charset=utf-8", "content-security-policy": viewerCSP(nonce, r2.endpoint),
@@ -62,13 +80,11 @@ export async function serveShare(c: Context) {
     }
     const text = await r2.getText(key, MAX_TEXT);
     if (text === null) return c.body(null, 404);
-    const type = TYPES.find(([re]) => re.test(path))?.[1] ?? "application/octet-stream";
-    return c.body(text, 200, { ...base, "content-type": type, "content-security-policy": INERT });
+    return c.body(text, 200, { ...base, "content-type": how.type, "content-security-policy": INERT });
   }
 
   // A click on Download navigates to the MP4 (Sec-Fetch-Dest: document): ask R2 to send it as a file.
-  const type = MEDIA[path.split(".").pop()!.toLowerCase()];
-  if (!type) return c.body(null, 404);
+  const type = how.type;
   const dest = c.req.header("sec-fetch-dest");
   const download = dest === "document" && path.endsWith(".mp4");
   const url = r2.presignGet(key, {

@@ -52,6 +52,8 @@ It's a native Swift app with no account needed and no telemetry: share links poi
 
 ## What it does
 
+**A step-by-step guide from the same take.** Every click, run of typing and shortcut becomes a numbered step with a picture of the screen at that moment, the name of what you clicked (read from the screen on your Mac) and what you said while doing it. Your link shows it as a **Guide** and a **Click-through**, where viewers click through the steps themselves, next to the video, and viewers can select and copy text straight out of the paused video. Edit or hide steps in the Guide panel (⌘9), or export the guide as a web page, Markdown with images, or a Claude skill. On Macs with Apple Intelligence, steps you talked through get your reason added ("Click \"Save\" to keep the draft"). Blurred text never reaches the guide, and typed text stays out unless you turn it on.
+
 **Records what you need, as separate tracks.** A display, a window or an area, plus camera, microphone and system audio, with no virtual audio driver. Camera and audio stay on their own tracks, so you can move the camera bubble or mute system sound after recording.
 
 **The camera goes where you put it.** Drag the camera bubble while you record and the video follows: it starts where the bubble was and glides each time you moved it. In the editor, drag it anywhere on the preview (it snaps to the edges and centre lines), pick a corner, delete single moves or keep it in one place. Circle, rounded square or a 3:4 portrait tile.
@@ -201,7 +203,7 @@ In the editor:
 | ⌘A | Select every zoom (shift-click or drag a box on the zoom lane to select some) |
 | ⌘K | Command menu: search every command and setting |
 | ⌘/ | Show every editor shortcut |
-| ⌘1 to ⌘8 | Background, Cursor, Zoom, Camera, Canvas, Audio, Captions, Overlays |
+| ⌘1 to ⌘9 | Background, Cursor, Zoom, Camera, Canvas, Audio, Captions, Overlays, Guide |
 | ⌘= / ⌘− | Zoom the timeline in or out |
 | ⌘E | Export |
 | ⌘Z / ⇧⌘Z | Undo / redo |
@@ -240,6 +242,9 @@ reelbird captions latest                       # captions.vtt, made on this Mac
 reelbird enhance latest --strength medium      # clean up the voice; the raw mic is kept
 reelbird markers latest                        # markers dropped while recording
 reelbird markers latest --as-chapters          # make them the chapters on the share page
+reelbird steps latest                          # the guide's steps: each click, typing and shortcut, with what was clicked
+reelbird steps latest --text c4210="Open the inbox" --hide c9876   # reword or hide a step
+reelbird guide latest --format html            # a web page with Guide and Click-through (also md, skill)
 reelbird share latest                          # upload and print the link
 reelbird share latest --polished               # render the edit, same link
 reelbird cloud login                           # Reelbird Pro: sign in in the browser instead of setting up a bucket
@@ -255,7 +260,7 @@ When you record from a terminal, macOS asks for Screen Recording permission for 
 
 ## MCP server
 
-`reelbird mcp` runs an MCP server over stdio. Agents get tools to list sources, start and stop recordings, drop and list markers (`add_marker`, `list_markers`), list and inspect projects, edit (including crop, camera placement, camera layouts and speed), blur regions, find and blur sensitive info, add and remove overlays, export, caption, enhance the voice, find silences, speed up typing, suggest chapters, and share or unshare.
+`reelbird mcp` runs an MCP server over stdio. Agents get tools to list sources, start and stop recordings, drop and list markers (`add_marker`, `list_markers`), list and inspect projects, edit (including crop, camera placement, camera layouts and speed), blur regions, find and blur sensitive info, add and remove overlays, export, caption, enhance the voice, find silences, speed up typing, suggest chapters, read and edit the step guide (`get_steps`, `edit_step`, `export_guide`), describe a recording without watching it (`describe_take`: its steps, what was said and markers, so an agent can follow what you showed it), and share or unshare.
 
 **Claude Code**
 
@@ -336,6 +341,7 @@ Then turn on **Share while recording** in the picker, and the link is on your cl
 
 - Recordings, edits, captions and transcripts stay on your Mac, in `~/Movies/Reelbird` unless you choose another folder.
 - Find Sensitive Info reads the screen with Apple's on-device text recognition. Findings stay on your Mac; the command line and MCP show only masked previews (`sk-p…F2`, `•••• 4242`).
+- The step guide is made on your Mac too. Shared links carry its pictures (rendered with your blurs) and the text on screen in the published video, so viewers can copy it; a label under a blur is dropped, and typed text stays out unless you turn on **Show what was typed** (sensitive-looking text is masked even then). Turn either off in the Guide panel.
 - A link shared while recording plays that raw take until you **Update link**, so update it after adding blurs. The editor reminds you.
 - Captions and titles are made on-device by Apple's frameworks. No API keys and no cloud services. (On macOS 26, macOS downloads Apple's speech model the first time you make captions.)
 - Nothing is uploaded unless you share. Shares go only to the bucket you configured, signed with your own keys, or to Reelbird Pro if you sign in to it. The secret key lives in your macOS Keychain.
@@ -351,7 +357,7 @@ Then turn on **Share while recording** in the picker, and the link is on your cl
 
 ## How it's built
 
-Seven Swift modules with no third-party dependencies: capture (ScreenCaptureKit, AVFoundation), render (Metal), share (S3 uploads, HLS, viewer page), AI (Speech, Foundation Models), a shared core, the app and the CLI. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the recording pipeline, sharing flow and renderer. [docs/FORMAT.md](docs/FORMAT.md) documents the project format.
+Eight Swift modules with no third-party dependencies: capture (ScreenCaptureKit, AVFoundation), render (Metal), share (S3 uploads, HLS, viewer page), AI (Speech, Vision, Foundation Models), guide (steps, step pictures and guide exports), a shared core, the app and the CLI. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the recording pipeline, sharing flow and renderer. [docs/FORMAT.md](docs/FORMAT.md) documents the project format.
 
 ## Contributing
 

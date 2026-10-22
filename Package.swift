@@ -25,21 +25,23 @@ let package = Package(
         .target(name: "ReelbirdShare", dependencies: ["ReelbirdCore"], swiftSettings: strict),
         // On-device captions, titles, chapters, silence detection.
         .target(name: "ReelbirdAI", dependencies: ["ReelbirdCore"], swiftSettings: strict),
+        // Step guides: steps, step images, guide exports and what a link publishes with them.
+        .target(name: "ReelbirdGuide", dependencies: ["ReelbirdCore", "ReelbirdRender", "ReelbirdShare", "ReelbirdAI"], swiftSettings: strict),
         // The Mac app.
         .executableTarget(
             name: "ReelbirdApp",
-            dependencies: ["ReelbirdCore", "ReelbirdCapture", "ReelbirdRender", "ReelbirdShare", "ReelbirdAI"],
+            dependencies: ["ReelbirdCore", "ReelbirdCapture", "ReelbirdRender", "ReelbirdShare", "ReelbirdAI", "ReelbirdGuide"],
             swiftSettings: strict
         ),
         // The `reelbird` command line tool and MCP server.
         .executableTarget(
             name: "ReelbirdCLI",
-            dependencies: ["ReelbirdCore", "ReelbirdCapture", "ReelbirdRender", "ReelbirdShare", "ReelbirdAI"],
+            dependencies: ["ReelbirdCore", "ReelbirdCapture", "ReelbirdRender", "ReelbirdShare", "ReelbirdAI", "ReelbirdGuide"],
             swiftSettings: strict
         ),
         .testTarget(name: "ReelbirdCoreTests", dependencies: ["ReelbirdCore"], swiftSettings: strict),
         .testTarget(name: "ReelbirdCaptureTests", dependencies: ["ReelbirdCapture"], swiftSettings: strict),
-        .testTarget(name: "ReelbirdRenderTests", dependencies: ["ReelbirdRender"], swiftSettings: strict),
+        .testTarget(name: "ReelbirdRenderTests", dependencies: ["ReelbirdRender", "ReelbirdGuide"], swiftSettings: strict),
         .testTarget(name: "ReelbirdShareTests", dependencies: ["ReelbirdShare"], swiftSettings: strict),
         .testTarget(name: "ReelbirdAITests", dependencies: ["ReelbirdAI"], swiftSettings: strict),
     ]

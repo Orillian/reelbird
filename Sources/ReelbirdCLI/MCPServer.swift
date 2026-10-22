@@ -1,5 +1,6 @@
 import Foundation
 import ReelbirdCore
+import ReelbirdGuide
 
 /// A JSON-RPC error returned to the MCP client.
 struct RPCError: Error, Sendable {
@@ -228,6 +229,26 @@ final class MCPServer: Sendable {
             return Operations.markerAdded(marker, session: id)
         case "list_markers":
             return try ops.markers(try a.requiredString("project"), asChapters: try a.bool("as_chapters") ?? false)
+        case "get_steps":
+            return try await ops.steps(try a.requiredString("project"), refresh: try a.bool("refresh") ?? false, progress: progress)
+        case "describe_take":
+            return try await ops.describeTake(try a.requiredString("project"))
+        case "edit_step":
+            let id = try a.requiredString("id")
+            var changes = Operations.StepChanges()
+            if let text = try a.string("text") { changes.texts.append((id, text)) }
+            if let hidden = try a.bool("hidden") { if hidden { changes.hide.append(id) } else { changes.show.append(id) } }
+            guard !changes.isEmpty else { throw CLIError.usage("Give text, hidden or both.") }
+            return try await ops.steps(try a.requiredString("project"), changes: changes, progress: progress)
+        case "export_guide":
+            var format = GuideExport.Format.html
+            if let f = try a.string("format") {
+                guard let g = GuideExport.Format(name: f) else { throw CLIError.usage("format must be html, md or skill.") }
+                format = g
+            }
+            let out = try a.string("out").map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }
+            return try await ops.guide(try a.requiredString("project"), format: format, out: out, overwrite: try a.bool("overwrite") ?? false,
+                                       progress: progress)
         case "list_projects":
             return ops.list(limit: try a.int("limit"))
         case "project_info":

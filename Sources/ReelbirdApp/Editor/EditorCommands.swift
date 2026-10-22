@@ -1,5 +1,6 @@
 import AppKit
 import ReelbirdCore
+import ReelbirdGuide
 import ReelbirdRender
 
 /// A keyboard shortcut: one key plus modifiers. Matches key events, feeds menu key equivalents, and draws
@@ -428,6 +429,18 @@ struct EditorCommand: Identifiable {
             })
         }
         let shared = m.shareInfo != nil
+        for (format, name, words) in [(GuideExport.Format.html, "Web Page", ["html", "click-through", "demo"]),
+                                      (.markdown, "Markdown", ["md", "docs", "readme"]), (.skill, "Claude Skill", ["agent", "skill.md"])] {
+            c.append(.init(id: "export-guide-\(format.rawValue)", title: "Export Guide as \(name)…", area: .file, symbol: "list.number",
+                           keywords: ["steps", "guide", "how-to", "tutorial"] + words, isEnabled: !m.guidePanel.isExporting) {
+                m.exportGuide(format)
+            })
+        }
+        c.append(.init(id: "guide-refresh", title: "Read Guide Steps Again", area: .file, symbol: "arrow.clockwise",
+                       keywords: ["steps", "guide", "rescan", "ocr"]) {
+            m.section = .guide
+            m.loadGuide(refresh: true)
+        })
         c.append(.init(id: "share", title: shared ? "Sharing Options…" : "Share Link…", area: .file, symbol: "link", shortcut: EditorKeys.share,
                        keywords: ["upload", "publish", "url"]) { m.showShare = true })
         c.append(.init(id: "copy-link", title: "Copy Link", area: .file, symbol: "link", keywords: ["share", "url", "clipboard"],

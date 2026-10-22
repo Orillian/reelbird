@@ -57,14 +57,19 @@ public enum ShareService {
     ///     only the title, chapters, poster or captions of an existing share.
     ///   - poster: `.keep` with a new video takes a frame from that video; the old one never stays.
     ///   - captions: WebVTT on the output timeline.
+    ///   - guide: the step guide (Guide and Click-through on the page). `.keep` with a new video takes it down:
+    ///     its times belong to the old video.
+    ///   - text: the text layer (`TextLayer` JSON on the output timeline). `.keep` with a new video takes it down.
     public static func publish(bundle: ProjectBundle, video: URL?, poster: ShareAsset<CGImage>, captions: ShareAsset<URL>,
+                               guide: ShareAsset<SharedGuide> = .keep, text: ShareAsset<URL> = .keep,
                                destination: ShareDestination, secret: String,
                                progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo {
-        try await publish(bundle: bundle, video: video, poster: poster, captions: captions, destination: destination,
-                          secret: secret, session: nil, progress: progress)
+        try await publish(bundle: bundle, video: video, poster: poster, captions: captions, guide: guide, text: text,
+                          destination: destination, secret: secret, session: nil, progress: progress)
     }
 
     static func publish(bundle: ProjectBundle, video: URL?, poster: ShareAsset<CGImage>, captions: ShareAsset<URL>,
+                        guide: ShareAsset<SharedGuide> = .keep, text: ShareAsset<URL> = .keep,
                         destination: ShareDestination, secret: String, session: URLSession?,
                         progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo {
         let d = ShareSettings.normalized(destination)
@@ -154,6 +159,25 @@ public enum ShareService {
             meta.captions = nil
             meta.captionsLanguage = nil
         }
+        switch guide {
+        case .keep:
+            if video != nil { meta.guide = nil }
+        case .replace(let g):
+            meta.guide = try await uploadGuide(g, revision: rev, layout: layout, client: client)
+        case .remove:
+            meta.guide = nil
+        }
+        switch text {
+        case .keep:
+            if video != nil { meta.text = nil }
+        case .replace(let url):
+            let data = try Data(contentsOf: url)
+            let name = "text.\(rev).json"
+            try await client.put(layout.key(name), data: data, contentType: "application/json", cacheControl: ShareLayout.immutable)
+            meta.text = name
+        case .remove:
+            meta.text = nil
+        }
         if meta.card == nil || previous?.title != meta.title, let card = TitleCard.jpeg(title: meta.title) {
             try await client.put(layout.cardKey, data: card, contentType: "image/jpeg", cacheControl: ShareLayout.revalidate)
             meta.card = "card.jpg"
@@ -175,7 +199,7 @@ public enum ShareService {
         await live?.superseded()
 
         // The new revision is live: delete what it doesn't reference.
-        await removeUnreferenced(meta, layout: layout, client: client)
+        await removeUnreferenced(meta, previous: previous, layout: layout, client: client)
         progress(1)
         return ShareInfo(key: layout.key, url: layout.pageURL, polished: meta.video != nil, updatedAt: now, revision: rev)
     }
@@ -183,10 +207,13 @@ public enum ShareService {
     /// Deletes the share's files that `meta` doesn't reference: every earlier revision's video, poster
     /// and captions, and the recorded stream once `meta` plays a polished MP4. Best effort and idempotent
     /// (deleting a missing object succeeds), so whatever a failure leaves behind the next publish deletes.
-    static func removeUnreferenced(_ meta: ViewerMeta, layout: ShareLayout, client: S3Client) async {
-        let keep = Set([meta.video, meta.poster, meta.captions].compactMap { $0 })
-        let stale = (1..<max(1, meta.revision)).flatMap { r in ["video.\(r).mp4", "poster.\(r).jpg", "captions.\(r).vtt"] }
+    static func removeUnreferenced(_ meta: ViewerMeta, previous: ViewerMeta? = nil, layout: ShareLayout, client: S3Client) async {
+        let images = Set(meta.guide?.steps.compactMap(\.image) ?? [])
+        let keep = Set([meta.video, meta.poster, meta.captions, meta.text].compactMap { $0 }).union(images)
+        var stale = (1..<max(1, meta.revision)).flatMap { r in ["video.\(r).mp4", "poster.\(r).jpg", "captions.\(r).vtt", "text.\(r).json"] }
             .filter { !keep.contains($0) }
+        // Step images are named per revision ("steps.<rev>/NN.jpg"): the ones the last revision showed.
+        stale += (previous?.guide?.steps.compactMap(\.image) ?? []).filter { !images.contains($0) }
         await withTaskGroup(of: Void.self) { g in
             for name in stale { g.addTask { try? await client.delete(layout.key(name)) } }
         }
@@ -232,6 +259,39 @@ public enum ShareService {
         let client = S3Client(destination: d, secret: secret, session: session)
         try await client.deletePrefix(layout.folder)
         try await client.delete(layout.key)
+    }
+
+    // MARK: Guide
+
+    /// The meta budget for the guide: hosted links refuse a meta.json over 256 KB, so steps keep well under it.
+    static let guideBudget = 160_000
+
+    /// Uploads the step images as `steps.<rev>/NN.jpg` and returns the guide for meta.json, trimmed to fit
+    /// `guideBudget` (notes shortened first, then the last steps dropped).
+    static func uploadGuide(_ g: SharedGuide, revision rev: Int, layout: ShareLayout, client: S3Client) async throws -> ViewerMeta.Guide? {
+        var steps = Array(g.steps.prefix(SharedGuide.maxSteps))
+        guard !steps.isEmpty else { return nil }
+        for i in steps.indices {
+            steps[i].n = i + 1
+            steps[i].text = String(steps[i].text.prefix(300))
+            steps[i].note = steps[i].note.map { String($0.prefix(300)) }
+            steps[i].section = steps[i].section.map { String($0.prefix(120)) }
+        }
+        func size(_ s: [ViewerMeta.Guide.Step]) -> Int { (try? JSONCoding.encoder.encode(s).count) ?? 0 }
+        if size(steps) > guideBudget { for i in steps.indices { steps[i].note = steps[i].note.map { String($0.prefix(80)) } } }
+        while size(steps) > guideBudget, steps.count > 1 { steps.removeLast() }
+        try await withThrowingTaskGroup(of: (Int, String).self) { group in
+            for (i, s) in steps.enumerated() {
+                guard i < g.images.count, let jpeg = g.images[i] else { continue }
+                let name = String(format: "steps.%d/%02d.jpg", rev, s.n)
+                group.addTask {
+                    try await client.put(layout.key(name), data: jpeg, contentType: "image/jpeg", cacheControl: ShareLayout.immutable)
+                    return (i, name)
+                }
+            }
+            for try await (i, name) in group { steps[i].image = name }
+        }
+        return ViewerMeta.Guide(steps: steps)
     }
 
     // MARK: Media helpers

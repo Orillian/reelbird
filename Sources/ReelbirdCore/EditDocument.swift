@@ -33,6 +33,8 @@ public struct EditDocument: Codable, Hashable, Sendable {
     /// logged while recording (`marker` events); read them with `Markers.resolve(edit:events:)`.
     public var markers: [Marker]?
     public var title: String?
+    /// The step guide: what the share page gets and the steps changed by hand. Older files have none.
+    public var guide = GuideSettings()
 
     public init() {}
 
@@ -60,6 +62,7 @@ public struct EditDocument: Codable, Hashable, Sendable {
         chapters = try c.decodeIfPresent([Chapter].self, forKey: .chapters) ?? d.chapters
         markers = try? c.decodeIfPresent([Marker].self, forKey: .markers)
         title = try c.decodeIfPresent(String.self, forKey: .title)
+        guide = (try? c.decodeIfPresent(GuideSettings.self, forKey: .guide)) ?? d.guide
     }
 
     /// The default edit for a fresh recording: pauses cut, everything else at defaults.

@@ -3,7 +3,9 @@ import Foundation
 import ReelbirdAI
 import ReelbirdCapture
 import ReelbirdCore
+import ReelbirdGuide
 import ReelbirdRender
+import ReelbirdShare
 
 // Simulated engine for snapshots, `--selftest` and `--mock`. Behaviour is deliberately
 // realistic (timing, progress, warnings) so the UI can be exercised without permissions.
@@ -391,7 +393,8 @@ final class MockShare: ShareServiceProtocol, @unchecked Sendable {
             throw ShareTestError("Uploads work, but the public URL must start with https:// so viewers can open links.")
         }
     }
-    func publish(bundle: ProjectBundle, video: URL?, poster: ShareAsset<CGImage>, captions: ShareAsset<URL>, destination: ShareDestination,
+    func publish(bundle: ProjectBundle, video: URL?, poster: ShareAsset<CGImage>, captions: ShareAsset<URL>,
+                 guide: ShareAsset<SharedGuide>, text: ShareAsset<URL>, destination: ShareDestination,
                  secret: String, progress: @escaping @Sendable (Double) -> Void) async throws -> ShareInfo {
         for i in 1...25 { try await Task.sleep(for: .milliseconds(50)); progress(Double(i) / 25) }
         let existing = (try? bundle.readManifest())?.share
@@ -472,6 +475,51 @@ struct MockAI: AIService {
     }
     func webVTT(_ t: Transcript) -> String { Captions.webVTT(t) }
     func silentRanges(audio: URL) async throws -> [TimeRange] { [TimeRange(start: 9, end: 15)] }
+}
+
+/// Mock guide: five steps of the mock checkout walkthrough, drawn with `MockArt`.
+struct MockGuide: GuideService {
+    var modelAvailable: Bool { true }
+
+    func steps(bundle: ProjectBundle, edit: EditDocument, refresh: Bool,
+               progress: @escaping @Sendable (Double) -> Void) async throws -> [GuideStep] {
+        try await Task.sleep(for: .milliseconds(refresh ? 900 : 300))
+        progress(1)
+        return Self.sampleSteps(edit: edit)
+    }
+
+    static func sampleSteps(edit: EditDocument) -> [GuideStep] {
+        let scanned = [
+            GuideStep(id: "c2410", kind: .click, t: 2.41, point: NormPoint(x: 0.12, y: 0.31), label: "Cart",
+                      modelText: "Click \"Cart\" to review the items"),
+            GuideStep(id: "c8120", kind: .click, t: 8.12, point: NormPoint(x: 0.8, y: 0.12), label: "Checkout"),
+            GuideStep(id: "c14030", kind: .type, t: 14.03, point: NormPoint(x: 0.5, y: 0.42), label: "Shipping address", typed: "1 Main St", keys: "Tab"),
+            GuideStep(id: "c22500", kind: .click, t: 22.5, point: NormPoint(x: 0.5, y: 0.55), label: "Express (2 days)"),
+            GuideStep(id: "k30100", kind: .shortcut, t: 30.1, keys: "⌘⏎"),
+            GuideStep(id: "c36800", kind: .click, t: 36.8, point: NormPoint(x: 0.7, y: 0.8), label: "Pay now",
+                      modelText: "Click \"Pay now\" to place the order"),
+        ]
+        let markers = [Marker(id: "m1", t: 13, title: "Shipping"), Marker(id: "m2", t: 30, title: "Paying")]
+        return GuideSteps.resolve(scanned, edit: edit, duration: 46, markers: markers)
+    }
+
+    static func sampleImages(_ steps: [GuideStep], maxWidth: Int) -> [CGImage] {
+        steps.enumerated().compactMap { i, s in
+            MockArt.image(width: maxWidth, height: maxWidth * 10 / 16, variant: i.isMultiple(of: 2) ? .docs : .browser, t: s.t)
+        }
+    }
+    func images(bundle: ProjectBundle, edit: EditDocument, steps: [GuideStep], maxWidth: Int) async throws -> [CGImage] {
+        Self.sampleImages(steps, maxWidth: maxWidth)
+    }
+    func shareAssets(bundle: ProjectBundle, edit: EditDocument, video: URL, steps: [GuideStep]?, workDir: URL,
+                     progress: @escaping @Sendable (Double) -> Void) async -> (guide: ShareAsset<SharedGuide>, text: ShareAsset<URL>) {
+        progress(1)
+        return (.remove, .remove)
+    }
+    func export(bundle: ProjectBundle, edit: EditDocument, format: GuideExport.Format, to folder: URL) async throws -> URL {
+        try await Task.sleep(for: .milliseconds(600))
+        return folder.appendingPathComponent(format == .markdown ? "guide.md" : format == .html ? "index.html" : "SKILL.md")
+    }
 }
 
 /// Mock live inputs: a speech-like meter and a placeholder camera view.

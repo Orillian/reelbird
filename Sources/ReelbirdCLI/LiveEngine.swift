@@ -5,6 +5,7 @@ import Foundation
 import ReelbirdAI
 import ReelbirdCapture
 import ReelbirdCore
+import ReelbirdGuide
 import ReelbirdRender
 import ReelbirdShare
 import Synchronization
@@ -167,10 +168,14 @@ struct LiveEngine: Engine {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("reelbird-share-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
+        // The guide's steps are read from the screen while the video renders.
+        async let scanned: [GuideStep]? = edit.guide.share ? (try? await StepScanner.steps(bundle: bundle, edit: edit)) : nil
         let video = try await export(bundle: bundle, edit: edit,
                                      request: ExportRequest(format: .mp4, height: 1080, destination: tmp.appendingPathComponent("video.mp4")),
-                                     progress: { progress($0 * 0.6) })
+                                     progress: { progress($0 * 0.55) })
         let poster = try? await Thumbnailer.poster(bundle: bundle, at: 0, maxWidth: 1280)
+        let assets = await GuideBuilder.shareAssets(bundle: bundle, edit: edit, video: video, steps: await scanned, workDir: tmp,
+                                                    progress: { progress(0.55 + $0 * 0.1) })
         // No captions in the edit takes the published ones down too.
         var captions = ShareAsset<URL>.remove
         if edit.captions.file != nil, let transcript = Self.transcript(bundle: bundle) {
@@ -180,7 +185,8 @@ struct LiveEngine: Engine {
         }
         do {
             return try await ShareService.publish(bundle: bundle, video: video, poster: poster.map { .replace($0) } ?? .keep,
-                                                  captions: captions, destination: destination, secret: secret) { progress(0.6 + $0 * 0.4) }
+                                                  captions: captions, guide: assets.guide, text: assets.text,
+                                                  destination: destination, secret: secret) { progress(0.65 + $0 * 0.35) }
         } catch { throw CLIError("Sharing failed: \(Self.shareMessage(error))") }
     }
 

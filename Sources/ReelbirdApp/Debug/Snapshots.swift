@@ -199,6 +199,10 @@ import SwiftUI
             }
         }
         scenes.append(editor(.background))
+        scenes.append(editor(.guide) { m in
+            m.change("x") { $0.guide.setEdit(id: "c8120", text: .some("Click \"Checkout\" at the top right")) }
+            m.setGuideForSnapshot()
+        })
         scenes.append(editor(.cursor) { m in m.change("x") { $0.cursor.showKeystrokes = true } })
         scenes.append(editor(.zoom) { m in
             m.addZoomAtPlayhead()
@@ -535,6 +539,23 @@ import SwiftUI
             wait(seconds: 1.5) { !picker.loading }
             return AnyView(SourcePickerView(model: picker, controller: nil, prefs: prefs))
         })
+        // The Guide panel on a real recording with clicks (the synthetic take has none):
+        // RB_LIVE_GUIDE_BUNDLE=/path/to/take.reelbird ReelbirdApp --snapshot DIR live-guide --live
+        if let path = ProcessInfo.processInfo.environment["RB_LIVE_GUIDE_BUNDLE"] {
+            let take = ProjectBundle(url: URL(fileURLWithPath: path))
+            scenes.append(Scene(name: "live-guide", size: CGSize(width: 1320, height: 840), backdrop: false) {
+                guard let m = try? EditorModel(bundle: take, services: services) else { return AnyView(Text("Editor failed")) }
+                m.autosaveEnabled = false
+                m.attachPlayer()
+                m.section = .guide
+                m.loadGuide()
+                wait(seconds: 90) {
+                    let g = m.guidePanel
+                    return g.loaded && g.thumbnails.count == g.steps.count && m.filmstrip.count >= 12
+                }
+                return AnyView(EditorView(model: m, app: nil))
+            })
+        }
         guard let bundle = recordSynthetic(at: bundleURL, seconds: 6) else {
             print("Couldn't record the synthetic take for live snapshots")
             return scenes

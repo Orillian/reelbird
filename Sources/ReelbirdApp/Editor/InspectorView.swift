@@ -33,6 +33,7 @@ struct InspectorView: View {
                     case .audio: AudioSection(model: model)
                     case .captions: CaptionsSection(model: model)
                     case .overlays: OverlaysSection(model: model)
+                    case .guide: GuideSection(model: model)
                     }
                 }
                 .padding(Theme.Space.l)
