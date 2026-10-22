@@ -3,7 +3,7 @@ title: "Architecture"
 seoTitle: "How Reelbird is built: architecture"
 description: "ScreenCaptureKit capture in 2-second segments, one Metal compositor for preview and export, sharing to your bucket or Reelbird Pro, on-device audio and captions."
 order: 8
-updated: "2026-10-20"
+updated: "2026-10-22"
 source: "docs/ARCHITECTURE.md"
 ---
 
@@ -16,12 +16,18 @@ ReelbirdCore     project format, edit document, events, timeline + motion maths 
 ReelbirdCapture  ScreenCaptureKit, camera, microphone, input events, segmented writers, health checks
 ReelbirdRender   Metal compositor, preview player, exporter
 ReelbirdShare    S3-compatible uploads (SigV4), HLS playlists, static viewer page, Keychain config
-ReelbirdAI       on-device captions (SpeechAnalyzer), titles/chapters (Foundation Models), silence detection, Find Sensitive Info (Vision)
+ReelbirdAI       on-device captions (SpeechAnalyzer), titles/chapters (Foundation Models), silence detection, Find Sensitive Info (Vision),
+                 guide steps (labels read with Vision, wording by Foundation Models), the text layer of a published video
+ReelbirdGuide    step guides: step pictures, guide exports (HTML, Markdown, Claude skill) and what a link publishes with them
 ReelbirdApp      the Mac app
 ReelbirdCLI      `reelbird` command line tool + MCP server
 ```
 
-Dependencies flow inward: every module depends on `ReelbirdCore` and nothing else, except the app and the CLI, which compose all of them.
+Dependencies flow inward: every module depends on `ReelbirdCore` and nothing else, except `ReelbirdGuide`, which composes render, share and AI for the guide, and the app and the CLI, which compose all of them.
+
+## Step guides
+
+A take's guide is built from what Reelbird already logs. `StepExtractor` (core, pure) turns `events.jsonl` into steps: clicks, typing folded into the field clicked before it, shortcuts. `StepScanner` (AI) reads what each click hit from the frame just before it with Vision, and on macOS 26+ asks the on-device model to word steps the narrator talked through; the scan is cached in `steps.json`. `GuideSteps.resolve` (core) applies the edit: kept time and crop, hidden and rewritten steps, blurs, typed-text rules, sections from markers. `StepImages` (render) draws each step's frame through the same compositor as the video, without zoom, camera or background. On **Update link**, the steps are scanned while the video renders; then `GuideBuilder.shareAssets` renders the pictures and `ScreenText` reads the text layer from the exported MP4 (so blurred text is never in it), and `ShareService.publish` uploads both under the new revision. Formats are in [Project format](/docs/format/#guide) and [Sharing setup](/docs/sharing/).
 
 ## Recording
 

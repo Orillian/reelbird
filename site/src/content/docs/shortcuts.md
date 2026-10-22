@@ -3,7 +3,7 @@ title: "Keyboard shortcuts"
 seoTitle: "Reelbird keyboard shortcuts"
 description: "Every Reelbird keyboard shortcut: start and stop from any app, the picker, the countdown, and the editor timeline."
 order: 3
-updated: "2026-10-21"
+updated: "2026-10-22"
 source: "README.md"
 ---
 
@@ -46,7 +46,7 @@ In the editor:
 | ⌘A | Select every zoom (shift-click or drag a box on the zoom lane to select some) |
 | ⌘K | Command menu: search every command and setting |
 | ⌘/ | Show every editor shortcut |
-| ⌘1 to ⌘8 | Background, Cursor, Zoom, Camera, Canvas, Audio, Captions, Overlays |
+| ⌘1 to ⌘9 | Background, Cursor, Zoom, Camera, Canvas, Audio, Captions, Overlays, Guide |
 | ⌘= / ⌘− | Zoom the timeline in or out |
 | ⌘E | Export |
 | ⌘Z / ⇧⌘Z | Undo / redo |

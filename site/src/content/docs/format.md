@@ -3,7 +3,7 @@ title: "The .reelbird project format"
 seoTitle: "The .reelbird project format"
 description: "A folder of standard MP4 files, JSON and an event log with relative paths. Spec for tools that read or write Reelbird projects."
 order: 7
-updated: "2026-10-20"
+updated: "2026-10-22"
 source: "docs/FORMAT.md"
 ---
 
@@ -29,6 +29,7 @@ Demo.reelbird/
   analysis.json     optional cache: loudness, noise floor and speech ranges of the audio (AudioAnalysis)
   voice/            optional cache: the enhanced voice stem (voice-<hash>.caf + stem.json)
   crop-suggestion.json  optional cache: the detected browser toolbar (CropSuggestion)
+  steps.json        optional cache: the guide's steps read from the screen (StepDocument)
   exports/          rendered files
 ```
 
@@ -122,6 +123,34 @@ Speed-up suggestions (the editor's Speed Up Typing, `reelbird speedup`, MCP `sug
 `edit.json → markers` holds the markers once they are renamed, deleted or added in the editor: `[{"id": "m1", "t": 8.4, "title": "Marker 1"}]`, `t` on the recording timeline. Absent (older files, or nothing changed yet) = the `marker` events in `events.jsonl`, with IDs `m1`, `m2`, … in time order; `[]` = every marker deleted. A value that can't be read counts as absent.
 
 Use Markers as Chapters (editor, `reelbird markers --as-chapters`, MCP `list_markers` with `as_chapters`) replaces `chapters` with one per marker. A marker in a cut or a pause moves to where the video carries on, one past the end is dropped, markers less than a second apart in the edited video merge (the first title wins), and when the first marker comes more than a second in, a "Start" chapter opens the list.
+
+## Guide
+
+Every take has a step guide: each click, run of typing and shortcut in `events.jsonl` becomes a step, with what was clicked (read from the screen video on the Mac), what was said around it and an instruction. The editor's Guide panel, `reelbird steps`, `reelbird guide` and MCP `get_steps` / `describe_take` / `export_guide` show it; share links carry it as Guide and Click-through views.
+
+`edit.json → guide` holds what the link gets and the steps changed by hand:
+
+```json
+"guide": {"share": true, "copyText": true, "showTypedText": false,
+          "edits": [{"id": "c4210", "text": "Open the Inbox"}, {"id": "c9876", "hidden": true}]}
+```
+
+- `share` (default `true`): publish the guide with the link. `copyText` (default `true`): publish the text layer, so viewers can select text in the paused video.
+- `showTypedText` (default `false`): typing steps quote what was typed. Otherwise they name the field ("Type in \"Email\""). Text that looks like an email, key, card or phone number is masked, and nothing typed while a blur is on screen is ever quoted.
+- `edits`: per step ID, a replacement `text` and/or `hidden: true`. Unknown IDs are kept, since the step can come back on a later scan. A missing `guide` reads as the defaults.
+
+How steps are made (`StepExtractor`, pure):
+
+- A left mouse down is a click; two within 0.4 s and 1.5% of the screen are a double-click; button 1 is a right-click; a press that moves more than 3% before release is a drag. Clicks on the same spot within a second merge (`count`).
+- Keys with ⌘, ⌃ or ⌥ are shortcuts (the same one in a row merges). Plain keys in runs with gaps of at most 1.5 s are typing, folded into the click just before (within 10 s) as typing into that field; ⏎ or ⇥ right after ends it ("then press Return"). A lone ⏎, ⇥ or ⎋ is a key step. Arrows and page keys are not steps. Typing and shortcuts need keystroke recording.
+- IDs are stable: `c` (pointer), `t` (typing with no click before it) or `k` (keys) plus the time of the first event in milliseconds.
+- What was clicked: the frame just before the click is read with Vision (accurate, language correction on) in a 640 × 240 pixel window around the pointer; the label is the smallest text box under the pointer (8 px of slack), else the nearest text within 90 px, counting text on the same row as half as far. A line cut off by the window is read again across the whole frame width.
+- For the edit (`GuideSteps.resolve`): steps in trimmed, cut or paused time, or outside the crop, are left out; hidden steps go; a label under a blur is dropped (with the model's sentence); narration is what was said, a sentence at a time, from 1.5 s after the previous step to 1.5 s after this one; the last marker since the previous step names a section.
+- Wording: a hand edit, else the on-device model's sentence (macOS 26+, only for steps with narration, and only when it still names the label in quotes), else the template: `Click "Inbox"`, `Click next to "…"` (a checkbox beside its text), `Double-click`, `Right-click`, `Drag`, `Click here` (no label), `Type "…" in "Email"`, `Press ⌘S`, `(3 times)`.
+
+`steps.json` caches the scan (labels and model wording) for the recording: `version`, `inputs` (the sizes of `events.jsonl`, the screen video and `transcript.json`, and the screen video's path), `writer` (`template` or `model`) and `steps` (`GuideStep`: `id`, `kind`, `t`, `imageTime`, `point`, `label`, `labelRect`, `typed`, `keys`, `count`, `modelText`). It is ignored when `version` or `inputs` differ, and deleting it is always safe.
+
+Step images are rendered on demand, never stored in the bundle: the frame just before each action through the same renderer as the video, with the crop, blurs and drawn overlays but no zoom, camera, background, captions, keystrokes or cursor, at most 1600 pixels wide.
 
 ## Zooms
 

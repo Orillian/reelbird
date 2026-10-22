@@ -3,7 +3,7 @@ title: "Command line"
 seoTitle: "Reelbird command-line tool reference"
 description: "Record, edit, export, caption and share from the terminal. Every command takes --json for scripts and agents."
 order: 4
-updated: "2026-10-21"
+updated: "2026-10-22"
 source: "README.md"
 ---
 
@@ -39,6 +39,9 @@ reelbird captions latest                       # captions.vtt, made on this Mac
 reelbird enhance latest --strength medium      # clean up the voice; the raw mic is kept
 reelbird markers latest                        # markers dropped while recording
 reelbird markers latest --as-chapters          # make them the chapters on the share page
+reelbird steps latest                          # the guide's steps: each click, typing and shortcut, with what was clicked
+reelbird steps latest --text c4210="Open the inbox" --hide c9876   # reword or hide a step
+reelbird guide latest --format html            # a web page with Guide and Click-through (also md, skill)
 reelbird share latest                          # upload and print the link
 reelbird share latest --polished               # render the edit, same link
 reelbird cloud login                           # Reelbird Pro: sign in in the browser instead of setting up a bucket

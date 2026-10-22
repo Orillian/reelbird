@@ -3,7 +3,7 @@ title: "Sharing setup with Cloudflare R2"
 seoTitle: "Set up Reelbird share links on Cloudflare R2"
 description: "Free: a one-time, ten-minute setup with an R2 bucket, a scoped API token and a public URL. Or skip it with Reelbird Pro. Costs, privacy, other S3 hosts."
 order: 2
-updated: "2026-10-20"
+updated: "2026-10-22"
 source: "docs/SHARING.md"
 ---
 
@@ -30,9 +30,13 @@ r/<id>/hls/             the stream uploaded while you record (playlist + 2-secon
 r/<id>/video.<n>.mp4    the polished version, after you edit and choose Update link
 r/<id>/poster.<n>.jpg   preview image for link unfurls
 r/<id>/captions.<n>.vtt captions, if you made them
+r/<id>/steps.<n>/NN.jpg one picture per step of the guide (Guide and Click-through on the page)
+r/<id>/text.<n>.json    the text on screen in the video, so viewers can select and copy it
 ```
 
-`<n>` goes up by one with every update, so browsers and caches never show a stale video. After an update is live, Reelbird deletes everything it no longer plays: the previous revision's files, captions you removed, and the stream from `hls/`, which may show what you blurred or cut.
+`<n>` goes up by one with every update, so browsers and caches never show a stale video. After an update is live, Reelbird deletes everything it no longer plays: the previous revision's files (step pictures and text included), captions you removed, and the stream from `hls/`, which may show what you blurred or cut.
+
+The guide and the text come with **Update link** (or `reelbird share --polished`), not with the stream uploaded while recording. Turn either off in the editor's Guide panel, or with `reelbird edit PROJECT --set guide.share=false` and `--set guide.copyText=false`.
 
 The link is `https://<your public URL>/r/<id>/`. It never changes, even when you update the video.
 
@@ -195,5 +199,6 @@ Reelbird signs requests with AWS Signature Version 4, so anything that speaks th
 - **Deleting a share.** In Reelbird, open the recording, click **Copy Link** in the editor toolbar and choose **Stop sharing** (or run `reelbird unshare PROJECT`). Reelbird deletes every file under `r/<id>/` and the link stops working. You can also delete the `r/<id>/` folder in the Cloudflare dashboard (**R2 object storage** → your bucket → select the folder → **Delete**).
 - **Caches and copies.** With a custom domain, Cloudflare's cache may keep serving a deleted file for a short time. Anyone who already downloaded the video keeps their copy.
 - **Captions and titles** are generated on your Mac. They're uploaded only as part of a share you publish.
+- **The guide and the text layer** are made on your Mac too. Step pictures are rendered with your blurs, a step's label is dropped when a blur covers it, and typed text is left out unless you turn on Show what was typed (and even then anything that looks like an email, key, card or phone number is masked). The text layer is read from the published video itself, so text under a blur can't be in it.
 - **What viewers load.** The viewer page, video and captions all come from your bucket. While a share has only the live stream, browsers without built-in HLS (Chrome, Firefox) also load the hls.js player from jsDelivr, pinned to one version and integrity-checked. Once you update the link, viewers get a plain MP4 and nothing else.
 - **Your keys stay on your Mac.** The secret key lives in the macOS Keychain and is only sent to your storage endpoint, as a request signature, never in plain text.
