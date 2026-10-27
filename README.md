@@ -78,7 +78,7 @@ It's a native Swift app with no account needed and no telemetry: share links poi
 
 **Instant share links to your own bucket.** With **Share while recording** on, Reelbird uploads a 1080p stream as you record and copies the link the moment you stop. After editing, **Update link** replaces the video and keeps the URL. Links to your own bucket are free; setup is in [docs/SHARING.md](docs/SHARING.md). Or skip the setup with [Reelbird Pro](https://reelbird.app/pricing/) ($5 a month), which hosts your links and shows how many people watched and where they stopped.
 
-**Captions on your Mac.** Captions come from Apple's on-device speech recognition. Burn them into the export, or let viewers turn them on from the share page. **Cut Long Silences** removes the pauses in one go. From the command line, `reelbird suggest` writes a title and chapters with Apple's on-device model on Macs with Apple Intelligence. No API keys. Markers you drop while recording show as flags on the timeline, and **Use Markers as Chapters** turns them into the chapter list on the share page.
+**Captions on your Mac.** Pick the language and press **Generate Captions**: Apple's on-device speech recognition writes the transcript. Then choose a look: Classic, Highlight (the spoken word lights up), Marker (a highlighter box follows your words), or Pop, One Word and Slam for short social clips, in five colour sets and three sizes. Captions sit under the video when there's room, and move to the top while you work near the bottom of the screen. Double-click a line to fix a word without breaking its timing, or hide a line. Share links also offer the captions as a track viewers can turn on. **Cut Long Silences** removes the pauses in one go. From the command line, `reelbird suggest` writes a title and chapters with Apple's on-device model on Macs with Apple Intelligence. No API keys. Markers you drop while recording show as flags on the timeline, and **Use Markers as Chapters** turns them into the chapter list on the share page.
 
 **Clean frames.** Backgrounds, padding, rounded corners, aspect ratios for every platform, and **Hide Browser Toolbar** to crop the tabs and bookmarks bar off a browser window.
 
@@ -239,7 +239,8 @@ reelbird redact latest --auto --keep-all       # ...and blur them all (or --keep
 reelbird annotate latest --add arrow --arrow 0.8,0.8,0.55,0.45 --from 3 --to 6
 reelbird annotate latest                       # list overlays; --remove ID or --clear
 reelbird export latest --format mp4 --height 1080
-reelbird captions latest                       # captions.vtt, made on this Mac
+reelbird captions latest --locale en-US       # transcript and captions.vtt, made on this Mac
+reelbird edit latest --set captions.style=highlight   # none, classic, highlight, marker, pop, oneWord, slam
 reelbird enhance latest --strength medium      # clean up the voice; the raw mic is kept
 reelbird markers latest                        # markers dropped while recording
 reelbird markers latest --as-chapters          # make them the chapters on the share page
