@@ -351,9 +351,21 @@ import SwiftUI
         })
         // Clean Up: the results bar under the tool bar, and the Review list.
         func cleanedUp(_ m: EditorModel) {
-            let words = MockData.transcript.allWords.map { CleanUpInputs.Word(range: $0.range, text: $0.text) }
-            let report = CleanUp.plan(CleanUpInputs(duration: m.manifest.duration, words: words, events: m.events), edit: m.edit)
-            m.change("Clean Up") { CleanUp.apply(report, to: &$0) }
+            // A typical take's findings (the mock has no real audio to analyse).
+            func r(_ a: Double, _ b: Double) -> TimeRange { TimeRange(start: a, end: b) }
+            let applied = [
+                CleanUpItem(kind: .pause, range: r(2.6, 4.2), cut: r(2.85, 3.95), reason: "pause 1.6 s → 0.5 s", confidence: 0.95),
+                CleanUpItem(kind: .filler, range: r(7.55, 7.9), cut: r(7.55, 7.9), reason: "um", confidence: 0.9),
+                CleanUpItem(kind: .pause, range: r(11.8, 13.9), cut: r(12.05, 13.4), reason: "pause 2.1 s → 0.55 s", confidence: 0.95),
+                CleanUpItem(kind: .filler, range: r(17.2, 17.5), cut: r(17.2, 17.5), reason: "uh", confidence: 0.85),
+                CleanUpItem(kind: .pause, range: r(21.4, 22.9), cut: r(21.65, 22.5), reason: "pause 1.5 s → 0.45 s", confidence: 0.95),
+                CleanUpItem(kind: .speedUp, range: r(30.5, 36.5), rate: 3, reason: "typing, nothing said: 3×", confidence: 0.9),
+                CleanUpItem(kind: .deadEnd, range: r(44.2, 46.5), cut: r(44.8, 46.5), reason: "dead end 2.3 s after you finish", confidence: 0.95),
+            ]
+            let suggestions = [CleanUpItem(kind: .retake, range: r(24.1, 26.0), cut: r(24.1, 26.0),
+                                           reason: "retake: you said \u{201C}here's the confirmation screen\u{201D} twice; keeps the later take",
+                                           confidence: 0.6)]
+            m.change("Clean Up") { CleanUp.apply(CleanUpReport(applied: applied, suggestions: suggestions), to: &$0) }
             m.showCleanUpBar = true
         }
         scenes.append(editor(.audio, variant: "cleanup") { m in cleanedUp(m) })
@@ -362,6 +374,12 @@ import SwiftUI
             m.autosaveEnabled = false
             cleanedUp(m)
             return AnyView(CleanUpReview(model: m).background(RoundedRectangle(cornerRadius: 12).fill(Theme.raised)))
+        })
+        // For the website: Highlight captions on the preview, the style grid and transcript in the panel.
+        scenes.append(editor(.captions, variant: "site") { m in
+            m.change("x") { $0.captions.file = "captions.vtt"; $0.captions.locale = "en-US"; $0.captions.style = .highlight }
+            m.setTranscriptForSnapshot(MockData.transcript)
+            m.setPlayheadForSnapshot(10.6)
         })
         scenes.append(editor(.captions, variant: "generate") { m in m.captionLanguage = "en-US" })
         scenes.append(editor(.captions, variant: "working") { m in m.captionState = .working; m.captionProgress = 0.42 })

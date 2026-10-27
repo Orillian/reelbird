@@ -1,0 +1,113 @@
+---
+// The six caption styles, playing a short phrase over a sketch of a recording. A design sketch of what the app's
+// renderer draws; without JavaScript (or with reduced motion) each tile shows one still moment.
+const words: [string, number, number][] = [
+  ["Click", 0.2, 0.5], ["Export", 0.55, 1.0], ["and", 1.1, 1.25], ["your", 1.28, 1.45],
+  ["link", 1.5, 1.8], ["is", 1.85, 1.95], ["ready.", 2.0, 2.6],
+];
+const still = 4; // the word shown as spoken when nothing moves
+const styles = [
+  { id: "classic", name: "Classic", note: "One or two lines at a time. The most readable." },
+  { id: "highlight", name: "Highlight", note: "The spoken word lights up." },
+  { id: "marker", name: "Marker", note: "A highlighter box follows your words." },
+  { id: "pop", name: "Pop", note: "Words pop in as you say them." },
+  { id: "oneword", name: "One Word", note: "One big word at a time, for shorts." },
+  { id: "slam", name: "Slam", note: "Words land hard. For hype moments." },
+];
+---
+<div class="cs" data-caption-styles>
+  {styles.map((s) => (
+    <figure class="cs-tile" data-style={s.id}>
+      <div class="cs-stage" aria-hidden="true">
+        <div class="cs-screen"><i></i><i></i><i></i></div>
+        <div class={`cs-cap ${s.id === "oneword" || s.id === "slam" ? "big" : ""}`}>
+          {words.map(([t, a, b], i) => (<>{i > 0 ? " " : ""}
+            <span class:list={["w", { on: i === still, later: i > still, hide: (s.id === "pop" && i > still) || ((s.id === "oneword" || s.id === "slam") && i !== still) }]}
+                  data-s={a} data-e={b}>{s.id === "oneword" || s.id === "slam" ? t.replace(/[.,]$/, "").toUpperCase() : t}</span></>
+          ))}
+        </div>
+      </div>
+      <figcaption><strong>{s.name}</strong> <span>{s.note}</span></figcaption>
+    </figure>
+  ))}
+</div>
+
+<style>
+  .cs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; margin-top: 2rem; }
+  @media (max-width: 60rem) { .cs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 34rem) { .cs { grid-template-columns: minmax(0, 1fr); } }
+  .cs-tile { margin: 0; }
+  .cs-stage {
+    position: relative; aspect-ratio: 16 / 10; border-radius: var(--radius); overflow: hidden;
+    background: linear-gradient(160deg, #e9a77c, #c9654a); box-shadow: var(--shadow-frame);
+  }
+  .cs-screen { position: absolute; inset: 9% 9% 22% 9%; border-radius: 6px; background: #f7f5f2; padding: 7% 8%; display: grid; gap: 8%; align-content: start; }
+  .cs-screen i { display: block; height: 6px; border-radius: 3px; background: #d9d4cf; }
+  .cs-screen i:nth-child(1) { width: 55%; background: #3a3532; height: 8px; }
+  .cs-screen i:nth-child(2) { width: 80%; }
+  .cs-screen i:nth-child(3) { width: 40%; background: #5a78b8; }
+  .cs-cap {
+    position: absolute; left: 50%; bottom: 6%; transform: translateX(-50%); max-width: 88%; white-space: nowrap;
+    font: 600 clamp(0.72rem, 0.55rem + 0.5vw, 0.92rem) / 1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    color: #fff; background: rgb(0 0 0 / 0.72); padding: 0.28em 0.6em; border-radius: 0.45em;
+  }
+  .cs-cap.big { bottom: 28%; font-weight: 800; font-size: clamp(1.1rem, 0.8rem + 1vw, 1.5rem); letter-spacing: -0.01em; }
+  .cs-cap.empty { visibility: hidden; }
+  .w { display: inline-block; white-space: pre; }
+  .hide { display: none; }
+  [data-style="highlight"] .w.later, [data-style="marker"] .w.later { opacity: 0.72; }
+  [data-style="highlight"] .w.on { color: #ffd23f; }
+  [data-style="marker"] .w.on { color: #141414; background: #ffd23f; border-radius: 0.22em; box-shadow: 0 0 0 0.12em #ffd23f; }
+  [data-style="pop"] .w.fresh { animation: cs-pop 180ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+  [data-style="oneword"] .w.fresh { animation: cs-rise 100ms ease-out both; }
+  [data-style="slam"] .w { color: #ffd23f; }
+  [data-style="slam"] .w.fresh { animation: cs-slam 230ms ease-out both; }
+  @keyframes cs-pop { from { opacity: 0; transform: scale(0.85); } }
+  @keyframes cs-rise { from { opacity: 0; transform: translateY(4px); } }
+  @keyframes cs-slam { 0% { opacity: 0; transform: scale(1.5); } 50% { opacity: 1; transform: scale(1); } 60% { transform: translateX(3px); } 75% { transform: translateX(-3px); } 100% { transform: none; } }
+  figcaption { margin-top: 0.7rem; font-size: var(--step--1); color: var(--text-muted); }
+  figcaption strong { color: var(--text); font-weight: 600; }
+</style>
+
+<script>
+  const root = document.querySelector<HTMLElement>("[data-caption-styles]");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (root && !reduce) {
+    const LOOP = 3.6;
+    const tiles = [...root.querySelectorAll<HTMLElement>(".cs-tile")].map((el) => ({
+      style: el.dataset.style!,
+      cap: el.querySelector<HTMLElement>(".cs-cap")!,
+      words: [...el.querySelectorAll<HTMLElement>(".w")].map((w) => ({ el: w, s: +w.dataset.s!, e: +w.dataset.e! })),
+      last: -2,
+    }));
+    let visible = false;
+    new IntersectionObserver(([e]) => { visible = e!.isIntersecting; }).observe(root);
+    const start = performance.now();
+    const frame = (now: number) => {
+      if (visible) {
+        const t = ((now - start) / 1000) % LOOP;
+        for (const tile of tiles) {
+          const i = tile.words.findLastIndex((w) => w.s <= t);
+          const active = i >= 0 && t < (tile.words[i + 1]?.s ?? tile.words[i]!.e + 0.6) ? i : -1;
+          const shown = i; // words said so far
+          if (active === tile.last && tile.style !== "pop") continue;
+          tile.words.forEach((w, k) => {
+            const single = tile.style === "oneword" || tile.style === "slam";
+            w.el.classList.toggle("on", k === active);
+            w.el.classList.toggle("later", k > shown);
+            const hide = single ? k !== active : tile.style === "pop" ? k > shown : false;
+            const wasHidden = w.el.classList.contains("hide");
+            w.el.classList.toggle("hide", hide);
+            if (!hide && (wasHidden || (single && k === active && tile.last !== active))) {
+              w.el.classList.remove("fresh"); void w.el.offsetWidth; w.el.classList.add("fresh");
+            }
+          });
+          tile.cap.classList.toggle("empty", tile.words.every((w) => w.el.classList.contains("hide")));
+          tile.last = active;
+        }
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }
+</script>

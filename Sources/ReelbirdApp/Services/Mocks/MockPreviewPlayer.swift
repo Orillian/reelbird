@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import ReelbirdAI
 import ReelbirdCore
 
 /// Stand-in for `ReelbirdRender.PreviewPlayer`: draws the edit with Core Graphics (background,
@@ -356,10 +357,55 @@ final class MockPreviewView: NSView {
         drawPill(ctx, text: text, in: frame, y: frame.maxY - min(frame.width, frame.height) * 0.12, size: 0.032)
     }
 
+    /// A sketch of the caption styles (the real ones are drawn by the compositor): the spoken word in the accent
+    /// colour, on a box for Marker, words so far for Pop, one big word for One Word and Slam.
     private func drawCaption(_ ctx: CGContext, _ frame: CGRect) {
-        guard edit.captions.file != nil,
+        let c = edit.captions
+        guard c.file != nil, c.style != .none,
               let seg = MockData.transcript.segments.first(where: { $0.range.contains(sourceTime) }) else { return }
-        drawPill(ctx, text: seg.text, in: frame, y: frame.maxY - min(frame.width, frame.height) * 0.07, size: 0.034)
+        let words = seg.timedWords
+        let active = words.lastIndex { $0.range.start <= sourceTime }
+        func color(_ v: RGBA) -> NSColor { NSColor(srgbRed: v.r, green: v.g, blue: v.b, alpha: v.a) }
+        let big = c.style.isWordAtATime
+        let short = min(frame.width, frame.height)
+        let fontSize = short * (big ? 0.075 : 0.034) * c.size.scale
+        let font = NSFont.systemFont(ofSize: fontSize, weight: big ? .heavy : .semibold)
+        let str = NSMutableAttributedString()
+        func add(_ t: String, _ fg: NSColor, bg: NSColor? = nil) {
+            var a: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: fg]
+            if let bg { a[.backgroundColor] = bg }
+            str.append(NSAttributedString(string: t, attributes: a))
+        }
+        let text = color(c.palette.text), accent = color(c.palette.accent)
+        switch c.style {
+        case .classic:
+            add(seg.text, text)
+        case .oneWord, .slam:
+            guard let i = active else { return }
+            let w = words[i].text.trimmingCharacters(in: CharacterSet(charactersIn: ",.;:"))
+            add(c.uppercase ? w.uppercased() : w, c.style == .slam ? accent : text)
+        default:
+            for (i, w) in words.enumerated() {
+                if c.style == .pop, let a = active, i > a { break }
+                if i > 0 { add(" ", text) }
+                if i == active, c.style == .highlight { add(w.text, accent) }
+                else if i == active, c.style == .marker { add(w.text, color(c.palette.onAccent), bg: accent) }
+                else { add(w.text, active.map { i > $0 } == true ? text.withAlphaComponent(0.72) : text) }
+            }
+        }
+        let sz = str.size()
+        let y = big ? frame.maxY - short * 0.22 : frame.maxY - short * 0.07
+        let box = CGRect(x: frame.midX - sz.width / 2 - fontSize * 0.6, y: y - sz.height / 2 - fontSize * 0.3,
+                         width: sz.width + fontSize * 1.2, height: sz.height + fontSize * 0.6)
+        if let back = c.palette.backing {
+            ctx.addPath(CGPath(roundedRect: box, cornerWidth: fontSize * 0.4, cornerHeight: fontSize * 0.4, transform: nil))
+            ctx.setFillColor(color(back).cgColor)
+            ctx.fillPath()
+        }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
+        str.draw(at: CGPoint(x: box.minX + fontSize * 0.6, y: box.minY + fontSize * 0.3))
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func drawPill(_ ctx: CGContext, text: String, in frame: CGRect, y: CGFloat, size: CGFloat) {
