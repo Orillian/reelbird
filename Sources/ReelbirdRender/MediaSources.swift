@@ -104,6 +104,8 @@ final class MediaSources: @unchecked Sendable {
     }
 
     static let timescale: CMTimeScale = 90_000
+    /// The near-zero silence placed on a cut join; the sound fades over `AudioTrackProcessor.silenceFade` on either side.
+    static let joinGap = 0.001
     /// How sped-up or slowed-down sound keeps its pitch, in preview and export alike. Measured on a synthetic voice
     /// against an ideal re-synthesis at the new speed (`SpeedAudioExperiment`): at 0.5×, 1.5× and 2×, the speeds
     /// whose sound plays by default, spectral averaged 4.8 dB log-spectrum error to time-domain's 5.1 dB and kept
@@ -163,7 +165,10 @@ final class MediaSources: @unchecked Sendable {
             }
         }
         var result = Composition(asset: comp, screen: screenTrack, camera: cameraTrack, audio: audioTracks, duration: timeline.duration)
+        // Sound fades out and back in over a few ms at every cut, so a join never clicks (Clean Up puts its cuts
+        // in the quietest 20 ms, so the dip falls in near-silence).
         result.silent = timeline.pieces.filter { !$0.audible }.map(\.output)
+            + timeline.joins.map { TimeRange(start: $0 - Self.joinGap / 2, end: $0 + Self.joinGap / 2) }
         if let settings { result.duck = duckCurve(timeline: timeline, settings: settings, analysis: analysis) }
         return result
     }

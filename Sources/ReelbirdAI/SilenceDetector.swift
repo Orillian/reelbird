@@ -29,6 +29,21 @@ public enum SilenceDetector {
                             thresholdDB: thresholdDB, minDuration: minDuration)
     }
 
+    /// Silent ranges with a threshold that follows the room: the noise floor (10th percentile level) plus
+    /// `margin` dB, kept between -60 and -30 dBFS. A noisy room no longer reads as all speech, and a very quiet
+    /// one doesn't hide soft words under a fixed -45.
+    public static func silentRanges(audio: URL, adaptiveMargin margin: Double, minDuration: Double = 1.2) async throws -> [TimeRange] {
+        let env = try await envelope(audio: audio)
+        return silentRanges(levels: env.levels, windowDuration: env.window, origin: env.origin,
+                            thresholdDB: Double(env.adaptiveThreshold(margin: Float(margin))), minDuration: minDuration)
+    }
+
+    /// The level of `audio` in 20 ms windows (dBFS), with times from the start of the file.
+    public static func envelope(audio: URL) async throws -> AudioEnvelope {
+        let (levels, origin) = try await rmsLevels(audio: audio)
+        return AudioEnvelope(levels: levels, window: window, origin: origin)
+    }
+
     /// Cuts that remove silences but keep `padding` seconds of air next to speech, so words aren't clipped.
     /// Silences touching the start (0) or `duration` are cut right to the edge. Cuts shorter than `minimumCut` are dropped.
     public static func trimCuts(silences: [TimeRange], padding: Double = 0.15, minimumCut: Double = 0.3,

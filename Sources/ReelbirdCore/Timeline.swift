@@ -139,6 +139,28 @@ public struct EditTimeline: Hashable, Sendable {
         return out
     }
 
+    /// Output times where a cut joins two kept stretches (the source jumps), in order.
+    public var joins: [Double] {
+        guard pieces.count > 1 else { return [] }
+        return (1..<pieces.count).compactMap { i in
+            abs(pieces[i].source.start - pieces[i - 1].source.end) > 1e-6 ? pieces[i].outputStart : nil
+        }
+    }
+
+    /// The last cut join at or before output time `t`: where it is on the output, and the recording times just
+    /// before and after it. `nil` before the first join.
+    public func lastJoin(atOrBeforeOutput t: Double) -> (output: Double, sourceBefore: Double, sourceAfter: Double)? {
+        guard pieces.count > 1 else { return nil }
+        var i = pieceIndex(forOutput: max(0, t))
+        while i > 0 {
+            if abs(pieces[i].source.start - pieces[i - 1].source.end) > 1e-6, pieces[i].outputStart <= t {
+                return (pieces[i].outputStart, pieces[i - 1].source.end, pieces[i].source.start)
+            }
+            i -= 1
+        }
+        return nil
+    }
+
     /// The playback rate at output time `t`.
     public func rate(atOutput t: Double) -> Double {
         pieces.isEmpty ? 1 : pieces[pieceIndex(forOutput: t)].rate

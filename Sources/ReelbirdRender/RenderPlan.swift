@@ -259,6 +259,22 @@ public final class RenderPlan: Sendable {
         return u * u * (3 - 2 * u)
     }
 
+    /// How long the cursor glides across a cut, and the jump (in points) it glides over.
+    static let cutGlide = 0.2, cutGlideMinJump = 40.0
+
+    /// The cursor at output time `t` (recording time `src`). Right after a cut where the pointer jumped more than
+    /// 40 points, it glides there from where it was over 0.2 s instead of teleporting.
+    func cursorPosition(output t: Double, source src: Double) -> NormPoint? {
+        guard let p = cursor.position(at: src) else { return nil }
+        guard let join = timeline.lastJoin(atOrBeforeOutput: t), case let age = t - join.output, age < Self.cutGlide,
+              let from = cursor.position(at: join.sourceBefore) else { return p }
+        let points = max(1, manifest.capture.scale)
+        let jump = hypot((p.x - from.x) * Double(sourceSize.width), (p.y - from.y) * Double(sourceSize.height)) / points
+        guard jump > Self.cutGlideMinJump else { return p }
+        let u = max(0, min(1, age / Self.cutGlide)), e = u * u * (3 - 2 * u)
+        return NormPoint(x: from.x + (p.x - from.x) * e, y: from.y + (p.y - from.y) * e)
+    }
+
     /// Special keys shown even when plain typing is hidden (Return, Enter, Esc, Tab, arrows, Home/End, Page Up/Down).
     static let specialKeys: Set<String> = ["⏎", "⌤", "⎋", "⇥", "←", "→", "↓", "↑", "↖", "↘", "⇞", "⇟"]
 

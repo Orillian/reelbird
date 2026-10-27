@@ -317,7 +317,7 @@ final class Compositor {
 
         // 3. Cursor and click effects (view coordinates; hidden past the crop's edges).
         let cursorSettings = edit.cursor
-        if cursorSettings.visible, let pos = plan.cursor.position(at: src), case let visible = plan.cropVisibility(pos), visible > 0.001 {
+        if cursorSettings.visible, let pos = plan.cursorPosition(output: outputTime, source: src), case let visible = plan.cropVisibility(pos), visible > 0.001 {
             let opacity = plan.cursor.opacity(at: src, hideAfter: cursorSettings.hideWhenIdleAfter) * visible
             let sprite = cursorSprite(plan.cursor.imageID(at: src), plan: plan)
             // Points → source pixels → output pixels, enlarged by the size setting and partly by the zoom.

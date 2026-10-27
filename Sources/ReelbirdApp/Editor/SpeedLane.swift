@@ -162,12 +162,14 @@ struct SpeedSegmentView: View {
         switch segment.source {
         case .typing: "keyboard"
         case .idle: "hourglass"
+        case .cleanUp: "wand.and.stars"
         case .user: segment.rate < 1 ? "tortoise.fill" : "forward.fill"
         }
     }
 
     private var help: String {
-        let what = segment.source == .typing ? "Typing sped up" : segment.source == .idle ? "Idle stretch sped up" : "Speed"
+        let what = segment.source == .typing ? "Typing sped up" : segment.source == .idle ? "Idle stretch sped up"
+            : segment.source == .cleanUp ? "Sped up by Clean Up" : "Speed"
         var s = "\(what): \(SpeedSegment.label(segment.rate)). Drag to move, drag the edges to resize, R for the next speed, Delete to remove."
         if muted { s += " Sound is off above 2×." }
         return s

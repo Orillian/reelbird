@@ -785,3 +785,46 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
     #expect(edit.layouts.map(\.kind) == [.fullCamera] && edit.layouts[0].range == TimeRange(start: 1, end: 4))
     #expect(!edit.camera.shrinkWhenZoomed)
 }
+
+@Test func cleanupCommandShortensPausesTrimsAndUndoes() async throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let audio = dir.appendingPathComponent("voice.m4a")
+    try await TestAudio.writeAAC([.init(duration: 1, amplitude: 0.3), .init(duration: 2, amplitude: 0.002), .init(duration: 1, amplitude: 0.3)], to: audio)
+    let bundle = try makeProject(in: dir, microphone: audio, micStart: 0.5)
+
+    let dry = try CLI.run(["cleanup", bundle.url.path, "--dry-run", "--json"])
+    #expect(dry.code == 0, "\(dry.err)")
+    #expect(try bundle.readEdit().cuts.isEmpty, "a dry run saves nothing")
+    #expect(dry.json?["transcript"] as? Bool == false)
+
+    let r = try CLI.run(["cleanup", bundle.url.path, "--json"])
+    #expect(r.code == 0, "\(r.err)")
+    let applied = try #require(r.json?["applied"] as? [[String: Any]])
+    // The 2 s gap (1.5–3.5 on the recording) is shortened, not removed; the dead end after the voice is cut.
+    let pause = try #require(applied.first { $0["kind"] as? String == "pause" })
+    let cut = try #require(pause["cut"] as? [String: Double])
+    #expect((cut["start"] ?? 0) > 1.6 && (cut["end"] ?? 9) < 3.45, "\(cut)")
+    #expect(applied.contains { $0["kind"] as? String == "deadEnd" })
+    let edit = try bundle.readEdit()
+    #expect(edit.cuts.count == applied.count && edit.cleanUp.applied.count == applied.count)
+
+    // Again: nothing new.
+    let again = try CLI.run(["cleanup", bundle.url.path, "--json"])
+    #expect((again.json?["applied"] as? [Any])?.isEmpty == true)
+
+    let undo = try CLI.run(["cleanup", bundle.url.path, "--undo"])
+    #expect(undo.code == 0, "\(undo.err)")
+    #expect(try bundle.readEdit().cuts.isEmpty)
+    #expect(try bundle.readEdit().cleanUp.isEmpty)
+    #expect(try CLI.run(["cleanup", bundle.url.path, "--undo", "--dry-run"]).code == 64)
+
+    let p = bundle.url.path
+    let out = try mcp([
+        #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#,
+        #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"clean_up","arguments":{"project":"\#(p)","dry_run":true}}}"#,
+    ])
+    let result = try #require(toolResult(out["2"])?["structuredContent"] as? [String: Any], "\(out)")
+    #expect((result["applied"] as? [Any])?.isEmpty == false)
+    #expect(try bundle.readEdit().cuts.isEmpty)
+}

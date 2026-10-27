@@ -144,7 +144,7 @@ private func typing(from a: Double, to b: Double, every gap: Double = 0.15) -> [
 @Test func suggestsTypingAndIdleStretches() {
     var events: [InputEvent] = [.move(0, NormPoint(x: 0.5, y: 0.5)), .move(0.5, NormPoint(x: 0.6, y: 0.5))]
     events += typing(from: 2, to: 8)            // 6 s of typing
-    events += typing(from: 10, to: 11.5)        // too short
+    events += typing(from: 10.5, to: 11.5)      // too short (and more than the 2 s key gap after the first run)
     events += [.down(12, NormPoint(x: 0.5, y: 0.5)), .up(12.1, NormPoint(x: 0.5, y: 0.5))]
     // Jitter during the idle stretch doesn't count as input.
     events += [.move(15, NormPoint(x: 0.6, y: 0.5)), .move(16, NormPoint(x: 0.6005, y: 0.5))]

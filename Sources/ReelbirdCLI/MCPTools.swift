@@ -159,6 +159,13 @@ enum MCPTools {
                 "typing_rate": ["type": "number", "minimum": 0.25, "maximum": 8, "description": "Speed for typing with no talking over it (default 4)."],
                 "idle_rate": ["type": "number", "minimum": 0.25, "maximum": 8, "description": "Speed for idle stretches (default 8)."],
              ], required: ["project"])),
+        tool("clean_up", "Clean up",
+             "One pass over the take: shortens long pauses (keeps a natural 0.35–0.8 s), cuts ums (needs transcribe first), trims dead time at the start and end, speeds up silent stretches with clicks or a changing screen, and finds retakes. Cuts land in the quietest moment, never near a click or key press. Doubtful finds come back as suggestions, not applied. dry_run only reports; undo takes everything Clean Up added back out. Running again adds only new finds.",
+             object([
+                "project": project,
+                "dry_run": ["type": "boolean", "default": false],
+                "undo": ["type": "boolean", "default": false],
+             ], required: ["project"])),
         tool("share", "Share link",
              "Publishes the project to the configured bucket and returns its link (or returns the existing link). polished renders the current edit and replaces the quick version; the link stays the same.",
              object([

@@ -38,6 +38,8 @@ public struct EditDocument: Codable, Hashable, Sendable {
     public var title: String?
     /// The step guide: what the share page gets and the steps changed by hand. Older files have none.
     public var guide = GuideSettings()
+    /// What Clean Up applied, suggested and was told to leave alone. Older files have none.
+    public var cleanUp = CleanUpRecord()
 
     public init() {}
 
@@ -67,6 +69,7 @@ public struct EditDocument: Codable, Hashable, Sendable {
         markers = try? c.decodeIfPresent([Marker].self, forKey: .markers)
         title = try c.decodeIfPresent(String.self, forKey: .title)
         guide = (try? c.decodeIfPresent(GuideSettings.self, forKey: .guide)) ?? d.guide
+        cleanUp = (try? c.decodeIfPresent(CleanUpRecord.self, forKey: .cleanUp)) ?? d.cleanUp
     }
 
     /// The default edit for a fresh recording: pauses cut, everything else at defaults.

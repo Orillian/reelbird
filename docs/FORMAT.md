@@ -106,12 +106,40 @@ The first time a recording opens (no `edit.json` yet), the place comes from its 
  "keepFastAudio": false}
 ```
 
-- `range` is on the recording timeline, like cuts. `rate` is 0.25…8 (2 = twice as fast); values outside are clamped. `source` is `user` (added by hand), `typing` or `idle` (an applied "speed up typing" suggestion; it is an ordinary segment from then on). An unknown `source` reads as `user`.
+- `range` is on the recording timeline, like cuts. `rate` is 0.25…8 (2 = twice as fast); values outside are clamped. `source` is `user` (added by hand), `typing` or `idle` (an applied "speed up typing" suggestion; it is an ordinary segment from then on), or `cleanup` (added by Clean Up, see below). An unknown `source` reads as `user`.
 - Segments are kept sorted and never overlap: readers trim an overlapped segment (the later one in the list wins), drop rate-1 segments and ones shorter than 0.1 s, and skip a segment they can't read rather than the whole list.
 - The output timeline is the kept part of the recording (trim and cuts) played back to back, each stretch at its rate. One mapping (`EditTimeline` in `Sources/ReelbirdCore`) turns recording time into output time and back for everything: preview, export, the editor's timeline and duration, ducking, captions and `transcript.json` remapping, chapters and share renders. Zoom regions, cursor and keystroke events, camera moves, annotations and captions stay on the recording timeline; they play faster or slower with the part they're in.
 - Sound: up to 2× it is time-stretched with its pitch kept (AVFoundation's spectral algorithm, chosen by measurement). Faster than 2×, the microphone and system audio are silent there, with 12 ms fades, unless `keepFastAudio` is `true`. Microphone and system audio are stretched by the same edits as the video, so they stay in sync.
 
-Speed-up suggestions (the editor's Speed Up Typing, `reelbird speedup`, MCP `suggest_speedups`) come from the event log and the voice: continuous typing (key presses at most 1.2 s apart, at least 3 s from first to last) at 4×, or 2× when someone talks over more than a quarter of it; idle stretches (at least 4 s with no click, scroll, key press or pointer movement, and silent by the same detector as Cut Long Silences) at 8×, keeping 0.4 s at normal speed at each end. Parts that are trimmed, cut or already have a speed are left out.
+Speed-up suggestions (the editor's Speed Up Typing, `reelbird speedup`, MCP `suggest_speedups`) come from the event log and the voice: continuous typing (key presses at most 2 s apart, at least 3 s from first to last) at 4×, or 2× when someone talks over more than a quarter of it; idle stretches (at least 4 s with no click, scroll, key press or pointer movement, and silent by the same detector as Cut Long Silences) at 8×, keeping 0.4 s at normal speed at each end. Parts that are trimmed, cut or already have a speed are left out.
+
+## Clean Up
+
+Clean Up (the editor's wand, `reelbird cleanup`, MCP `clean_up`) is one pass that adds ordinary cuts and speed segments, and records what it did in `edit.json → cleanUp`, so the pass can be undone in one step, any one change restored, and a later run adds only new finds. Files without it have never been cleaned up.
+
+```json
+{"applied": [{"id": "pause-12840", "kind": "pause", "range": {"start": 12.84, "end": 14.62},
+              "cut": {"start": 13.15, "end": 14.47}, "reason": "pause 1.8 s → 0.5 s", "confidence": 0.9},
+             {"id": "speedUp-31200", "kind": "speedUp", "range": {"start": 31.2, "end": 38.9}, "rate": 4,
+              "speedID": "cu1x9k2", "reason": "typing 7.7 s, 4×", "confidence": 0.9}],
+ "suggestions": [{"id": "retake-52010", "kind": "retake", "range": {"start": 52.01, "end": 55.3},
+                  "cut": {"start": 51.9, "end": 56.1}, "reason": "retake: kept the later take (“So …”)", "confidence": 0.7}],
+ "restored": [{"kind": "filler", "range": {"start": 20.1, "end": 20.4}}]}
+```
+
+- `kind` is `pause`, `filler` (um, uh), `retake`, `deadStart`, `deadEnd` or `speedUp`. `range` is what was found on the recording timeline (the whole pause, the filler's sound, the earlier take); `cut` is the cut it put in `cuts`, or `rate` and `speedID` the speed segment it put in `speed` (source `cleanup`).
+- `applied` items are in the edit. Undoing the pass removes each item's cut from `cuts` and its segment from `speed` where they are still exactly as Clean Up made them; a cut or segment changed by hand since stays. `suggestions` (from the last run) are not in the edit until accepted.
+- `restored` lists what a person put back or dismissed. A later run skips a finding of the same kind that overlaps one.
+- An item a reader can't parse is skipped, not the whole record.
+
+What it does, by default (numbers from `research/2026-10-27-reelbird-auto-edit/04-cleanup-implementation.md`; all on the parts not already cut, trimmed or sped up):
+
+- Pauses: gaps between transcript words of 0.75 s or more (without a transcript, silences in the voice) that are quiet are shortened, never removed, to `clamp(0.35 + 0.1 × (gap − 0.75), 0.35, 0.8)` s plus 0.1 s after a sentence ends. At least 0.15 s stays after the last word and 0.1 s before the next. Each cut edge moves to the quietest 20 ms nearby and to a frame boundary, and stays 0.4 s clear of any click, key press or scroll. Quiet is the room's noise floor (10th percentile of the 20 ms levels) plus 7 dB, between -60 and -30 dBFS.
+- Busy silences: a silent gap of 2 s or more with clicks, scrolls or a changing screen (sampled thumbnails) is sped up 3× instead, or 2× with pointer moves only, keeping 0.3 s at normal speed at each end. Typing is sped up as above, at 4×, or 1.5× under speech.
+- Dead start and end: what comes before 0.3 s ahead of the first word (0.5 s ahead of the first input), and after 0.6 s past the last word or input, is cut when it is at least 0.75 s. Input in the first 0.3 s and last 1.5 s (the record click, the stop shortcut) doesn't count.
+- Ums: Apple's recogniser leaves out "um" and "uh" and adds their time to the next word. A word much longer than its letters suggest that starts with its own voiced stretch (0.15–0.8 s), cut off from the rest by a dip of at least 60 ms and 10 dB, loses that stretch. Applied only when both edges are quiet; otherwise a suggestion. "Like", "so", "well" and "you know" are never cut.
+- Retakes: a phrase repeated (same first three words, or 60% the same words) within 45 s; the earlier take goes and the later stays. Applied only with a cue phrase ("sorry", "let me redo that", "scratch that", …), no click or key press in the cut take, and a screen that looks the same; otherwise a suggestion.
+- Joins: every cut, by hand or by Clean Up, fades the sound out and back in over 12 ms either side so it never clicks, and the cursor glides over 0.2 s where it jumped more than 40 points across a cut.
 
 ## Markers
 

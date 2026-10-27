@@ -324,6 +324,10 @@ final class MCPServer: Sendable {
             }
             return try await ops.speedup(try a.requiredString("project"), apply: try a.bool("apply") ?? false,
                                    typingRate: try a.double("typing_rate"), idleRate: try a.double("idle_rate"))
+        case "clean_up":
+            let dryRun = try a.bool("dry_run") ?? false, undo = try a.bool("undo") ?? false
+            guard !(dryRun && undo) else { throw CLIError.usage("Use dry_run or undo, not both.") }
+            return try await ops.cleanUp(try a.requiredString("project"), dryRun: dryRun, undo: undo)
         case "share":
             return try await ops.share(try a.requiredString("project"), polished: try a.bool("polished") ?? false, progress: progress)
         case "unshare":

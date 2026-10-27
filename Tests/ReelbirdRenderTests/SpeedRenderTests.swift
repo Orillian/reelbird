@@ -221,7 +221,11 @@ private func peak(_ a: (samples: [Float], start: Double), _ r: TimeRange) -> Flo
     let audioEnd = try #require(comp.audio.first).track.timeRange.end.seconds
     #expect(abs(screenEnd - timeline.duration) < 0.002, "screen \(screenEnd) vs \(timeline.duration)")
     #expect(abs(audioEnd - timeline.duration) < 0.002, "audio \(audioEnd) vs \(timeline.duration)")
-    #expect(comp.silent.isEmpty)
+    // The cut's join gets a near-zero silence, so the sound dips over a few ms there instead of clicking.
+    let join = try #require(timeline.joins.first)
+    #expect(timeline.joins.count == 1)
+    #expect(comp.silent.count == 1 && abs(comp.silent[0].start - join) < 0.001 && comp.silent[0].duration < 0.002, "\(comp.silent)")
+    #expect(AudioTrackProcessor.silenceRanges(comp.silent).count == 1)
     // Too fast: the sound of that piece is left out, the picture isn't.
     speed.set(TimeRange(start: 1, end: 2), rate: 8)
     let fast = EditTimeline(duration: 4, trim: nil, cuts: [], speed: speed)

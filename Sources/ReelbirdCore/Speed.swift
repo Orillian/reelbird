@@ -3,8 +3,8 @@ import Foundation
 /// One stretch of the recording played faster or slower. `range` is on the recording (source) timeline;
 /// `EditTimeline` turns it into output time.
 public struct SpeedSegment: Codable, Hashable, Sendable, Identifiable {
-    /// Where a segment came from: added by hand, or a "speed up typing" suggestion that was applied.
-    public enum Source: String, Codable, Hashable, Sendable { case user, typing, idle }
+    /// Where a segment came from: added by hand, a "speed up typing" suggestion that was applied, or Clean Up.
+    public enum Source: String, Codable, Hashable, Sendable { case user, typing, idle, cleanUp = "cleanup" }
 
     public var id: String
     public var range: TimeRange
@@ -160,8 +160,9 @@ public enum SpeedSuggester {
     public struct Options: Hashable, Sendable {
         /// Shortest typing stretch worth speeding up (seconds, first key to last).
         public var minTyping = 3.0
-        /// Longest gap between two key presses inside one typing stretch.
-        public var maxKeyGap = 1.2
+        /// Longest gap between two key presses inside one typing stretch. 2 s keeps a burst with short thinking
+        /// pauses as one segment instead of many (users of other tools complain about "too many cuts").
+        public var maxKeyGap = 2.0
         /// Rate for typing with no speech over it.
         public var typingRate = 4.0
         /// Rate for typing over speech: 2× keeps the voice (pitch-preserved) audible.

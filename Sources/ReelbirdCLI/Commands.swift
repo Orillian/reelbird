@@ -98,6 +98,11 @@ enum CLI {
             .value("typing-rate", "RATE", "Speed for typing with no talking over it (default 4; 2 while talking)"),
             .value("idle-rate", "RATE", "Speed for stretches with no input and no sound (default 8)"),
         ], discussion: "Typing comes from key presses (record with --keystrokes); idle stretches need 4 s with no input and no voice."),
+        CommandSpec(name: "cleanup", summary: "Clean up a take: shorten pauses, cut ums, trim dead start and end, speed up busy silences.",
+                    positionals: ["PROJECT"], options: [
+            .flag("dry-run", "Show what it would change without saving"),
+            .flag("undo", "Take out everything Clean Up added"),
+        ], discussion: "Pauses are shortened, not removed; silent stretches with clicks or a changing screen are sped up instead of cut. Ums and retakes need a transcript (run `reelbird captions` first). Doubtful finds are listed as suggestions and not applied. Running it again adds only new finds."),
         PrivacyCLI.blurSpec,
         PrivacyCLI.redactSpec,
         PrivacyCLI.annotateSpec,
@@ -283,6 +288,9 @@ enum CLI {
                 return r
             }
             return try await ops.speedup(project, apply: a.has("apply"), typingRate: try rate("typing-rate"), idleRate: try rate("idle-rate"))
+        case "cleanup":
+            guard !(a.has("dry-run") && a.has("undo")) else { throw CLIError.usage("Use --dry-run or --undo, not both.") }
+            return try await ops.cleanUp(project, dryRun: a.has("dry-run"), undo: a.has("undo"))
         case "blur", "redact", "annotate":
             return try await PrivacyCLI.run(spec.name, a, ops: ops, project: project)
         case "share":
