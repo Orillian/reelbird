@@ -217,6 +217,19 @@ The scan reads the screen video only, not narration, captions or overlays. The k
 {"version": 1, "file": "screen/screen.mp4", "fileSize": 48213377, "height": 2234, "topPixels": 214, "confidence": 0.93, "seconds": 0.41}
 ```
 
+## Captions
+
+`transcript.json` (a `Transcript`: `locale` and `segments`, each with `range`, `text`, timed `words` and an optional `hidden`) is the source of truth; `captions.vtt` is made from it, leaving out hidden segments. Correcting a line in the editor keeps each word's time slot when the word count is unchanged; otherwise the new words share the line's span by length.
+
+`edit.captions`:
+- `file`: the WebVTT file, bundle-relative (`captions.vtt`), or absent when there are no captions.
+- `locale`: the BCP 47 language the transcript was made in.
+- `style`: `none`, `classic`, `highlight`, `marker`, `pop`, `oneWord` or `slam`. `none` draws nothing; any other style is drawn into the preview and exports. Classic draws the WebVTT cues; the others draw word groups from `transcript.json` (one breath of speech, at most 6 words or 2.5 s; one or two words for One Word and Slam).
+- `palette`: `night`, `reelbird`, `mint`, `paper` or `bare` (no backing, a soft shadow).
+- `size`: `small`, `medium` or `large`. `position`: `auto`, `bottom`, `belowVideo` or `top`. Auto uses the padding under the video when there is room, and otherwise the bottom of the frame, moving a caption to the top while the cursor is in the bottom third.
+- `uppercase`: capitals for One Word and Slam.
+- `burnIn`: written for older versions (true for any style but `none`). Files without `style` read `burnIn: true` as Classic.
+
 ## Audio
 
 `edit.json → audio` holds `autoLevel` (default `true`), `microphoneGainDB` (the Boost, added on top of auto level), `systemGainDB`, `microphoneMuted`, `systemMuted`, and the voice cleanup: `enhance` (default `true`), `enhanceStrength` (`light`, `medium` (default), `strong` or `max`: noise reduction capped at 6, 12, 24 dB or uncapped), `enhanceMix` (0 = original … 1 = fully enhanced, default 1) and `duckSystemAudio` (default `true`: system audio dips about 12 dB while the voice speaks, starting 20 ms before each phrase and recovering over 600 ms). Export applies each track's gain, a look-ahead limiter per track, sums them, and limits the sum, with a −1.5 dBFS ceiling on samples and estimated inter-sample peaks (AAC overshoots heavily limited peaks a little; decoded exports stay under −1 dBFS). The editor's preview runs the same per-track stage, so it sounds the same.

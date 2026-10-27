@@ -27,6 +27,7 @@ import ReelbirdCore
 
     func setHearOriginal(_ on: Bool) {}
     func voiceStemDidChange() {}
+    func reloadCaptions() {}
     /// Draws only; it never makes a sound.
     var isMuted: Bool { true }
     func cameraBubble(atSource t: Double) -> (place: NormPoint, sizeScale: Double)? { nil }

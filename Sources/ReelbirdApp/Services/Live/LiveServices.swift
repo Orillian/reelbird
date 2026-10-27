@@ -80,6 +80,7 @@ struct LiveRecorder: RecorderService {
     }
     func setHearOriginal(_ on: Bool) { player.hearOriginal = on }
     func voiceStemDidChange() { player.voiceStemDidChange() }
+    func reloadCaptions() { player.reloadCaptions() }
     var isMuted: Bool { player.isMuted }
     func cameraBubble(atSource t: Double) -> (place: NormPoint, sizeScale: Double)? {
         let plan = player.plan
@@ -134,9 +135,10 @@ struct LiveAI: AIService {
     func suggestStory(transcript: Transcript) async throws -> (title: String, chapters: [Chapter]) {
         try await StorySuggester.suggest(transcript: transcript)
     }
-    func transcribe(audio: URL, locale: Locale?) async throws -> Transcript {
-        try await Transcriber.transcribe(audio: audio, locale: locale)
+    func transcribe(audio: URL, locale: Locale?, progress: @escaping @Sendable (Double) -> Void) async throws -> Transcript {
+        try await Transcriber.transcribe(audio: audio, locale: locale, progress: progress)
     }
+    func captionLanguages() async -> (all: [String], installed: Set<String>) { await Transcriber.languages() }
     func webVTT(_ t: Transcript) -> String { Captions.webVTT(t) }
     func silentRanges(audio: URL) async throws -> [TimeRange] { try await SilenceDetector.silentRanges(audio: audio) }
 }

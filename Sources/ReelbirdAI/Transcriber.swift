@@ -57,6 +57,33 @@ public enum Transcriber {
         return SFSpeechRecognizer(locale: .current)?.supportsOnDeviceRecognition ?? false
     }
 
+    /// Languages captions can be made in on this Mac (BCP 47), and which of them are already downloaded.
+    public static func languages() async -> (all: [String], installed: Set<String>) {
+        if #available(macOS 26, *) {
+            let all = await SpeechTranscriber.supportedLocales.map { $0.identifier(.bcp47) }
+            let installed = Set(await SpeechTranscriber.installedLocales.map { $0.identifier(.bcp47) })
+            return (Array(Set(all)).sorted(), installed)
+        }
+        let all = SFSpeechRecognizer.supportedLocales().compactMap { l -> String? in
+            SFSpeechRecognizer(locale: l)?.supportsOnDeviceRecognition == true ? l.identifier(.bcp47) : nil
+        }
+        return (Array(Set(all)).sorted(), Set(all))
+    }
+
+    /// The language to offer first: `preferred` when this Mac supports it, else the Mac's language, else US English.
+    public static func defaultLanguage(preferred: String?, among all: [String]) -> String {
+        func match(_ id: String) -> String? {
+            if all.contains(id) { return id }
+            let lang = Locale(identifier: id).language.languageCode?.identifier
+            let same = all.filter { Locale(identifier: $0).language.languageCode?.identifier == lang }
+            // English on a Mac set to, say, en-PK: US English rather than whichever region sorts first.
+            return same.first { $0.hasSuffix("-US") } ?? same.first
+        }
+        if let p = preferred, let m = match(p) { return m }
+        if let m = match(Locale.current.identifier(.bcp47)) { return m }
+        return all.contains("en-US") ? "en-US" : (all.first ?? "en-US")
+    }
+
     /// Detailed availability for a locale (default: the user's current locale).
     public static func availability(for locale: Locale? = nil) async -> TranscriberAvailability {
         let requested = locale ?? .current

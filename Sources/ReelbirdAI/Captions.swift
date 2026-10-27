@@ -66,7 +66,7 @@ public enum Captions {
         let capacity = o.maxLineLength * o.maxLines
         var groups: [[Transcript.Word]] = []
 
-        for segment in t.segments {
+        for segment in t.segments where segment.hidden != true {
             var current: [Transcript.Word] = []
             for word in segment.timedWords {
                 let w = Transcript.Word(range: word.range, text: word.text.trimmingCharacters(in: .whitespacesAndNewlines),

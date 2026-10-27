@@ -116,6 +116,16 @@ public final class PreviewPlayer: @unchecked Sendable {
     /// Whether playback is muted (automated runs: see `AutomatedRun`).
     public var isMuted: Bool { mainPlayer.isMuted }
 
+    /// Re-reads the captions (the transcript or WebVTT file changed on disk, e.g. a corrected word) and redraws.
+    @MainActor
+    public func reloadCaptions() {
+        let old = state.plan
+        guard let plan = try? RenderPlan(bundle: bundle, manifest: manifest, edit: old.edit, events: events, reusing: nil) else { return }
+        state.plan = plan
+        loop.wake()
+        notifyTime()
+    }
+
     /// Applies a new edit: re-plans (cached paths are reused when their inputs didn't change) and redraws.
     @MainActor
     public func update(edit: EditDocument) {

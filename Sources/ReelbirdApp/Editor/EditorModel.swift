@@ -99,10 +99,17 @@ enum CaptionState: Equatable {
     var zoomMarquee: TimeRange?
     var shareState: ShareState = .idle
     var captionState: CaptionState = .idle
+    /// 0...1 while captions are being made.
+    var captionProgress: Double = 0
+    /// The language for the next Generate (BCP 47).
+    var captionLanguage: String = CaptionDefaults.language ?? Locale.current.identifier(.bcp47)
+    /// Languages offered for captions on this Mac, and the downloaded ones (filled in by `loadCaptionLanguages`).
+    var captionLanguages: [String] = []
+    var installedCaptionLanguages: Set<String> = []
     var storyState: CaptionState = .idle
     /// Filled in once the captions panel asks (the check is async on macOS 26).
     private(set) var captionsUnavailableReason: String?
-    private(set) var transcript: Transcript?
+    var transcript: Transcript?
     private(set) var waveform: [Float] = []
     private(set) var filmstrip: [CGImage] = []
     private(set) var saveError: String?
@@ -1122,25 +1129,46 @@ enum CaptionState: Equatable {
 
     var transcriberAvailable: Bool { services.ai.transcriberAvailable }
 
-    func generateCaptions() {
+    /// Transcribes the narration in `language` (BCP 47; default: the last language used) and shows captions in
+    /// the last style used (Classic the first time). `then` runs on success (Clean Up waits on it).
+    func generateCaptions(language: String? = nil, then: (@MainActor () -> Void)? = nil) {
         guard let kind = [TrackKind.microphone, .systemAudio].first(where: { bundle.mediaURL(for: $0, in: manifest) != nil }),
               let audio = bundle.mediaURL(for: kind, in: manifest) else {
             captionState = .failed("This recording has no audio to caption.")
             return
         }
+        guard captionState != .working else { return }
+        let lang = language ?? captionLanguage
+        CaptionDefaults.language = lang
+        captionLanguage = lang
         captionState = .working
+        captionProgress = 0
         let services = services, bundle = bundle
         let offset = manifest.track(kind)?.startTime ?? 0
+        let report: @Sendable (Double) -> Void = { [weak self] p in Task { @MainActor in self?.captionProgress = p } }
         Task {
             do {
                 // Transcript times are relative to the audio file; the editor works on the recording's timeline.
-                let t = try await services.ai.transcribe(audio: audio, locale: nil).shifted(by: offset)
-                let vtt = services.ai.webVTT(t)
+                let t = try await services.ai.transcribe(audio: audio, locale: Locale(identifier: lang), progress: report)
+                    .shifted(by: offset)
+                let vtt = services.ai.webVTT(t.captioned)
                 try vtt.write(to: bundle.captionsURL, atomically: true, encoding: .utf8)
                 try JSONCoding.writeAtomically(t, to: bundle.transcriptURL)
                 transcript = t
                 captionState = .idle
-                change("Generate Captions") { $0.captions.file = "captions.vtt" }
+                let look = CaptionDefaults.look
+                change("Generate Captions") { e in
+                    let wasFile = e.captions.file
+                    e.captions.file = "captions.vtt"
+                    e.captions.locale = t.locale.isEmpty ? lang : t.locale
+                    // A first transcript shows captions in the remembered look; a new language keeps the current one.
+                    if wasFile == nil || e.captions.style == .none {
+                        e.captions.style = look.style; e.captions.palette = look.palette; e.captions.size = look.size
+                        e.captions.position = look.position; e.captions.uppercase = look.uppercase
+                    }
+                }
+                player?.reloadCaptions()
+                then?()
             } catch {
                 captionState = .failed((error as? any LocalizedError)?.errorDescription ?? error.localizedDescription)
             }
@@ -1178,7 +1206,7 @@ enum CaptionState: Equatable {
     func clearChapters() { change("Clear Chapters") { $0.chapters = [] } }
 
     func removeCaptions() {
-        change("Remove Captions") { $0.captions.file = nil; $0.captions.burnIn = false }
+        change("Remove Captions") { $0.captions.file = nil; $0.captions.style = .none }
         transcript = nil
     }
 

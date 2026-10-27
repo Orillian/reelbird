@@ -130,12 +130,14 @@ final class TextCache {
         var color: UInt32
         var pill: UInt32
         var maxWidth: Int
+        /// Without a pill, a soft shadow keeps text readable on anything; off for text on a solid backing.
+        var shadow = true
     }
     struct Entry { let texture: any MTLTexture; let width: Int; let height: Int }
 
     private var entries: [Key: Entry] = [:]
     private var order: [Key] = []
-    private let limit = 48
+    private let limit = 160
 
     func texture(_ key: Key, context: MetalContext, queue: any MTLCommandQueue) -> Entry? {
         if let e = entries[key] {
@@ -158,7 +160,7 @@ final class TextCache {
     private static func layout(text: String, fontSize: Int, weight: Int, color: UInt32, pill: Bool, maxWidth: Int)
         -> (setter: CTFramesetter, fit: CGSize, padX: CGFloat, padY: CGFloat, w: Int, h: Int) {
         let size = CGFloat(max(4, fontSize))
-        let nsWeight: NSFont.Weight = weight >= 600 ? .semibold : (weight >= 500 ? .medium : .regular)
+        let nsWeight: NSFont.Weight = weight >= 800 ? .heavy : weight >= 700 ? .bold : weight >= 600 ? .semibold : (weight >= 500 ? .medium : .regular)
         let font = NSFont.systemFont(ofSize: size, weight: nsWeight) as CTFont
         let attrs: [NSAttributedString.Key: Any] = [
             NSAttributedString.Key(kCTFontAttributeName as String): font,
@@ -174,6 +176,13 @@ final class TextCache {
         let w = Int((fit.width + 2 * padX).rounded(.up)) + 2
         let h = Int((fit.height + 2 * padY).rounded(.up)) + 2
         return (setter, fit, padX, padY, w, h)
+    }
+
+    /// Width in pixels of a space in the system font at this size and weight.
+    static func spaceAdvance(fontSize: Double, weight: Int) -> Double {
+        let a = labelSize(text: "a a", fontSize: fontSize, weight: weight, pill: false, maxWidth: 0)
+        let b = labelSize(text: "aa", fontSize: fontSize, weight: weight, pill: false, maxWidth: 0)
+        return Double(max(1, a.width - b.width))
     }
 
     /// Pixel size of a label as `texture` would draw it.
@@ -197,7 +206,7 @@ final class TextCache {
             ctx.addPath(CGPath(roundedRect: CGRect(x: 1, y: 1, width: w - 2, height: h - 2), cornerWidth: r, cornerHeight: r, transform: nil))
             ctx.setFillColor(rgba(key.pill))
             ctx.fillPath()
-        } else {
+        } else if key.shadow {
             ctx.setShadow(offset: CGSize(width: 0, height: -size * 0.05), blur: size * 0.15, color: CGColor(gray: 0, alpha: 0.5))
         }
         let path = CGPath(rect: CGRect(x: padX + 1, y: padY + 1, width: fit.width + 1, height: fit.height), transform: nil)

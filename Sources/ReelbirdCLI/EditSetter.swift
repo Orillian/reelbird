@@ -28,6 +28,17 @@ enum EditSetter {
     }
 
     static func apply(_ assignments: [Assignment], to edit: EditDocument) throws -> EditDocument {
+        // `captions.burnIn` predates caption styles: on means Classic (or the style already chosen), off means none.
+        let assignments = assignments.map { a -> Assignment in
+            guard a.path == "captions.burnIn" else { return a }
+            let on: Bool
+            switch a.value {
+            case .raw(let s): on = ["true", "1", "yes", "on"].contains(s.lowercased())
+            case .json(let v): on = v == .bool(true)
+            }
+            let style = on ? (edit.captions.style == .none ? "classic" : edit.captions.style.rawValue) : "none"
+            return Assignment(path: "captions.style", value: .json(.string(style)))
+        }
         var doc = try JSONValue.encode(edit)
         var applied: [(path: [String], value: JSONValue)] = []
         for a in assignments {
@@ -67,7 +78,7 @@ enum EditSetter {
 
     /// Optional keys that are absent from a default document but settable.
     static let optionalKeys: Set<String> = ["trim", "trim.start", "trim.end", "title", "background.imagePath",
-                                            "canvas.outputHeight", "canvas.frameRate", "captions.file",
+                                            "canvas.outputHeight", "canvas.frameRate", "captions.file", "captions.locale",
                                             "crop", "crop.x", "crop.y", "crop.width", "crop.height", "camera.x", "camera.y"]
 
     /// Every leaf key of a default document, e.g. "zoom.intensity".

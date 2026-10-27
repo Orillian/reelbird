@@ -66,7 +66,8 @@ final class Compositor {
     private var cursors: [String: CursorSprite?] = [:]
     private var defaultCursor: CursorSprite?
     private var background: (path: String, texture: any MTLTexture)?
-    private let text = TextCache()
+    let text = TextCache()
+    var captionCache = CaptionCache()
 
     init(context: MetalContext, queue: any MTLCommandQueue) {
         ctx = context
@@ -437,18 +438,7 @@ final class Compositor {
 
         // 5. Captions and keystrokes along the bottom.
         var bottom = H - 0.045 * short
-        if let (index, cue) = plan.caption(at: src) {
-            let key = TextCache.Key(text: cue.text, fontSize: Int((0.038 * short).rounded()), weight: 500,
-                                    color: 0xFFFFFFFF, pill: 0x000000B8, maxWidth: Int(W * 0.8))
-            if let e = text.texture(key, context: ctx, queue: queue) {
-                _ = index
-                var su = SpriteUniforms()
-                su.rect = SIMD4(Float((W - Double(e.width)) / 2), Float(bottom - Double(e.height)), Float(e.width), Float(e.height))
-                su.color = SIMD4(1, 1, 1, 1)
-                draw(&su, e.texture)
-                bottom -= Double(e.height) + 0.015 * short
-            }
-        }
+        bottom = drawCaptions(plan: plan, src: src, width: W, height: H, layout: layout, bottom: bottom) { su, t in draw(&su, t) }
         if let (str, alpha) = plan.keystrokeText(at: src) {
             let key = TextCache.Key(text: str, fontSize: Int((0.034 * short).rounded()), weight: 600,
                                     color: 0xFFFFFFFF, pill: 0x1A1714D9, maxWidth: Int(W * 0.6))

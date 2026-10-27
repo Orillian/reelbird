@@ -909,67 +909,231 @@ struct AudioSection: View {
 
 struct CaptionsSection: View {
     @Bindable var model: EditorModel
+    @ViewState private var editingLine: Int?
+    @ViewState private var draft = ""
+    @ViewState private var fixOffer: FixOffer?
+    @ViewState private var relanguage: String?
+    @FocusState private var lineFocused: Bool
+
+    struct FixOffer: Equatable { let old: String; let new: String; let others: Int }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             if model.edit.captions.file == nil {
-                Text("Turn your narration into captions on this Mac. Nothing is uploaded.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                if let reason = model.captionsUnavailableReason ?? (model.transcriberAvailable ? nil : "On-device captions aren't available on this Mac.") {
-                    StatusLine(tone: .info, text: reason)
-                } else {
-                    switch model.captionState {
-                    case .working:
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text("Listening to your recording…").font(.system(size: 12)).foregroundStyle(.secondary)
-                        }
-                    case .failed(let msg):
-                        StatusLine(tone: .error, text: msg)
-                        generateButton
-                    case .idle:
-                        generateButton
-                    }
-                }
+                generateArea
             } else {
-                HStack {
-                    StatusLine(tone: .success, text: "Captions ready")
-                    Spacer()
-                    Button("Remove") { model.removeCaptions() }.buttonStyle(.link).font(.system(size: 12))
-                        .foregroundStyle(Theme.accentText)
-                }
-                Toggle("Burn into exported video", isOn: model.binding(\.captions.burnIn, "Burn In Captions"))
-                    .toggleStyle(.brand).font(.system(size: 12))
-                Text("Shared links always offer captions as a track viewers can turn on.")
-                    .font(.system(size: 11)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                languageLine
+                StyleGrid(model: model)
+                if model.edit.captions.style != .none { lookControls }
             }
             if model.storySupported || !model.markers.isEmpty || !model.edit.chapters.isEmpty { story }
-            if model.edit.captions.file != nil, let t = model.transcript {
-                Divider().padding(.vertical, 2)
-                SectionLabel(text: "Transcript")
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(t.segments.enumerated()), id: \.offset) { _, s in
-                        Button { model.seek(source: s.range.start) } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text(TimeFormat.clock(s.range.start))
-                                    .font(.system(size: 10.5).monospacedDigit())
-                                    .foregroundStyle(.tertiary)
-                                    .frame(width: 30, alignment: .leading)
-                                Text(s.text).font(.system(size: 12))
-                                    .foregroundStyle(s.range.contains(model.playhead) ? Theme.ink : .secondary)
-                                    .multilineTextAlignment(.leading)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .contentShape(Rectangle())
+            if model.edit.captions.file != nil, let t = model.transcript { transcriptList(t) }
+        }
+        .onAppear { model.checkCaptionsAvailability(); model.loadCaptionLanguages() }
+        .alert("Make captions again in \(relanguage.map(model.captionLanguageName) ?? "")?", isPresented: Binding(
+            get: { relanguage != nil }, set: { if !$0 { relanguage = nil } })) {
+            Button("Generate") { if let l = relanguage { model.generateCaptions(language: l) }; relanguage = nil }
+            Button("Cancel", role: .cancel) { relanguage = nil }
+        } message: {
+            Text("The transcript is made again, so words you fixed by hand are lost.")
+        }
+    }
+
+    // MARK: Before captions exist
+
+    @ViewBuilder private var generateArea: some View {
+        if let reason = model.captionsUnavailableReason ?? (model.transcriberAvailable ? nil : "On-device captions aren't available on this Mac.") {
+            StatusLine(tone: .info, text: reason)
+        } else {
+            switch model.captionState {
+            case .working:
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Generating captions… \(Int((model.captionProgress * 100).rounded()))%")
+                        .font(.system(size: 12)).foregroundStyle(.secondary).monospacedDigit()
+                    ProgressView(value: model.captionProgress).controlSize(.small).tint(Theme.accent)
+                }
+            case .failed(let msg):
+                StatusLine(tone: .error, text: msg)
+                generateRow(title: "Try Again")
+            case .idle:
+                generateRow(title: "Generate Captions")
+            }
+        }
+    }
+
+    private func generateRow(title: String) -> some View {
+        HStack(spacing: Theme.Space.s) {
+            Button { model.generateCaptions() } label: { Label(title, systemImage: "captions.bubble") }
+                .buttonStyle(SecondaryButtonStyle())
+            languageMenu(current: model.captionLanguage) { model.captionLanguage = $0 }
+                .help("The language spoken in this recording")
+        }
+    }
+
+    // MARK: After
+
+    private var languageLine: some View {
+        HStack(spacing: 6) {
+            Text(shortName(model.edit.captions.locale ?? model.transcript?.locale ?? model.captionLanguage))
+                .font(.system(size: 11.5)).foregroundStyle(.secondary)
+            if model.captionState == .working {
+                ProgressView().controlSize(.mini)
+                Text("\(Int((model.captionProgress * 100).rounded()))%").font(.system(size: 11)).foregroundStyle(.tertiary).monospacedDigit()
+            } else {
+                Text("·").foregroundStyle(.tertiary)
+                languageMenu(current: model.edit.captions.locale ?? "", label: "Change") { relanguage = $0 }
+                    .help("Make the captions again in another language")
+            }
+            Spacer()
+            Button("Remove") { model.removeCaptions() }.buttonStyle(.link).font(.system(size: 11.5))
+                .foregroundStyle(Theme.accentText).help("Delete the transcript and captions. Undo brings them back.")
+        }
+    }
+
+    private func languageMenu(current: String, label: String? = nil, pick: @escaping (String) -> Void) -> some View {
+        Menu {
+            let langs = model.captionLanguages.isEmpty ? [current] : model.captionLanguages
+            let downloaded = langs.filter { model.installedCaptionLanguages.contains($0) }
+            let others = langs.filter { !model.installedCaptionLanguages.contains($0) }
+            if !downloaded.isEmpty {
+                Section("On this Mac") { ForEach(downloaded, id: \.self) { item($0, current: current, pick: pick) } }
+            }
+            if !others.isEmpty {
+                Section("Downloads first") { ForEach(others, id: \.self) { item($0, current: current, pick: pick) } }
+            }
+        } label: {
+            Text(label ?? shortName(current)).font(.system(size: 12))
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+    }
+
+    private func item(_ id: String, current: String, pick: @escaping (String) -> Void) -> some View {
+        Button { pick(id) } label: {
+            if id == current { Label(model.captionLanguageName(id), systemImage: "checkmark") } else { Text(model.captionLanguageName(id)) }
+        }
+    }
+
+    /// "English (US)": the language's name with its region code, short enough for the panel.
+    private func shortName(_ id: String) -> String {
+        guard !id.isEmpty else { return "Language" }
+        let l = Locale(identifier: id)
+        let lang = l.language.languageCode.flatMap { Locale.current.localizedString(forLanguageCode: $0.identifier) } ?? id
+        guard let region = l.region?.identifier else { return lang }
+        return "\(lang) (\(region))"
+    }
+
+    private var lookControls: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            FieldRow(label: "Colour") {
+                HStack(spacing: 4) {
+                    ForEach(CaptionSettings.Palette.allCases, id: \.self) { p in
+                        Button { model.setCaptionLook("Caption Colours") { $0.palette = p } } label: {
+                            PaletteSwatch(palette: p, selected: model.edit.captions.palette == p)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("\(TimeFormat.clock(s.range.start)), \(s.text)")
-                        .accessibilityHint("Moves the playhead here")
+                        .buttonStyle(.plain).help(p.title).accessibilityLabel("\(p.title) colours")
                     }
                 }
             }
+            FieldRow(label: "Size") {
+                PillTabs(selection: Binding(get: { model.edit.captions.size },
+                                            set: { v in model.setCaptionLook("Caption Size") { $0.size = v } }),
+                         items: [.init(value: .small, title: "S", symbol: nil), .init(value: .medium, title: "M", symbol: nil),
+                                 .init(value: .large, title: "L", symbol: nil)], compact: true)
+            }
+            FieldRow(label: "Position") {
+                Picker("Position", selection: Binding(get: { model.edit.captions.position },
+                                                      set: { v in model.setCaptionLook("Caption Position") { $0.position = v } })) {
+                    ForEach(CaptionSettings.Position.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .labelsHidden().controlSize(.small).fixedSize()
+                .help("Auto puts captions under the video when there is room, and otherwise at the bottom, moving to the top while you work near the bottom of the screen.")
+            }
+            if model.edit.captions.style.isWordAtATime {
+                Toggle("All caps", isOn: Binding(get: { model.edit.captions.uppercase },
+                                                 set: { v in model.setCaptionLook("Caption Capitals") { $0.uppercase = v } }))
+                    .toggleStyle(.brand).font(.system(size: 12))
+            }
+            Text("Captions are drawn into the video. Shared links also offer them as a track viewers can turn on.")
+                .font(.system(size: 11)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
         }
-        .onAppear { model.checkCaptionsAvailability() }
+    }
+
+    // MARK: Transcript
+
+    @ViewBuilder private func transcriptList(_ t: Transcript) -> some View {
+        Divider().padding(.vertical, 2)
+        SectionLabel(text: "Transcript")
+        if let fix = fixOffer {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Change \u{201C}\(fix.old)\u{201D} to \u{201C}\(fix.new)\u{201D} in \(fix.others) more \(fix.others == 1 ? "place" : "places")?")
+                    .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("Fix All") { model.fixEverywhere(fix.old, with: fix.new); fixOffer = nil }.buttonStyle(SecondaryButtonStyle())
+                    Button("Not Now") { fixOffer = nil }.buttonStyle(.link).font(.system(size: 12)).foregroundStyle(Theme.accentText)
+                }
+            }
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.fieldFill))
+        } else {
+            Text("Double-click a line to fix a word. Its timing stays the same.")
+                .font(.system(size: 11)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+        }
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(t.segments.enumerated()), id: \.offset) { i, s in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Button { model.seek(source: s.range.start) } label: {
+                        Text(TimeFormat.clock(s.range.start))
+                            .font(.system(size: 10.5).monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 30, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Go to \(TimeFormat.clock(s.range.start))")
+                    if editingLine == i {
+                        TextField("Caption", text: $draft, axis: .vertical)
+                            .textFieldStyle(.plain).font(.system(size: 12))
+                            .padding(4)
+                            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Theme.fieldFill))
+                            .focused($lineFocused)
+                            .onSubmit { commit(i) }
+                            .onExitCommand { editingLine = nil }
+                            .onChange(of: lineFocused) { _, f in if !f, editingLine == i { commit(i) } }
+                    } else {
+                        Text(s.text).font(.system(size: 12))
+                            .strikethrough(s.hidden == true, color: .secondary)
+                            .foregroundStyle(s.hidden == true ? Color.secondary.opacity(0.6)
+                                             : s.range.contains(model.playhead) ? Theme.ink : .secondary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .onTapGesture(count: 2) { startEditing(i, s.text) }
+                            .onTapGesture { model.seek(source: s.range.start) }
+                            .help(s.hidden == true ? "Hidden from captions" : "Double-click to edit")
+                    }
+                }
+                .contextMenu {
+                    Button("Edit Text") { startEditing(i, s.text) }
+                    Button(s.hidden == true ? "Show in Captions" : "Hide from Captions") { model.toggleTranscriptLineHidden(i) }
+                    Button("Go to This Line") { model.seek(source: s.range.start) }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(TimeFormat.clock(s.range.start)), \(s.text)\(s.hidden == true ? ", hidden from captions" : "")")
+            }
+        }
+    }
+
+    private func startEditing(_ i: Int, _ text: String) {
+        fixOffer = nil
+        draft = text
+        editingLine = i
+        DispatchQueue.main.async { lineFocused = true }
+    }
+
+    private func commit(_ i: Int) {
+        guard editingLine == i else { return }
+        editingLine = nil
+        if let r = model.editTranscriptLine(i, text: draft) { fixOffer = FixOffer(old: r.old, new: r.new, others: r.others) }
     }
 
     /// Title and chapters: suggested by Apple Intelligence (macOS 26+ only), or made from the recording's markers.
@@ -980,7 +1144,7 @@ struct CaptionsSection: View {
             if let reason = model.storyUnavailableReason {
                 StatusLine(tone: .info, text: reason)
             } else if model.transcript == nil {
-                Text("Generate captions first. Reelbird suggests a title and chapters from what you said, on this Mac.")
+                Text("Generate captions first. Reelbird suggests a title and chapters from what you said.")
                     .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
                 switch model.storyState {
@@ -1030,10 +1194,5 @@ struct CaptionsSection: View {
         }
         .buttonStyle(SecondaryButtonStyle())
         .help("Uses Apple Intelligence on this Mac. Replaces the title and chapters; Undo brings them back.")
-    }
-
-    private var generateButton: some View {
-        Button { model.generateCaptions() } label: { Label("Generate Captions", systemImage: "captions.bubble") }
-            .buttonStyle(SecondaryButtonStyle())
     }
 }

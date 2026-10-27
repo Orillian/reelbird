@@ -391,16 +391,71 @@ public enum EnhanceStrength: String, Codable, Hashable, Sendable, CaseIterable {
 }
 
 public struct CaptionSettings: Codable, Hashable, Sendable {
-    /// Burn captions into exported video.
-    public var burnIn = false
+    /// How captions look in the video. `.none` keeps the transcript (and the share page's caption track) but
+    /// draws nothing; any other style burns captions into the preview and exports.
+    public enum Style: String, Codable, Hashable, Sendable, CaseIterable {
+        case none, classic, highlight, marker, pop, oneWord, slam
+        /// One or two words at a time, big: made for short social clips.
+        public var isWordAtATime: Bool { self == .oneWord || self == .slam }
+        /// Styles that draw word by word from `transcript.json` rather than sentence cues from the WebVTT file.
+        public var usesWordTimings: Bool { self != .none && self != .classic }
+    }
+    /// Text, backing and accent colours.
+    public enum Palette: String, Codable, Hashable, Sendable, CaseIterable { case night, reelbird, mint, paper, bare }
+    public enum Size: String, Codable, Hashable, Sendable, CaseIterable {
+        case small, medium, large
+        public var scale: Double { switch self { case .small: 0.8; case .medium: 1; case .large: 1.25 } }
+    }
+    /// Where captions sit. `.auto` uses the padding below the video when there is room, and otherwise the bottom
+    /// of the frame, moving a caption to the top while the cursor or a click is in the bottom third.
+    public enum Position: String, Codable, Hashable, Sendable, CaseIterable { case auto, bottom, belowVideo, top }
+
+    public var style: Style = .none
+    public var palette: Palette = .night
+    public var size: Size = .medium
+    public var position: Position = .auto
+    /// Capital letters for One Word and Slam (other styles ignore it).
+    public var uppercase = true
     /// Bundle-relative WebVTT file, produced by transcription.
     public var file: String?
+    /// BCP 47 language the transcript was made in, e.g. "en-US".
+    public var locale: String?
+
+    /// Burn captions into exported video: any style but `.none`. Kept for older files and the `captions.burnIn`
+    /// key; setting it on turns on Classic when no style was chosen.
+    public var burnIn: Bool {
+        get { style != .none }
+        set { if newValue { if style == .none { style = .classic } } else { style = .none } }
+    }
 
     public init() {}
+
+    private enum CodingKeys: String, CodingKey { case style, palette, size, position, uppercase, file, locale, burnIn }
+
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        burnIn = try c.decodeIfPresent(Bool.self, forKey: .burnIn) ?? false
+        let burned = try c.decodeIfPresent(Bool.self, forKey: .burnIn) ?? false
+        // Files from before styles have only `burnIn`: on means Classic, the one look there was.
+        style = (try? c.decodeIfPresent(Style.self, forKey: .style)) ?? (burned ? Style.classic : Style.none)
+        palette = (try? c.decodeIfPresent(Palette.self, forKey: .palette)) ?? .night
+        size = (try? c.decodeIfPresent(Size.self, forKey: .size)) ?? .medium
+        position = (try? c.decodeIfPresent(Position.self, forKey: .position)) ?? .auto
+        uppercase = try c.decodeIfPresent(Bool.self, forKey: .uppercase) ?? true
         file = try c.decodeIfPresent(String.self, forKey: .file)
+        locale = try c.decodeIfPresent(String.self, forKey: .locale)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(style, forKey: .style)
+        try c.encode(palette, forKey: .palette)
+        try c.encode(size, forKey: .size)
+        try c.encode(position, forKey: .position)
+        try c.encode(uppercase, forKey: .uppercase)
+        try c.encodeIfPresent(file, forKey: .file)
+        try c.encodeIfPresent(locale, forKey: .locale)
+        // Older Reelbird versions read only this.
+        try c.encode(burnIn, forKey: .burnIn)
     }
 }
 

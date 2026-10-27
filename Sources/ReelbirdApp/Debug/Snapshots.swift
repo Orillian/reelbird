@@ -349,6 +349,19 @@ import SwiftUI
             m.setTranscriptForSnapshot(MockData.transcript)
             m.setPlayheadForSnapshot(9.5)
         })
+        scenes.append(editor(.captions, variant: "generate") { m in m.captionLanguage = "en-US" })
+        scenes.append(editor(.captions, variant: "working") { m in m.captionState = .working; m.captionProgress = 0.42 })
+        scenes.append(editor(.captions, variant: "highlight") { m in
+            m.change("x") { $0.captions.file = "captions.vtt"; $0.captions.locale = "en-US"; $0.captions.style = .highlight }
+            var t = MockData.transcript
+            if t.segments.count > 2 { t.segments[2].hidden = true }
+            m.setTranscriptForSnapshot(t)
+            m.setPlayheadForSnapshot(9.5)
+        })
+        scenes.append(editor(.captions, variant: "slam") { m in
+            m.change("x") { $0.captions.file = "captions.vtt"; $0.captions.locale = "en-US"; $0.captions.style = .slam; $0.captions.palette = .reelbird }
+            m.setTranscriptForSnapshot(MockData.transcript)
+        })
         // Markers dropped while recording: flags on the ruler, and the chapters made from them.
         scenes.append(editor(.captions, variant: "markers") { m in
             m.change("x") {

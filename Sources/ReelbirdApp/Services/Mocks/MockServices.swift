@@ -469,9 +469,12 @@ struct MockAI: AIService {
         return ("Checkout flow walkthrough", [Chapter(time: 0, title: "The cart"), Chapter(time: 14, title: "Shipping details"),
                                                Chapter(time: 31, title: "Paying and the receipt")])
     }
-    func transcribe(audio: URL, locale: Locale?) async throws -> Transcript {
-        try await Task.sleep(for: .milliseconds(1400))
+    func transcribe(audio: URL, locale: Locale?, progress: @escaping @Sendable (Double) -> Void) async throws -> Transcript {
+        for i in 1...7 { try await Task.sleep(for: .milliseconds(200)); progress(Double(i) / 7) }
         return MockData.transcript
+    }
+    func captionLanguages() async -> (all: [String], installed: Set<String>) {
+        (["de-DE", "en-GB", "en-US", "es-ES", "fr-FR", "hi-IN", "ja-JP", "ur-IN"], ["en-US"])
     }
     func webVTT(_ t: Transcript) -> String { Captions.webVTT(t) }
     func silentRanges(audio: URL) async throws -> [TimeRange] { [TimeRange(start: 9, end: 15)] }

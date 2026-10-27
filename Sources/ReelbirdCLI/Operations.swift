@@ -374,7 +374,10 @@ struct Operations: Sendable {
                 try Data(Captions.srt(transcript).utf8).write(to: u, options: .atomic)
                 srtPath = u.path
             }
-            try bundle.updateEdit { $0.captions.file = bundle.captionsURL.lastPathComponent }
+            try bundle.updateEdit {
+                $0.captions.file = bundle.captionsURL.lastPathComponent
+                $0.captions.locale = transcript.locale.isEmpty ? nil : transcript.locale
+            }
             let cues = Captions.cues(transcript).count
             let words = transcript.allWords.count
             let preview = String(transcript.text.prefix(160))

@@ -63,6 +63,9 @@ public final class RenderPlan: Sendable {
     public let viewBase: SIMD2<Double>
     public let cursorImages: [String: CursorImageInfo]
     public let captions: [CaptionCue]
+    /// Word groups for the word-timed caption styles (empty for None and Classic, which uses `captions`).
+    public let captionGroups: [CaptionGroup]
+    let captionGroupStarts: [Double]
     let keyEvents: [InputEvent]
     let keyTimes: [Double]
     let captionStarts: [Double]
@@ -143,13 +146,35 @@ public final class RenderPlan: Sendable {
         }
         if let old, old.edit.captions == edit.captions {
             captions = old.captions
-        } else if let file = edit.captions.file, edit.captions.burnIn,
-                  let text = try? String(contentsOf: bundle.resolve(file), encoding: .utf8) {
-            captions = WebVTT.parse(text)
+            captionGroups = old.captionGroups
         } else {
-            captions = []
+            let style = edit.captions.style
+            if style == .classic, let file = edit.captions.file,
+               let text = try? String(contentsOf: bundle.resolve(file), encoding: .utf8) {
+                captions = WebVTT.parse(text)
+            } else {
+                captions = []
+            }
+            if style.usesWordTimings, edit.captions.file != nil,
+               let data = try? Data(contentsOf: bundle.transcriptURL), let words = CaptionGroups.words(transcriptJSON: data) {
+                captionGroups = CaptionGroups.groups(words, style: style)
+            } else if style.usesWordTimings, let file = edit.captions.file,
+                      let text = try? String(contentsOf: bundle.resolve(file), encoding: .utf8) {
+                // No word timings (an older project with only the WebVTT file): spread each cue's words over it.
+                let words = WebVTT.parse(text).flatMap { cue -> [CaptionWord] in
+                    let parts = cue.text.split(whereSeparator: \.isWhitespace).map(String.init)
+                    let step = cue.range.duration / Double(max(1, parts.count))
+                    return parts.enumerated().map { i, p in
+                        CaptionWord(range: TimeRange(start: cue.range.start + Double(i) * step, end: cue.range.start + Double(i + 1) * step), text: p)
+                    }
+                }
+                captionGroups = CaptionGroups.groups(words, style: style)
+            } else {
+                captionGroups = []
+            }
         }
         captionStarts = captions.map(\.range.start)
+        captionGroupStarts = captionGroups.map(\.range.start)
         showsCamera = edit.camera.visible && manifest.track(.camera) != nil
         cameraPlacement = old.flatMap { $0.edit.camera.position == edit.camera.position && $0.edit.camera.moves == edit.camera.moves
             ? $0.cameraPlacement : nil } ?? CameraPlacementPath(edit.camera)
@@ -274,6 +299,11 @@ public final class RenderPlan: Sendable {
         }
         let text = chars.reversed().joined()
         return text.trimmingCharacters(in: .whitespaces).isEmpty ? nil : (text, opacity)
+    }
+
+    /// The caption word group on screen at recording time `t`.
+    func captionGroup(at t: Double) -> (index: Int, group: CaptionGroup)? {
+        CaptionGroups.index(at: t, groups: captionGroups, starts: captionGroupStarts).map { ($0, captionGroups[$0]) }
     }
 
     /// The caption cue active at recording time `t`.

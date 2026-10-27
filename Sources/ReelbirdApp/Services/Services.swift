@@ -89,6 +89,8 @@ extension RecorderService {
     func setHearOriginal(_ on: Bool)
     /// The voice stem was rendered: swap it in at the playhead.
     func voiceStemDidChange()
+    /// The transcript or captions file changed on disk (a corrected word, a hidden line): redraw captions.
+    func reloadCaptions()
     /// Playback is silent (automated runs).
     var isMuted: Bool { get }
     /// The camera bubble as the renderer draws it at recording time `t`: its place (stepped aside during a zoom)
@@ -202,7 +204,9 @@ protocol AIService: Sendable {
     /// Why suggestions can't run right now (Apple Intelligence off, model downloading), or `nil`.
     var storyUnavailableReason: String? { get }
     func suggestStory(transcript: Transcript) async throws -> (title: String, chapters: [Chapter])
-    func transcribe(audio: URL, locale: Locale?) async throws -> Transcript
+    func transcribe(audio: URL, locale: Locale?, progress: @escaping @Sendable (Double) -> Void) async throws -> Transcript
+    /// Languages captions can be made in on this Mac (BCP 47) and which are downloaded already.
+    func captionLanguages() async -> (all: [String], installed: Set<String>)
     func webVTT(_ t: Transcript) -> String
     func silentRanges(audio: URL) async throws -> [TimeRange]
     /// `ReelbirdAI.SensitiveInfoScanner`: emails, keys, card and phone numbers on screen, found on this Mac.
