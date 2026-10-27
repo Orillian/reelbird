@@ -10,8 +10,8 @@ export const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues`;
 export const GITHUB_RELEASES_URL = `${GITHUB_URL}/releases`;
 export const LICENSE_NAME = "MIT";
 
-export const APP_VERSION = "0.3.1";
-export const RELEASE_DATE = "2026-10-22";
+export const APP_VERSION = "0.4.0";
+export const RELEASE_DATE = "2026-10-27";
 export const MIN_MACOS = "macOS 15";
 
 /** What it takes to build and run Reelbird. Say it the same way everywhere. */

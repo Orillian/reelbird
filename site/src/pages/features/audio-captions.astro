@@ -33,8 +33,8 @@ import capD from "../../assets/shots/editor-captions-dark.webp";
         <p>System audio dips about <strong>12 dB</strong> while you speak, starting just before each phrase and coming back over 600 ms, so music and app sounds never fight your voice. Speech is found by an energy detector on your voice track, on your Mac.</p>
       </div>
       <div>
-        <h2>Cut Long Silences</h2>
-        <p>One action finds the long pauses and cuts them. Every cut shows on the timeline and can be restored with <kbd>Delete</kbd>.</p>
+        <h2>Clean Up</h2>
+        <p>One button (<kbd>W</kbd>) tightens the whole take: long pauses get shorter instead of vanishing, ums and dead time at the start and end go, and silent typing or waiting speeds up. Cuts land in quiet spots with a soft join. <strong>Review</strong> lets you play, put back or apply each change; <strong>Undo</strong> puts everything back.</p>
       </div>
     </div>
   </section>
@@ -44,7 +44,10 @@ import capD from "../../assets/shots/editor-captions-dark.webp";
       <h2>Captions made on your Mac</h2>
       <p>Captions come from Apple's on-device speech recognition: SpeechAnalyzer on macOS 26 and later, which downloads its language model the first time, and on-device recognition on macOS 15. Both give word timings, saved next to the take.</p>
       <ul class="plain">
-        <li>Burn them into the export, or offer them as a track viewers can turn on in share links.</li>
+        <li>Pick the spoken language next to <strong>Generate Captions</strong>, from the languages Apple supports on your Mac.</li>
+        <li>Six looks: Classic, Highlight (the spoken word lights up), Marker (a highlighter box follows your words), and Pop, One Word and Slam for social clips, in five colour sets and three sizes.</li>
+        <li>Auto position puts captions under the video when there's room, and moves them to the top while you work near the bottom of the screen.</li>
+        <li>Double-click a line to fix a word without breaking its timing, fix it everywhere, or hide a line. Share links also offer captions as a track viewers can turn on.</li>
         <li>No API keys and no cloud. Nothing leaves your Mac unless you share it.</li>
         <li>From the CLI, <code>reelbird suggest</code> writes a title and chapters with Apple's on-device model on Macs with Apple Intelligence.</li>
       </ul>

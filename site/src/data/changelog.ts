@@ -11,6 +11,24 @@ const newer = (a: string, b: string) => {
 
 const ALL: Release[] = [
   {
+    version: "0.4.0",
+    date: "2026-10-27",
+    title: "Caption styles and one-click Clean Up",
+    summary: "Captions come in six looks, from Classic to a word-by-word Highlight, in the language you pick. Clean Up tightens a whole take in one go: shorter pauses, no ums or dead time, faster typing and waiting, and every change can be put back.",
+    notes: [
+      "Caption styles: Classic, Highlight (the spoken word lights up), Marker (a highlighter box follows your words), and Pop, One Word and Slam for short social clips. Five colour sets, three sizes.",
+      "Caption position: Auto puts captions under the video when there's room, and otherwise at the bottom, moving to the top while you work near the bottom of the screen. Or pin them to the bottom, below the video or the top.",
+      "Pick the spoken language next to Generate Captions. The menu lists the languages Apple supports on your Mac, downloaded ones first, and remembers your choice.",
+      "Fix captions in place: double-click a line in the transcript, and the words keep their timing. Fix a misheard word everywhere at once, or hide a line from captions.",
+      "Clean Up (W, the wand under the video): shortens long pauses instead of deleting them, cuts ums and dead time at the start and end, and speeds up silent typing and waiting. Likely retakes are offered as suggestions.",
+      "A bar after Clean Up says what changed. Review plays each change from a second before, and lets you put it back, apply a suggestion or dismiss it. Undo puts everything back.",
+      "Smoother cuts everywhere: every cut join dips the sound for a moment so there's no click, and the cursor glides across a cut instead of jumping.",
+      "Speed Up Typing joins bursts of typing up to 2 seconds apart, so a long stretch of typing becomes one speed-up instead of several.",
+      "Command line and MCP: reelbird cleanup (with --dry-run and --undo) and clean_up, and the caption keys captions.style, captions.palette, captions.size and captions.position.",
+      "Clean Up replaces Cut Long Silences.",
+    ],
+  },
+  {
     version: "0.3.1",
     date: "2026-10-22",
     title: "A calmer timeline, a Speed panel and better blurs",

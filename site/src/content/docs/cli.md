@@ -3,7 +3,7 @@ title: "Command line"
 seoTitle: "Reelbird command-line tool reference"
 description: "Record, edit, export, caption and share from the terminal. Every command takes --json for scripts and agents."
 order: 4
-updated: "2026-10-22"
+updated: "2026-10-27"
 source: "README.md"
 ---
 
@@ -25,6 +25,7 @@ reelbird edit latest --set zoom.intensity=0.7 --trim 0:05-end
 reelbird edit latest --set camera.x=0.5 --set camera.y=1 --clear-camera-moves   # camera bottom centre, in one place
 reelbird edit latest --speed 0:12-0:20@2       # play 12–20 s at 2× (1 = normal speed again)
 reelbird speedup latest --apply                # speed up typing and idle stretches
+reelbird cleanup latest                        # shorten pauses, cut ums, trim dead ends (--dry-run, --undo)
 reelbird edit latest --layout camera@0:00-0:04 --layout split@0:30-0:45         # camera layouts for parts of the video
 reelbird edit latest --set camera.sizeWhileZoomed=0.6 --set camera.smartFraming=false
 reelbird edit latest --set zoom.regions.auto-3.enabled=false   # turn one zoom off (ids are in `edit latest --json`)
@@ -35,7 +36,8 @@ reelbird redact latest --auto --keep-all       # ...and blur them all (or --keep
 reelbird annotate latest --add arrow --arrow 0.8,0.8,0.55,0.45 --from 3 --to 6
 reelbird annotate latest                       # list overlays; --remove ID or --clear
 reelbird export latest --format mp4 --height 1080
-reelbird captions latest                       # captions.vtt, made on this Mac
+reelbird captions latest --locale en-US       # transcript and captions.vtt, made on this Mac
+reelbird edit latest --set captions.style=highlight   # none, classic, highlight, marker, pop, oneWord, slam
 reelbird enhance latest --strength medium      # clean up the voice; the raw mic is kept
 reelbird markers latest                        # markers dropped while recording
 reelbird markers latest --as-chapters          # make them the chapters on the share page

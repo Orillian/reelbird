@@ -30,7 +30,7 @@ export const FEATURES = [
   "Free share links to your own S3-compatible bucket, such as Cloudflare R2",
   "Optional Reelbird Pro ($5 a month): hosted share links with viewer analytics",
   "Auto level, on-device voice enhance and ducking of system audio",
-  "On-device captions and Cut Long Silences",
+  "On-device captions in six styles and one-click Clean Up",
   "Crash-safe recording in 2-second segments with live warnings",
   "reelbird command-line tool and MCP server for coding agents",
 ];

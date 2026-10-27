@@ -3,7 +3,7 @@ title: "Keyboard shortcuts"
 seoTitle: "Reelbird keyboard shortcuts"
 description: "Every Reelbird keyboard shortcut: start and stop from any app, the picker, the countdown, and the editor timeline."
 order: 3
-updated: "2026-10-22"
+updated: "2026-10-27"
 source: "README.md"
 ---
 
@@ -38,6 +38,7 @@ In the editor:
 | R | Speed: 2× for the selected part (or 3 seconds from the playhead); on a speed segment, the next speed |
 | B | Blur an area: drag on the preview |
 | A / X / T / H | Draw an arrow, a box, a text label or a highlight |
+| W | Clean Up: shorten long pauses, cut ums and dead time, speed up typing and waiting (Review and Undo in the bar that appears) |
 | 1 to 9 | Zoom depth of the selected zoom, or the one under the pointer (1 = 1.25×, 9 = 3.5×) |
 | 0 | Turn that zoom off without deleting it, or back on |
 | I | Make that zoom instant: it cuts in and out with no animation |
