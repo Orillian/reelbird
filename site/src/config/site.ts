@@ -59,7 +59,7 @@ export const PREBUILT = {
   url: `${GITHUB_RELEASES_URL}/download/v${APP_VERSION}/Reelbird-${APP_VERSION}.zip`,
   label: `Download Reelbird ${APP_VERSION} (.zip)`,
   note: "For Apple silicon Macs on macOS 15 or later. Signed and notarised by Apple, so it opens like any other app.",
-  sha256: "b3ceeaf166d50a5d4acf34879f53144321bf2b1655de539b15ca689005bd393f",
+  sha256: "07dd218445d4d34a7b89e727583c28981a3eff8ae3bfa428eaca67216ad8a33c",
 };
 
 /**
