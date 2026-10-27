@@ -99,6 +99,9 @@ enum CaptionState: Equatable {
     var zoomMarquee: TimeRange?
     var shareState: ShareState = .idle
     var captionState: CaptionState = .idle
+    var cleanUpState: CleanUpState = .idle
+    /// The Clean Up results bar under the tool bar (after a run, until hidden).
+    var showCleanUpBar = false
     /// 0...1 while captions are being made.
     var captionProgress: Double = 0
     /// The language for the next Generate (BCP 47).
@@ -749,32 +752,6 @@ enum CaptionState: Equatable {
         }
     }
 
-    /// Finds long pauses in the microphone track (decoding it off the main thread) and cuts them.
-    func removeSilences() {
-        guard let mic = bundle.mediaURL(for: .microphone, in: manifest) else {
-            Toast.show(title: "No microphone track", detail: "This recording has no voice to find silences in.", symbol: "waveform")
-            return
-        }
-        let ai = services.ai
-        let offset = manifest.track(.microphone)?.startTime ?? 0
-        let duration = duration
-        Task {
-            let silences = try? await ai.silentRanges(audio: mic)
-            guard let silences else {
-                Toast.show(title: "Couldn't read the microphone track", symbol: "exclamationmark.triangle.fill")
-                return
-            }
-            let shifted = silences.map { TimeRange(start: $0.start + offset, end: $0.end + offset) }
-            // Keep a little air next to speech, like `reelbird silences --apply`.
-            let cuts = SilenceDetector.trimCuts(silences: shifted, duration: duration)
-            guard !cuts.isEmpty else {
-                Toast.show(title: "No long silences", detail: "There was nothing to cut.", symbol: "waveform")
-                return
-            }
-            change("Remove Silences") { e in e.cuts = Self.merged(e.cuts + cuts) }
-        }
-    }
-
     static func merged(_ ranges: [TimeRange]) -> [TimeRange] {
         var out: [TimeRange] = []
         for r in ranges.sorted(by: { $0.start < $1.start }) where r.duration > 0.01 {
@@ -1131,13 +1108,16 @@ enum CaptionState: Equatable {
 
     /// Transcribes the narration in `language` (BCP 47; default: the last language used) and shows captions in
     /// the last style used (Classic the first time). `then` runs on success (Clean Up waits on it).
-    func generateCaptions(language: String? = nil, then: (@MainActor () -> Void)? = nil) {
+    /// With `showCaptions` false (Clean Up needs the words) captions stay as they are: hidden if they were.
+    func generateCaptions(language: String? = nil, showCaptions: Bool = true, then: (@MainActor () -> Void)? = nil,
+                          otherwise: (@MainActor () -> Void)? = nil) {
         guard let kind = [TrackKind.microphone, .systemAudio].first(where: { bundle.mediaURL(for: $0, in: manifest) != nil }),
               let audio = bundle.mediaURL(for: kind, in: manifest) else {
             captionState = .failed("This recording has no audio to caption.")
+            otherwise?()
             return
         }
-        guard captionState != .working else { return }
+        guard captionState != .working else { otherwise?(); return }
         let lang = language ?? captionLanguage
         CaptionDefaults.language = lang
         captionLanguage = lang
@@ -1162,7 +1142,7 @@ enum CaptionState: Equatable {
                     e.captions.file = "captions.vtt"
                     e.captions.locale = t.locale.isEmpty ? lang : t.locale
                     // A first transcript shows captions in the remembered look; a new language keeps the current one.
-                    if wasFile == nil || e.captions.style == .none {
+                    if showCaptions, wasFile == nil || e.captions.style == .none {
                         e.captions.style = look.style; e.captions.palette = look.palette; e.captions.size = look.size
                         e.captions.position = look.position; e.captions.uppercase = look.uppercase
                     }
@@ -1171,6 +1151,7 @@ enum CaptionState: Equatable {
                 then?()
             } catch {
                 captionState = .failed((error as? any LocalizedError)?.errorDescription ?? error.localizedDescription)
+                otherwise?()
             }
         }
     }

@@ -16,6 +16,7 @@ struct EditorView: View {
                 VStack(spacing: 0) {
                     PreviewStage(model: model)
                     TransportBar(model: model)
+                    if model.showCleanUpBar { CleanUpBar(model: model).transition(.opacity) }
                     Divider()
                     TimelineView(model: model)
                         .frame(height: TimelineView.height(layouts: model.hasCamera))
@@ -255,6 +256,8 @@ struct TransportBar: View {
                                title: sel.isCut ? "Restore" : sel.isZoom ? model.deleteZoomsTitle : sel.isLayout ? "Delete Layout" : sel.isSpeed ? "Remove Speed" : sel.isAnnotation ? "Delete Overlay" : "Cut", key: "⌫") { model.deleteSelection() }
                         .transition(.opacity)
                 }
+                Divider().frame(height: 16).padding(.horizontal, 2)
+                CleanUpButton(model: model)
             }
             .animation(Theme.snappy, value: model.selection)
     }

@@ -86,7 +86,7 @@ import ReelbirdShare
         timeline.addItem(item("Add Marker at Playhead", #selector(AppDelegate.addEditorMarker(_:)), shortcut: EditorKeys.addMarker, target: target))
         timeline.addItem(item("Blur an Area", #selector(AppDelegate.addBlur(_:)), shortcut: EditorKeys.addBlur, target: target))
         timeline.addItem(item("Cut Selection", #selector(AppDelegate.deleteSelection(_:)), shortcut: EditorKeys.deleteSelection, target: target))
-        timeline.addItem(item("Cut Long Silences", #selector(AppDelegate.removeSilences(_:)), target: target))
+        timeline.addItem(item("Clean Up", #selector(AppDelegate.cleanUp(_:)), shortcut: EditorKeys.cleanUp, target: target))
         timeline.addItem(item("Speed Up Typing", #selector(AppDelegate.speedUpTyping(_:)), target: target))
         let keep = item("Keep Sound Above 2×", #selector(AppDelegate.toggleKeepFastAudio(_:)), target: target)
         timeline.addItem(keep)

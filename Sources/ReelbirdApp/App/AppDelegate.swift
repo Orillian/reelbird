@@ -181,7 +181,7 @@ import ReelbirdCore
     @objc func addLayout(_ sender: Any?) { editor?.addLayoutAtPlayhead() }
     @objc func addBlur(_ sender: Any?) { editor?.beginOverlayTool(.blur) }
     @objc func deleteSelection(_ sender: Any?) { editor?.deleteSelection() }
-    @objc func removeSilences(_ sender: Any?) { editor?.removeSilences() }
+    @objc func cleanUp(_ sender: Any?) { editor?.cleanUp() }
     @objc func changeSpeed(_ sender: Any?) { editor?.speedKey() }
     @objc func speedUpTyping(_ sender: Any?) { editor?.applySpeedSuggestions() }
     @objc func toggleKeepFastAudio(_ sender: Any?) { if let e = editor { e.setKeepFastAudio(!e.edit.speed.keepFastAudio) } }
@@ -268,8 +268,8 @@ import ReelbirdCore
             return e != nil
         case #selector(addLayout(_:)):
             return e?.hasCamera == true
-        case #selector(removeSilences(_:)):
-            return e?.hasMicrophone == true
+        case #selector(cleanUp(_:)):
+            return e?.canCleanUp == true
         case #selector(showInspectorSection(_:)):
             let i = item.tag - MainMenu.Tag.inspectorBase.rawValue
             item.state = e != nil && InspectorSection.allCases.indices.contains(i) && e?.section == InspectorSection.allCases[i] ? .on : .off

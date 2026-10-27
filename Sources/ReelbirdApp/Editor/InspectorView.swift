@@ -757,9 +757,9 @@ struct AudioSection: View {
             if model.hasMicrophone {
                 Divider().padding(.vertical, 2)
                 SectionLabel(text: "Tidy up")
-                Button { model.removeSilences() } label: { Label("Cut Long Silences", systemImage: "waveform.path.badge.minus") }
-                    .buttonStyle(SecondaryButtonStyle())
-                Text("Adds a cut wherever you were quiet for more than a second. Undo brings them back.")
+                Button { model.cleanUp() } label: { Label("Clean Up", systemImage: "wand.and.stars") }
+                    .buttonStyle(SecondaryButtonStyle()).disabled(!model.canCleanUp)
+                Text("Shortens long pauses, cuts ums and dead time, and speeds up typing and waiting. Every change can be put back.")
                     .font(.system(size: 11)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
             }
         }

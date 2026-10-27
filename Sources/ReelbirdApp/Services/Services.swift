@@ -209,6 +209,8 @@ protocol AIService: Sendable {
     func captionLanguages() async -> (all: [String], installed: Set<String>)
     func webVTT(_ t: Transcript) -> String
     func silentRanges(audio: URL) async throws -> [TimeRange]
+    /// `ReelbirdAI.CleanUpAnalyzer`: what Clean Up needs (audio level, words, input, screen changes) for a take.
+    func cleanUpInputs(bundle: ProjectBundle, manifest: ProjectManifest, transcript: Transcript?) async throws -> CleanUpInputs
     /// `ReelbirdAI.SensitiveInfoScanner`: emails, keys, card and phone numbers on screen, found on this Mac.
     func findSensitiveInfo(bundle: ProjectBundle, options: SensitiveInfoScanner.Options,
                            progress: @escaping @Sendable (Double) -> Void) async throws -> SensitiveInfoScanner.Result

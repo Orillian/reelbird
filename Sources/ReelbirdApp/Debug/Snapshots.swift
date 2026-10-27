@@ -349,6 +349,20 @@ import SwiftUI
             m.setTranscriptForSnapshot(MockData.transcript)
             m.setPlayheadForSnapshot(9.5)
         })
+        // Clean Up: the results bar under the tool bar, and the Review list.
+        func cleanedUp(_ m: EditorModel) {
+            let words = MockData.transcript.allWords.map { CleanUpInputs.Word(range: $0.range, text: $0.text) }
+            let report = CleanUp.plan(CleanUpInputs(duration: m.manifest.duration, words: words, events: m.events), edit: m.edit)
+            m.change("Clean Up") { CleanUp.apply(report, to: &$0) }
+            m.showCleanUpBar = true
+        }
+        scenes.append(editor(.audio, variant: "cleanup") { m in cleanedUp(m) })
+        scenes.append(Scene(name: "cleanup-review", size: CGSize(width: 420, height: 420), backdrop: true) {
+            guard let m = try? EditorModel(bundle: demo, services: services) else { return AnyView(Text("Editor failed")) }
+            m.autosaveEnabled = false
+            cleanedUp(m)
+            return AnyView(CleanUpReview(model: m).background(RoundedRectangle(cornerRadius: 12).fill(Theme.raised)))
+        })
         scenes.append(editor(.captions, variant: "generate") { m in m.captionLanguage = "en-US" })
         scenes.append(editor(.captions, variant: "working") { m in m.captionState = .working; m.captionProgress = 0.42 })
         scenes.append(editor(.captions, variant: "highlight") { m in

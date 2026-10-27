@@ -141,6 +141,9 @@ struct LiveAI: AIService {
     func captionLanguages() async -> (all: [String], installed: Set<String>) { await Transcriber.languages() }
     func webVTT(_ t: Transcript) -> String { Captions.webVTT(t) }
     func silentRanges(audio: URL) async throws -> [TimeRange] { try await SilenceDetector.silentRanges(audio: audio) }
+    func cleanUpInputs(bundle: ProjectBundle, manifest: ProjectManifest, transcript: Transcript?) async throws -> CleanUpInputs {
+        try await CleanUpAnalyzer.analyze(bundle: bundle, manifest: manifest, transcript: transcript)
+    }
 }
 
 /// `ReelbirdShare`: settings (JSON + Keychain), the live uploader and publish/unpublish.

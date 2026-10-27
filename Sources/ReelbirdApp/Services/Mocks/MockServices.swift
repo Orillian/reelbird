@@ -478,6 +478,11 @@ struct MockAI: AIService {
     }
     func webVTT(_ t: Transcript) -> String { Captions.webVTT(t) }
     func silentRanges(audio: URL) async throws -> [TimeRange] { [TimeRange(start: 9, end: 15)] }
+    func cleanUpInputs(bundle: ProjectBundle, manifest: ProjectManifest, transcript: Transcript?) async throws -> CleanUpInputs {
+        try await Task.sleep(for: .milliseconds(600))
+        let words = (transcript ?? MockData.transcript).allWords.map { CleanUpInputs.Word(range: $0.range, text: $0.text) }
+        return CleanUpInputs(duration: manifest.duration, words: words, events: (try? bundle.readEvents()) ?? [])
+    }
 }
 
 /// Mock guide: five steps of the mock checkout walkthrough, drawn with `MockArt`.

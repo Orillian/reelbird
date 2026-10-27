@@ -122,6 +122,7 @@ enum EditorKeys {
     static let addMarker = KeyShortcut("m")
     static let changeSpeed = KeyShortcut("r")
     static let addBlur = KeyShortcut("b")
+    static let cleanUp = KeyShortcut("w")
     static let addArrow = KeyShortcut("a")
     static let addBox = KeyShortcut("x")
     static let addText = KeyShortcut("t")
@@ -245,8 +246,9 @@ struct EditorCommand: Identifiable {
         speedCommands(m, into: &c)
         c.append(.init(id: "clear-selection", title: "Clear Selection", area: .timeline, symbol: "xmark", shortcut: EditorKeys.clearSelection,
                        keywords: ["deselect", "cancel"], isEnabled: sel != nil || m.overlays.tool != nil) { m.escape() })
-        c.append(.init(id: "remove-silences", title: "Cut Long Silences", area: .timeline, symbol: "waveform.badge.minus",
-                       keywords: ["pauses", "quiet", "dead air"], isEnabled: m.hasMicrophone) { m.removeSilences() })
+        c.append(.init(id: "clean-up", title: "Clean Up", area: .timeline, symbol: "wand.and.stars", shortcut: EditorKeys.cleanUp,
+                       keywords: ["pauses", "silences", "quiet", "dead air", "ums", "fillers", "retakes", "auto edit", "magic"],
+                       isEnabled: m.canCleanUp) { m.cleanUp() })
         c.append(.init(id: "clear-trim", title: "Remove Trim", area: .timeline, symbol: "arrow.left.and.right",
                        keywords: ["untrim", "full length"], isEnabled: e.trim != nil) {
             m.change("Remove Trim") { $0.trim = nil }
